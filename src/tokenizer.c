@@ -3,6 +3,7 @@
 #include<util.h>
 
 #include<stdlib.h>
+#include<string.h>
 
 bool Token_symbolEqual(Token* a,Token*b){
 	if(a->len!=b->len)
