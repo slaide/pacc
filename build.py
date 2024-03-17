@@ -1,7 +1,8 @@
 import subprocess as sp, typing as tp
-import os, shutil
+import shutil, argparse, platform
 from pathlib import Path
 from enum import Enum
+from dataclasses import dataclass
 
 def remove(path:tp.Union[str,Path]):
     """ remove file/symlink/directory from filesystem"""
@@ -223,16 +224,82 @@ class Command:
 
         return output
 
-clang_comp_str= \
-    "clang " \
-    "-Wall -Wpedantic -Wextra " \
-    "-Wno-sign-compare -Wno-incompatible-pointer-types-discards-qualifiers " \
-    "-std=gnu2x -I. -DDEVELOP -Isrc " \
-    "{input} " \
-    "-c " \
-    "-o {output}" \
+arg_parser=argparse.ArgumentParser(
+    prog="build.py",
+    description="build script for the pacc c23 compiler",
+)
 
-clang_link_str= "clang {input} -o {output}"
+build_targets=dict(
+    all=None,
+)
+default_build_target="all"
+
+arg_parser.add_argument(
+    "target",
+    choices=build_targets.keys(),
+    default=default_build_target,
+    help="target to build",
+    nargs="?")
+
+build_platforms=dict(
+    linux_amd64=None,
+    macOS_arm64=None,
+)
+if platform.system()=="Linux":
+    assert platform.machine()=="x86_64", f"unsupported architecture {platform.machine()}"
+    default_build_platform="linux_amd64"
+elif platform.system()=="Darwin":
+    assert platform.machine()=="arm64", f"unsupported architecture {platform.machine()}"
+    default_build_platform="macOS_arm64"
+else:
+    raise RuntimeError(f"unsupported platform: os = {platform.system()} , arch = {platform.machine()}")
+
+arg_parser.add_argument(
+    "-p","--platform",
+    choices=build_platforms.keys(),
+    default=default_build_platform,
+    help="os/arch platform to build for",
+    nargs="?")
+
+@dataclass
+class BuildModeFlags:
+    compiler_flags:str
+    linker_flags:str
+    
+build_mode_flags=dict(
+    debug = BuildModeFlags("-O0 -g","-g"),
+    debugRelease = BuildModeFlags("-O2 -g","-g"),
+    release = BuildModeFlags("-O3","-s -flto=full"),
+)
+default_build_mode="debug"
+
+arg_parser.add_argument(
+    "-m","--mode",
+    choices=build_mode_flags.keys(),
+    default=default_build_mode,
+    help="build mode (i.e. optimization level)",
+    nargs="?")
+
+cli_args,unknown_args=arg_parser.parse_known_args()
+
+assert len(unknown_args)==0, f"unknown arguments passed: {unknown_args}"
+
+flags=build_mode_flags[cli_args.mode]
+
+clang_comp_str= \
+    " clang " \
+    " -Wall -Wpedantic -Wextra " \
+    " -Wno-sign-compare -Wno-incompatible-pointer-types-discards-qualifiers " \
+    " -std=gnu2x -I. -DDEVELOP -Isrc " \
+    f" {flags.compiler_flags} " \
+    " {input} " \
+    " -c " \
+    " -o {output}" \
+
+clang_link_str = "clang " \
+    " {input} " \
+    " -o {output} " \
+    f" {flags.linker_flags} "
 
 mkdir=Command(cmd="mkdir {output}",output="manual",overwrite=False,phony=True)
 
