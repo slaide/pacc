@@ -1,5 +1,5 @@
 import subprocess as sp, typing as tp
-import shutil, argparse, platform
+import shutil, argparse, platform, shlex
 from pathlib import Path
 from enum import Enum
 from dataclasses import dataclass
@@ -61,7 +61,7 @@ class Command:
         input:InputVariant="none",
         output:OutputVariant="none",
         output_generator:tp.Optional[callable]=None,
-        dependencies:[CommandInstance]=[],
+        dependencies:tp.List[CommandInstance]=[],
         overwrite:bool=True,
         phony:bool=False,
     ):
@@ -114,7 +114,7 @@ class Command:
     def __call__(self,
         input:tp.Optional[str]=None,
         output:tp.Optional[str]=None,
-        depends:[CommandInstance]=[]
+        depends:tp.List[CommandInstance]=[]
     )->CommandInstance:
         """
             instantiate command
@@ -157,7 +157,7 @@ class Command:
     def run(self,
         input:tp.Optional[str]=None,
         output:tp.Optional[str]=None,
-        depends:[CommandInstance]=[]
+        depends:tp.List[CommandInstance]=[]
     )->tp.Optional[str]:
         """
             execute an instance of this command
@@ -202,10 +202,11 @@ class Command:
                 return self.get_output(output)
 
         # print info about running command
-        print("running",exec_str)
+        exec_args=shlex.split(exec_str)
+        print("running",shlex.join(exec_args))
 
         # actually run the command
-        sp_res=sp.run(exec_str,shell=True,capture_output=True)
+        sp_res=sp.run(exec_args,capture_output=True)
 
         # if command fails, print what the command printed to stdout and stderr
         if sp_res.returncode!=0:
@@ -286,20 +287,23 @@ assert len(unknown_args)==0, f"unknown arguments passed: {unknown_args}"
 
 flags=build_mode_flags[cli_args.mode]
 
-clang_comp_str= \
-    " clang " \
-    " -Wall -Wpedantic -Wextra " \
-    " -Wno-sign-compare -Wno-incompatible-pointer-types-discards-qualifiers " \
-    " -std=gnu2x -I. -DDEVELOP -Isrc " \
-    f" {flags.compiler_flags} " \
-    " {input} " \
-    " -c " \
-    " -o {output}" \
+clang_comp_str=f"""
+    clang
+    -Wall -Wpedantic -Wextra
+    -Wno-sign-compare -Wno-incompatible-pointer-types-discards-qualifiers
+    -std=gnu2x -I. -DDEVELOP -Isrc 
+    {flags.compiler_flags}
+    {{input}}
+    -c
+    -o {{output}}
+""".replace("\n"," ")
 
-clang_link_str = "clang " \
-    " {input} " \
-    " -o {output} " \
-    f" {flags.linker_flags} "
+clang_link_str = f"""
+    clang
+    {flags.linker_flags}
+    {{input}}
+    -o {{output}}
+""".replace("\n"," ")
 
 mkdir=Command(cmd="mkdir {output}",output="manual",overwrite=False,phony=True)
 
