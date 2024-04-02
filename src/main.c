@@ -264,20 +264,29 @@ bool test2(){
 	return Module_equal(&module,&expected_module);
 }
 
+#define TEXT_COLOR_BLACK "\033[1;30m"
+#define TEXT_COLOR_RED "\033[1;31m"
+#define TEXT_COLOR_GREEN "\033[1;32m"
+#define TEXT_COLOR_YELLOW "\033[1;33m"
+#define TEXT_COLOR_BLUE "\033[1;34m"
+#define TEXT_COLOR_MAGENTA "\033[1;35m"
+#define TEXT_COLOR_CYAN "\033[1;36m"
+#define TEXT_COLOR_WHITE "\033[1;37m"
+#define TEXT_COLOR_RESET "\033[1;0m"
+
+void print_test_result(const char*testname,bool passed){
+	if(passed){
+		println(TEXT_COLOR_GREEN "%s passed" TEXT_COLOR_RESET,testname);
+	}else{
+		println(TEXT_COLOR_RED "%s failed" TEXT_COLOR_RESET,testname);
+	}
+
+}
+
 int main(int argc, const char**argv){
 	{
-		bool test1passed=test1();
-		if(test1passed){
-			println("test1 passed");
-		}else{
-			println("test1 failed");
-		}
-		bool test2passed=test2();
-		if(test2passed){
-			println("test2 passed");
-		}else{
-			println("test2 failed");
-		}
+		print_test_result("test1",test1());
+		print_test_result("test2",test2());
 	}
 
 	if(argc<2)
