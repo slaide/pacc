@@ -5,14 +5,17 @@
 typedef struct Token{
 	enum{
 		TOKEN_TAG_UNDEFINED=0,
-		TOKEN_TAG_KEYWORD,
-		TOKEN_TAG_SYMBOL,
-		TOKEN_TAG_COMMENT,
-		TOKEN_TAG_LITERAL_INTEGER,
-		TOKEN_TAG_LITERAL_FLOAT,
-		TOKEN_TAG_LITERAL_CHAR,
-		TOKEN_TAG_LITERAL_STRING,
-        TOKEN_TAG_PREP_INCLUDE_ARGUMENT,
+		TOKEN_TAG_COMMENT=1,
+		TOKEN_TAG_KEYWORD=2,
+		
+		TOKEN_TAG_SYMBOL=3,
+
+		TOKEN_TAG_LITERAL_INTEGER=0x10,
+		TOKEN_TAG_LITERAL_FLOAT=0x11,
+		TOKEN_TAG_LITERAL_CHAR=0x12,
+		TOKEN_TAG_LITERAL_STRING=0x13,
+
+        TOKEN_TAG_PREP_INCLUDE_ARGUMENT=0x20,
 	}tag;
 	const char* filename;
 	int line;
@@ -22,7 +25,8 @@ typedef struct Token{
 }Token;
 
 // check of two tokens point to strings with the same content
-bool Token_symbolEqual(Token*,Token*);
+bool Token_equalToken(Token*,Token*);
+bool Token_equalString(Token*,char*);
 
 typedef struct Tokenizer{
 	int num_tokens;
@@ -42,6 +46,9 @@ struct TokenIter{
 void TokenIter_init(struct TokenIter*token_iter,Tokenizer*tokenizer,struct TokenIterConfig config);
 // returns true if token was returned
 int TokenIter_nextToken(struct TokenIter*iter,Token*out);
+bool TokenIter_isEmpty(struct TokenIter*iter);
+// returns true if token was returned
+int TokenIter_lastToken(struct TokenIter*iter,Token*out);
 
 
 static const char*KEYWORD_SWITCH="switch";
@@ -92,3 +99,4 @@ static const char*KEYWORD_CURLY_BRACES_OPEN="{";
 static const char*KEYWORD_CURLY_BRACES_CLOSE="}";
 static const char*KEYWORD_COLON=":";
 static const char*KEYWORD_SEMICOLON=";";
+static const char*KEYWORD_COMMA=",";

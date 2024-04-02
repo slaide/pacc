@@ -7,7 +7,8 @@ function run_test () {
     if [ $? -eq 0 ]; then
         echo "Success: '$command'"
     else
-        echo "Error: '$command' failed with exit code $?."
+        echo "Error: '$command' failed with exit code $?"
+        exit $?
     fi
 }
 

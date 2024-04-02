@@ -1,14 +1,15 @@
 #pragma once
 
 #include<stdio.h>
-#include<stdlib.h>
 
 #define discard (void)
 
 #define EOFc (char)-1
 
-#define fprintln(F,...) {fprintf(F,"%s:%d | ",__FILE__,__LINE__); fprintf(F,__VA_ARGS__); fprintf(F,"\n");}
+#define fprint(F,...) {fprintf(F,"%s:%d | ",__FILE__,__LINE__); fprintf(F,__VA_ARGS__);}
+#define fprintln(F,...) {fprint(F,__VA_ARGS__); fprintf(F,"\n");}
 #define println(...) fprintln(stdout,__VA_ARGS__)
+#define print(...) fprint(stdout,__VA_ARGS__)
 #define fatal(...) {fprintln(stderr,__VA_ARGS__);exit(-1);}
 
 #ifdef DEVELOP
@@ -31,3 +32,6 @@ typedef struct String{
 	char*str;
 	int str_len;
 }String;
+
+/// @brief allocates size bytes memory and copies bytes memory from src into it
+void* allocAndCopy(size_t size,const void*src);

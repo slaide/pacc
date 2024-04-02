@@ -1,15 +1,29 @@
 #include<tokenizer.h>
 
-#include<util.h>
+#include<util/util.h>
 
 #include<stdlib.h>
 #include<string.h>
 
-bool Token_symbolEqual(Token* a,Token*b){
+bool Token_equalToken(Token* a,Token*b){
+	if(a==b){
+		return true;
+	}
+	if(a==nullptr || b==nullptr){
+		return false;
+	}
+
 	if(a->len!=b->len)
 		return false;
 
 	return strncmp(a->p,b->p,a->len)==0;
+}
+bool Token_equalString(Token* a,char* b){
+	int blen=strlen(b);
+	if(a->len!=blen)
+		return false;
+
+	return strncmp(a->p,b,a->len)==0;
 }
 
 // map to keywords
@@ -63,6 +77,7 @@ void Token_map(Token*token){
 		KEYWORD_CURLY_BRACES_CLOSE,
 		KEYWORD_COLON,
 		KEYWORD_SEMICOLON,
+		KEYWORD_COMMA,
 	};
 
 	static const int NUM_KEYWORDS=sizeof(KEYWORDS)/sizeof(KEYWORDS[0]);
@@ -71,6 +86,7 @@ void Token_map(Token*token){
 		if(strlen(KEYWORDS[i])==token->len){
 			if(strncmp(token->p,KEYWORDS[i],token->len)==0){
 				token->p=KEYWORDS[i];
+				token->tag=TOKEN_TAG_KEYWORD;
 				return;
 			}
 		}
@@ -88,7 +104,10 @@ bool char_is_token(char c){
 }
 
 
-int Tokenizer_init(Tokenizer*tokenizer,File*file){
+int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
+	tokenizer->num_tokens=0;
+	tokenizer->tokens=nullptr;
+
 	int line=0;
 	int col=0;
 
@@ -101,6 +120,7 @@ int Tokenizer_init(Tokenizer*tokenizer,File*file){
 			.line=line,
 			.col=col,
 			.p=p,
+			.tag=TOKEN_TAG_UNDEFINED,
 		};
 
 		// parse characters
@@ -110,7 +130,7 @@ int Tokenizer_init(Tokenizer*tokenizer,File*file){
 				case 0:
 				case EOF:
 					if(token.p==p){
-						return tokenizer->num_tokens;
+						goto tokenizer_init_ret;
 					}
 					goto token_end;
 					break;
@@ -150,7 +170,6 @@ int Tokenizer_init(Tokenizer*tokenizer,File*file){
 							col++;
 							p++;
 						}
-						token.tag=TOKEN_TAG_KEYWORD;
 						// if this is not the only char in the current token, do not advance p past it
 						// but still finish the current token
 						goto token_end;
@@ -168,7 +187,9 @@ int Tokenizer_init(Tokenizer*tokenizer,File*file){
 				continue;
 		}
 
-		// check for string literals
+		// check for compound tokens
+
+		// 1) string literals
 		if(token.len==1 && token.p[0]=='"'){
 			token.tag=TOKEN_TAG_LITERAL_STRING;
 
@@ -188,7 +209,7 @@ int Tokenizer_init(Tokenizer*tokenizer,File*file){
 			token.len=p-token.p;
 		}
 
-		// check for character literal
+		// 2) character literal
 		if(token.len==1 && token.p[0]=='\''){
 			token.tag=TOKEN_TAG_LITERAL_CHAR;
 
@@ -209,7 +230,7 @@ int Tokenizer_init(Tokenizer*tokenizer,File*file){
 			token.len=p-token.p;
 		}
 
-		// check for compound tokens
+		// 3) comment compound tokens
 		if(token.len==1 && tokenizer->num_tokens>0 && tokenizer->tokens[tokenizer->num_tokens-1].len==1){
 			Token*last_token=&tokenizer->tokens[tokenizer->num_tokens-1];
 			if(last_token->p[0]=='/'){
@@ -243,7 +264,152 @@ int Tokenizer_init(Tokenizer*tokenizer,File*file){
 			}
 		}
 
-        // parse preprocessor include directive argument which functions as string (i.e. do not strip whtiespace)
+		// 4) multi-character tokens
+		if(token.len==1 && tokenizer->num_tokens>0 && tokenizer->tokens[tokenizer->num_tokens-1].len==1){
+			Token*last_token=&tokenizer->tokens[tokenizer->num_tokens-1];
+			if(
+				// left shift
+				(last_token->p[0]=='<' && token.p[0]=='<')
+				||
+				// right shift
+				(last_token->p[0]=='>' && token.p[0]=='>')
+				||
+				// equality
+				(last_token->p[0]=='=' && token.p[0]=='=')
+				||
+				// inequality
+				(last_token->p[0]=='!' && token.p[0]=='=')
+				||
+				// less than or equal
+				(last_token->p[0]=='<' && token.p[0]=='=')
+				||
+				// greater than or equal
+				(last_token->p[0]=='>' && token.p[0]=='=')
+				||
+				// logical and
+				(last_token->p[0]=='&' && token.p[0]=='&')
+				||
+				// logical or
+				(last_token->p[0]=='|' && token.p[0]=='|')
+				||
+				// increment
+				(last_token->p[0]=='+' && token.p[0]=='+')
+				||
+				// decrement
+				(last_token->p[0]=='-' && token.p[0]=='-')
+			){
+				last_token->len=2;
+				last_token->tag=TOKEN_TAG_KEYWORD;
+
+				continue;
+			}
+		}
+
+		// check for number literals
+		while(token.len>0){
+			Token*numericToken=&token;
+
+			// check for leading sign
+			int hasSign=false;
+			if(numericToken->p[0]=='-' || numericToken->p[0]=='+'){
+				hasSign=true;
+				if(numericToken->len==1)
+					break;
+			}
+
+			int offset=hasSign;
+
+			// check for prefix (0x, 0b, 0o)
+			int hasPrefix=false;
+			if(numericToken->len>=2 && numericToken->p[offset]==0){
+				if(numericToken->p[offset+1]=='x' || numericToken->p[offset+1]=='X'){
+					hasPrefix=true;
+					if(numericToken->len==2)
+						break;
+				}
+				if(numericToken->p[offset+1]=='b' || numericToken->p[offset+1]=='B'){
+					hasPrefix=true;
+					if(numericToken->len==2)
+						break;
+				}
+				if(numericToken->p[offset+1]=='o' || numericToken->p[offset+1]=='O'){
+					hasPrefix=true;
+					if(numericToken->len==2)
+						break;
+				}
+			}
+			offset+=hasPrefix;
+
+			// check for leading digit[s]
+			int hasLeadingDigits=false;
+			while(offset<numericToken->len && numericToken->p[offset]>='0' && numericToken->p[offset]<='9'){
+				hasLeadingDigits=true;
+				offset++;
+			}
+
+			// check for decimal point (which may be the leading character, omitting any leading digit, e.g. ".5")
+			int hasDecimalPoint=false;
+			if(numericToken->p[offset]=='.'){
+				hasDecimalPoint=true;
+				if(numericToken->len==offset+1)
+					break;
+			}
+			offset+=hasDecimalPoint;
+
+			// check for trailing digits (can only be present if there is a decimal point)
+			int hasTrailingDigits=false;
+			if(hasDecimalPoint){
+				// check for trailing digits
+				while(offset<numericToken->len && numericToken->p[offset]>='0' && numericToken->p[offset]<='9'){
+					hasTrailingDigits=true;
+					offset++;
+				}
+			}
+
+			// check for exponent
+			int hasExponent=false;
+			if(offset<numericToken->len && (numericToken->p[offset]=='e' || numericToken->p[offset]=='E')){
+				hasExponent=true;
+				offset++;
+				if(offset==numericToken->len)
+					break;
+			}
+
+			// check for exponent sign
+			int hasExponentSign=false;
+			if(hasExponent && (numericToken->p[offset]=='-' || numericToken->p[offset]=='+')){
+				hasExponentSign=true;
+				offset++;
+				if(offset==numericToken->len)
+					break;
+			}
+
+			// check for exponent digits (exponent must have at least one digit, and be base10 integer)
+			int hasExponentDigits=false;
+			while(offset<numericToken->len && numericToken->p[offset]>='0' && numericToken->p[offset]<='9'){
+				hasExponentDigits=true;
+				offset++;
+			}
+
+			// check if all characters in token have been processed (if not, this is not a valid number)
+			if(offset<numericToken->len)
+				break;
+
+			if(hasExponent && !hasExponentDigits){
+				fatal("invalid number literal");
+			}
+
+			// check for flags to determine number type
+			if(hasDecimalPoint || hasExponent){
+				numericToken->tag=TOKEN_TAG_LITERAL_FLOAT;
+			}else{
+				numericToken->tag=TOKEN_TAG_LITERAL_INTEGER;
+			}
+
+			break;
+		}
+
+        // parse preprocessor include directive argument which functions as string (i.e. do not strip whitespace)
         if(token.len==1 && token.p[0]=='<' && tokenizer->num_tokens>=2){
             if(
                 // if two preceding tokens are # and include
@@ -258,9 +424,9 @@ int Tokenizer_init(Tokenizer*tokenizer,File*file){
                     )
                 )
                 &&
-                tokenizer->tokens[tokenizer->num_tokens-2].p==KEYWORD_HASH
+                Token_equalString(&tokenizer->tokens[tokenizer->num_tokens-2],KEYWORD_HASH)
                 &&
-                tokenizer->tokens[tokenizer->num_tokens-1].p==KEYWORD_INCLUDE
+                Token_equalString(&tokenizer->tokens[tokenizer->num_tokens-1],KEYWORD_INCLUDE)
             ){
                 token.tag=TOKEN_TAG_PREP_INCLUDE_ARGUMENT;
 
@@ -277,13 +443,42 @@ int Tokenizer_init(Tokenizer*tokenizer,File*file){
             fatal("how did this happen!? line %d col %d \n",line,col);
         }
 
-		Token_map(&token);
-
 		tokenizer->num_tokens++;
 		tokenizer->tokens=realloc(tokenizer->tokens,(tokenizer->num_tokens)*sizeof(Token));
 
 		tokenizer->tokens[tokenizer->num_tokens-1]=token;
 	}
+
+	tokenizer_init_ret:
+		// go through tokens and make sure none are undefined
+		for(int i=0;i<tokenizer->num_tokens;i++){
+
+			//Token_map(&tokenizer->tokens[i]);
+
+			if(tokenizer->tokens[i].tag!=TOKEN_TAG_UNDEFINED){
+				continue;
+			}
+
+			// if token is undefined, check if is a symbol
+			if(
+				(tokenizer->tokens[i].p[0]>='a' && tokenizer->tokens[i].p[0]<='z')
+				||
+				(tokenizer->tokens[i].p[0]>='A' && tokenizer->tokens[i].p[0]<='Z')
+				||
+				(tokenizer->tokens[i].p[0]=='_')
+			){
+				tokenizer->tokens[i].tag=TOKEN_TAG_SYMBOL;
+				continue;
+			}
+
+			if(char_is_token(tokenizer->tokens[i].p[0])){
+				tokenizer->tokens[i].tag=TOKEN_TAG_KEYWORD;
+				continue;
+			}
+			
+			fatal("undefined token %.*s in line %d col %d",tokenizer->tokens[i].len,tokenizer->tokens[i].p,tokenizer->tokens[i].line,tokenizer->tokens[i].col);
+		}
+		return tokenizer->num_tokens;
 }
 
 void TokenIter_init(
@@ -307,4 +502,16 @@ int TokenIter_nextToken(struct TokenIter*iter,Token*out){
         return TokenIter_nextToken(iter,out);
 
     return true;
+}
+int TokenIter_lastToken(struct TokenIter*iter,Token*out){
+	if(iter->next_token_index<=0){
+		return false;
+	}
+	
+	*out=iter->tokenizer->tokens[iter->next_token_index-1];
+
+	return true;
+}
+bool TokenIter_isEmpty(struct TokenIter*iter){
+	return iter->next_token_index>=iter->tokenizer->num_tokens;
 }

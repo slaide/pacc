@@ -2,6 +2,7 @@
 
 #include<stdlib.h>
 #include<stdio.h>
+#include<string.h>
 
 void File_read(const char*filepath,File*out){
 	FILE* file=fopen(filepath,"r");
@@ -14,7 +15,15 @@ void File_read(const char*filepath,File*out){
 	fclose(file);
 	
 	*out=(File){
+		.filepath=filepath,
 		.contents=file_contents,
 		.contents_len=file_len,
+	};
+}
+void File_fromString(const char*filepath,const char*str,File*out){
+	*out=(File){
+		.filepath=filepath,
+		.contents=str,
+		.contents_len=strlen(str),
 	};
 }
