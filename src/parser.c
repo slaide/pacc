@@ -3,6 +3,73 @@
 #include<tokenizer.h>
 #include<ctype.h> // isalpha, isalnum
 
+
+const char* Symbolkind_asString(enum SYMBOLKIND kind){
+	switch(kind){
+		case SYMBOL_KIND_UNKNOWN:
+			return("SYMBOL_KIND_UNKNOWN");
+		case SYMBOL_KIND_DECLARATION:
+			return("SYMBOL_KIND_DECLARATION");
+			break;
+		case SYMBOL_KIND_REFERENCE:
+			return("SYMBOL_KIND_REFERENCE");
+		default:
+			fatal("unknown symbol kind %d",kind);
+	}
+}
+const char* Statementkind_asString(enum STATEMENT_KIND kind){
+	switch(kind){
+		case STATEMENT_UNKNOWN:
+			return("STATEMENT_UNKNOWN");
+		case STATEMENT_PREP_DEFINE:
+			return("STATEMENT_PREP_DEFINE");
+		case STATEMENT_PREP_INCLUDE:
+			return("STATEMENT_PREP_INCLUDE");
+		case STATEMENT_FUNCTION_DECLARATION:
+			return("STATEMENT_FUNCTION_DECLARATION");
+		case STATEMENT_FUNCTION_DEFINITION:
+			return("STATEMENT_FUNCTION_DEFINITION");
+		case STATEMENT_RETURN:
+			return("STATEMENT_RETURN");
+		case STATEMENT_IF:
+			return("STATEMENT_IF");
+		case STATEMENT_SWITCH:
+			return("STATEMENT_SWITCH");
+		case STATEMENT_CASE:
+			return("STATEMENT_CASE");
+		case STATEMENT_BREAK:
+			return("STATEMENT_BREAK");
+		case STATEMENT_CONTINUE:
+			return("STATEMENT_CONTINUE");
+		case STATEMENT_DEFAULT:
+			return("STATEMENT_DEFAULT");
+		case STATEMENT_GOTO:
+			return("STATEMENT_GOTO");
+		case STATEMENT_LABEL:
+			return("STATEMENT_LABEL");
+		case STATEMENT_WHILE:
+			return("STATEMENT_WHILE");
+		case STATEMENT_FOR:
+			return("STATEMENT_FOR");
+		default:
+			fatal("unknown symbol kind %d",kind);
+	}
+
+}
+const char* ValueKind_asString(enum VALUE_KIND kind){
+	switch(kind){
+		case VALUE_KIND_STATIC_VALUE:
+			return("VALUE_KIND_STATIC_VALUE");
+		case VALUE_KIND_OPERATOR:
+			return("VALUE_KIND_STATIC_VALUE");
+		case VALUE_KIND_SYMBOL_REFERENCE:
+			return("VALUE_KIND_STATIC_VALUE");
+		default:
+			fatal("unknown value kind %d",kind);
+	}
+
+}
+
 void Type_init(Type**type){
 	*type=allocAndCopy(sizeof(Type),&(Type){});
 }
@@ -65,10 +132,7 @@ bool Token_isValidIdentifier(Token*token){
 	return true;
 }
 
-/// @brief  type cannot be parsed separate from symbol, so we parse a symbol as combination of type and name parser
-/// @param symbol 
-/// @param token_iter 
-void Symbol_parse(Symbol*symbol,struct TokenIter*token_iter){
+enum SYMBOL_PARSE_RESULT Symbol_parse(Symbol*symbol,struct TokenIter*token_iter){
 	*symbol=(Symbol){};
 	Type_init(&symbol->type);
 
@@ -83,8 +147,9 @@ void Symbol_parse(Symbol*symbol,struct TokenIter*token_iter){
 		TokenIter_nextToken(token_iter,&token);
 	}
 
+	// verify name of type is valid
 	if(!Token_isValidIdentifier(&token))
-		fatal("expected valid identifier at line %d col %d %.*s",token.line,token.col,token.len,token.p);
+		fatal("expected valid identifier at line %d col %d but got instead %.*s",token.line,token.col,token.len,token.p);
 
 	symbol->type->kind=TYPE_KIND_REFERENCE;
 	symbol->type->reference=token;
@@ -104,6 +169,10 @@ void Symbol_parse(Symbol*symbol,struct TokenIter*token_iter){
 		}
 
 		if(symbol->name==nullptr){
+			// verify name of symbol is valid
+			if(!Token_isValidIdentifier(&token)){
+				fatal("expected valid identifier at line %d col %d but got instead %.*s",token.line,token.col,token.len,token.p);
+			}
 			symbol->name=allocAndCopy(sizeof(Token),&token);
 			TokenIter_nextToken(token_iter,&token);
 		}
@@ -155,6 +224,8 @@ void Symbol_parse(Symbol*symbol,struct TokenIter*token_iter){
 
 		break;
 	}
+
+	return SYMBOL_PRESENT;
 }
 
 enum VALUE_PARSE_RESULT{
@@ -179,10 +250,11 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter){
 		case TOKEN_TAG_LITERAL_INTEGER:
 		{
 			println("got integer value %.*s",token.len,token.p);
+			Token literalValueToken=token;
 			TokenIter_nextToken(token_iter,&token);
 
 			value->kind=VALUE_KIND_STATIC_VALUE;
-			value->static_value.value_repr=allocAndCopy(sizeof(Token),&token);
+			value->static_value.value_repr=allocAndCopy(sizeof(Token),&literalValueToken);
 			break;
 		}
 		case TOKEN_TAG_LITERAL_STRING:
@@ -434,6 +506,10 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 		}
 		if(Token_equalString(&token,";")){
 			TokenIter_nextToken(token_iter,&token);
+
+			out->tag=STATEMENT_RETURN;
+			out->return_.retval=allocAndCopy(sizeof(Value),&returnValue);
+
 			return STATEMENT_PRESENT;
 		}
 		fatal("missing semicolon after return statement at line %d col %d %.*s",token.line,token.col,token.len,token.p);
@@ -466,7 +542,10 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 	// parse symbol definition
 	{
 		Symbol symbol={};
-		Symbol_parse(&symbol,token_iter);
+		enum SYMBOL_PARSE_RESULT symbolParseResult=Symbol_parse(&symbol,token_iter);
+		if(symbolParseResult==STATEMENT_INVALID){
+			fatal("invalid symbol in statement. TODO parse value instead");
+		}
 		TokenIter_lastToken(token_iter,&token);
 
 		println("symbol name %.*s",symbol.name->len,symbol.name->p);

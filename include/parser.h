@@ -66,6 +66,8 @@ enum VALUE_KIND{
 	VALUE_KIND_OPERATOR,
 	VALUE_KIND_SYMBOL_REFERENCE,
 };
+const char* ValueKind_asString(enum VALUE_KIND kind);
+
 enum VALUE_OPERATOR{
 	VALUE_OPERATOR_ADD,
 	VALUE_OPERATOR_SUB,
@@ -108,6 +110,7 @@ enum SYMBOLKIND{
 	/// @brief reference to a symbol, i.e. does not include type information
 	SYMBOL_KIND_REFERENCE,
 };
+const char* Symbolkind_asString(enum SYMBOLKIND kind);
 
 typedef struct Symbol Symbol;
 struct Symbol{
@@ -115,33 +118,45 @@ struct Symbol{
 	enum SYMBOLKIND kind;
 	Type* type;
 };
-void Symbol_parse(Symbol*symbol,struct TokenIter*token_iter);
+enum SYMBOL_PARSE_RESULT{
+	/// @brief symbol was parsed successfully
+	SYMBOL_PRESENT,
+	/// @brief symbol was not parsed successfully (e.g. syntax error)
+	SYMBOL_INVALID,
+};
+/// @brief  type cannot be parsed separate from symbol, so we parse a symbol as combination of type and name parser
+/// @param symbol 
+/// @param token_iter 
+enum SYMBOL_PARSE_RESULT Symbol_parse(Symbol*symbol,struct TokenIter*token_iter);
+
+enum STATEMENT_KIND{
+	STATEMENT_UNKNOWN=0,
+
+	STATEMENT_PREP_DEFINE,
+	STATEMENT_PREP_INCLUDE,
+
+	/// @brief function declaration, e.g. int foo(int a, int b);
+	STATEMENT_FUNCTION_DECLARATION,
+	/// @brief function definition, e.g. int foo(int a, int b){ return a+b; }
+	STATEMENT_FUNCTION_DEFINITION,
+	/// @brief return statement, e.g. return 0;
+	STATEMENT_RETURN,
+	STATEMENT_IF,
+	STATEMENT_SWITCH,
+	STATEMENT_CASE,
+	STATEMENT_BREAK,
+	STATEMENT_CONTINUE,
+	STATEMENT_DEFAULT,
+	STATEMENT_GOTO,
+	STATEMENT_LABEL,
+	STATEMENT_WHILE,
+	STATEMENT_FOR,
+};
+const char* Statementkind_asString(enum STATEMENT_KIND kind);
 
 typedef struct Statement Statement;
 struct Statement{
-	enum{
-		STATEMENT_UNKNOWN=0,
-
-		STATEMENT_PREP_DEFINE,
-		STATEMENT_PREP_INCLUDE,
-
-		/// @brief function declaration, e.g. int foo(int a, int b);
-		STATEMENT_FUNCTION_DECLARATION,
-		/// @brief function definition, e.g. int foo(int a, int b){ return a+b; }
-		STATEMENT_FUNCTION_DEFINITION,
-		/// @brief return statement, e.g. return 0;
-		STATEMENT_RETURN,
-		STATEMENT_IF,
-		STATEMENT_SWITCH,
-		STATEMENT_CASE,
-		STATEMENT_BREAK,
-		STATEMENT_CONTINUE,
-		STATEMENT_DEFAULT,
-		STATEMENT_GOTO,
-		STATEMENT_LABEL,
-		STATEMENT_WHILE,
-		STATEMENT_FOR,
-	}tag;
+	enum STATEMENT_KIND tag;
 	union{
 		/// @brief #define preprocessor directive
 		/// also see STATEMENT_PREP_DEFINE_ARGUMENT

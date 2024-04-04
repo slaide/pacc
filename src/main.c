@@ -5,7 +5,27 @@ bool Type_equal(Type*a,Type*b);
 bool Symbol_equal(Symbol*a,Symbol*b);
 bool Statement_equal(Statement*a,Statement*b);
 bool Module_equal(Module*a,Module*b);
+bool Value_equal(Value*a,Value*b);
 
+
+bool Value_equal(Value*a,Value*b){
+	if(a->kind!=b->kind){
+		println("kind mismatch when comparing values %s %s",ValueKind_asString(a->kind),ValueKind_asString(b->kind));
+		return false;
+	}
+
+	switch(a->kind){
+		case VALUE_KIND_STATIC_VALUE:{
+			bool ret=Token_equalToken(a->static_value.value_repr,b->static_value.value_repr);
+			if(!ret){
+				println("value mismatch when comparing static values %.*s %.*s",a->static_value.value_repr->len,a->static_value.value_repr->p,b->static_value.value_repr->len,b->static_value.value_repr->p);
+			}
+			return ret;
+		}
+		default:
+			fatal("unimplemented %d",a->kind);
+	}
+}
 bool Type_equal(Type*a,Type*b){
 	if(a==b){
 		return true;
@@ -112,6 +132,15 @@ bool Statement_equal(Statement*a,Statement*b){
 					println("statement %d mismatch",i);
 					return false;
 				}
+			}
+			return true;
+		}
+
+		case STATEMENT_RETURN:{
+			println("comparing return statements");
+			if(!Value_equal(a->return_.retval,b->return_.retval)){
+				println("return value mismatch");
+				return false;
 			}
 			return true;
 		}
