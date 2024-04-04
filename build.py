@@ -49,8 +49,8 @@ class BuildModeFlags:
     linker_flags:str
     
 build_mode_flags=dict(
-    debug = BuildModeFlags("-O0 -g","-g"),
-    debugRelease = BuildModeFlags("-O2 -g","-g"),
+    debug = BuildModeFlags("-O0 -g",""),
+    debugRelease = BuildModeFlags("-O2 -g",""),
     release = BuildModeFlags("-O3","-s -flto=full"),
 )
 default_build_mode="debug"
