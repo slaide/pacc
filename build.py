@@ -105,25 +105,31 @@ cc=Command(cmd=clang_comp_str,
 )
 link=Command(cmd=clang_link_str,output="manual")
 
+# get build dependencies from #inclues : clang -Iwhatever -M -MT main.exe -MF main.d main.c
 
-def main():
-    obj_files=[cc(f) for f in [
-        "src/util/array.c",
-        "src/util/util.c",
-        "src/parser.c",
-        "src/file.c",
-        "src/tokenizer.c",
-        "src/main.c",
-    ]]
+if __name__=="__main__":
+    try:
+        obj_files=[cc(f) for f in [
+            "src/util/array.c",
+            "src/util/util.c",
 
-    app=link(depends=obj_files+[mkdir(output="bin")], output="bin/main")
-    app.get()
+            "src/parser/parser.c",
+            "src/parser/asString.c",
+            "src/parser/statement.c",
+            "src/parser/symbol.c",
+            "src/parser/type.c",
+            "src/parser/value.c",
 
-try:
-    main()
-except Exception as e:
-    print(e)
-    print("building failed. aborting.")
+            "src/file.c",
+            "src/tokenizer.c",
+            "src/main.c",
+        ]]
+
+        app=link(depends=obj_files+[mkdir(output="bin")], output="bin/main")
+        app.get()
+    except Exception as e:
+        print(e)
+        print("building failed. aborting.")
 
 """
 

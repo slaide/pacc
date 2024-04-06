@@ -1,5 +1,5 @@
 #include <util/util.h>
-#include <parser.h>
+#include <parser/parser.h>
 
 bool Type_equal(Type*a,Type*b);
 bool Symbol_equal(Symbol*a,Symbol*b);
