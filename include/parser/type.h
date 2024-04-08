@@ -61,3 +61,4 @@ struct Type{
 void Type_print(Type* type);
 
 void Type_init(Type**type);
+bool Type_equal(Type*a,Type*b);

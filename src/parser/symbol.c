@@ -97,3 +97,21 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Symbol*symbol,struct TokenIter*token_iter)
 
 	return SYMBOL_PRESENT;
 }
+bool Symbol_equal(Symbol*a,Symbol*b){
+	if(a->kind!=b->kind){
+		println("kind mismatch when comparing symbols %d %d",a->kind,b->kind);
+		return false;
+	}
+
+	if(!Token_equalToken(a->name,b->name)){
+		println("name mismatch when comparing symbols %.*s %.*s",a->name->len,a->name->p,b->name->len,b->name->p);
+		return false;
+	}
+
+	if(!Type_equal(a->type,b->type)){
+		println("type mismatch when comparing symbols %.*s",a->name->len,a->name->p);
+		return false;
+	}
+
+	return true;
+}

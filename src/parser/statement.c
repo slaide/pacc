@@ -1,7 +1,6 @@
 #include<parser/parser.h>
 #include<util/util.h>
 #include<tokenizer.h>
-#include<ctype.h> // isalpha, isalnum
 
 enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token_iter){
 	Token token;
@@ -238,4 +237,60 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 	}
 
 	return STATEMENT_INVALID;
+}
+bool Statement_equal(Statement*a,Statement*b){
+	if(a->tag!=b->tag){
+		println("tag mismatch when comparing statements %d %d",a->tag,b->tag);
+		return false;
+	}
+
+	switch(a->tag){
+		case STATEMENT_PREP_DEFINE:{
+			return Token_equalToken(&a->prep_define.name,&b->prep_define.name);
+				//&& Token_equalToken(&a->prep_define.value,&b->prep_define.value);
+		}
+		case STATEMENT_PREP_INCLUDE:{
+			return Token_equalToken(&a->prep_include.path,&b->prep_include.path);
+		}
+		case STATEMENT_FUNCTION_DECLARATION:{
+			println("comparing function declarations");
+			return Symbol_equal(&a->functionDecl.symbol,&b->functionDecl.symbol);
+		}
+		case STATEMENT_FUNCTION_DEFINITION:{
+			println("comparing function definitions");
+			if(!Symbol_equal(&a->functionDef.symbol,&b->functionDef.symbol)){
+				println("symbol mismatch");
+				return false;
+			}
+
+			if(a->functionDef.bodyStatements.len!=b->functionDef.bodyStatements.len){
+				println("body statement count mismatch %d %d",a->functionDef.bodyStatements.len,b->functionDef.bodyStatements.len);
+				return false;
+			}
+
+			for(int i=0;i<a->functionDef.bodyStatements.len;i++){
+				Statement*sa=array_get(&a->functionDef.bodyStatements,i);
+				Statement*sb=array_get(&b->functionDef.bodyStatements,i);
+				if(!Statement_equal(sa,sb)){
+					println("statement %d mismatch",i);
+					return false;
+				}
+			}
+			return true;
+		}
+
+		case STATEMENT_RETURN:{
+			println("comparing return statements");
+			if(!Value_equal(a->return_.retval,b->return_.retval)){
+				println("return value mismatch");
+				return false;
+			}
+			return true;
+		}
+	
+		default:
+			fatal("unimplemented");
+	}
+
+	return true;
 }

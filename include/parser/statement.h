@@ -81,3 +81,4 @@ enum STATEMENT_PARSE_RESULT{
 	STATEMENT_INVALID,
 };
 enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token_iter);
+bool Statement_equal(Statement*a,Statement*b);

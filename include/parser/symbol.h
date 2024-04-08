@@ -30,3 +30,5 @@ enum SYMBOL_PARSE_RESULT{
 /// @param symbol 
 /// @param token_iter 
 enum SYMBOL_PARSE_RESULT Symbol_parse(Symbol*symbol,struct TokenIter*token_iter);
+
+bool Symbol_equal(Symbol*a,Symbol*b);

@@ -105,7 +105,7 @@ cc=Command(cmd=clang_comp_str,
 )
 link=Command(cmd=clang_link_str,output="manual")
 
-# get build dependencies from #inclues : clang -Iwhatever -M -MT main.exe -MF main.d main.c
+# get build dependencies from #inclues : clang -Iwhatever -std=c2x -M -MT main.exe -MF main.d main.c
 
 if __name__=="__main__":
     try:

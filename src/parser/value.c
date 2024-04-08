@@ -1,7 +1,6 @@
 #include<parser/parser.h>
 #include<util/util.h>
 #include<tokenizer.h>
-#include<ctype.h> // isalpha, isalnum
 
 
 enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter){
@@ -153,4 +152,23 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter){
 		}
 	}
 	fatal("");
+}
+
+bool Value_equal(Value*a,Value*b){
+	if(a->kind!=b->kind){
+		println("kind mismatch when comparing values %s %s",ValueKind_asString(a->kind),ValueKind_asString(b->kind));
+		return false;
+	}
+
+	switch(a->kind){
+		case VALUE_KIND_STATIC_VALUE:{
+			bool ret=Token_equalToken(a->static_value.value_repr,b->static_value.value_repr);
+			if(!ret){
+				println("value mismatch when comparing static values %.*s %.*s",a->static_value.value_repr->len,a->static_value.value_repr->p,b->static_value.value_repr->len,b->static_value.value_repr->p);
+			}
+			return ret;
+		}
+		default:
+			fatal("unimplemented %d",a->kind);
+	}
 }

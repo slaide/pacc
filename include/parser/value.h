@@ -53,3 +53,4 @@ enum VALUE_PARSE_RESULT{
 	VALUE_INVALID,
 };
 enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter);
+bool Value_equal(Value*a,Value*b);

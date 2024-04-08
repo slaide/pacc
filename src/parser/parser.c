@@ -139,3 +139,19 @@ void Module_parse(Module* module,Tokenizer*tokenizer){
 		}
 	}
 }
+bool Module_equal(Module*a,Module*b){
+	if(a->statements.len!=b->statements.len){
+		println("statement count mismatch %d %d",a->statements.len,b->statements.len);
+		return false;
+	}
+
+	for(int i=0;i<a->statements.len;i++){
+		Statement*sa=array_get(&a->statements,i);
+		Statement*sb=array_get(&b->statements,i);
+		if(!Statement_equal(sa,sb)){
+			println("statement %d mismatch",i);
+			return false;
+		}
+	}
+	return true;
+}
