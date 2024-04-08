@@ -1,13 +1,14 @@
 function run_test () {
+    printf "\033[1mRunning test: '$1'\033[0m\\n"
     argument="$1"
     command="bin/main $argument"
 
     $command
 
     if [ $? -eq 0 ]; then
-        echo "Success: '$command'"
+        printf "\033[1;32mSuccess: '$command'\033[0m\\n"
     else
-        echo "Error: '$command' failed with exit code $?"
+        printf "\033[1;31mError: '$command' failed with exit code $?\033[0m\\n"
         exit $?
     fi
 }
