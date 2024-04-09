@@ -2,7 +2,10 @@
 #include<util/util.h>
 #include<tokenizer.h>
 
-enum SYMBOL_PARSE_RESULT Symbol_parse(Symbol*symbol,struct TokenIter*token_iter){
+enum SYMBOL_PARSE_RESULT Symbol_parse(Symbol*symbol,struct TokenIter*token_iter_in){
+	struct TokenIter this_iter=*token_iter_in;
+	struct TokenIter *token_iter=&this_iter;
+
 	*symbol=(Symbol){};
 	Type_init(&symbol->type);
 
@@ -41,7 +44,7 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Symbol*symbol,struct TokenIter*token_iter)
 		if(symbol->name==nullptr){
 			// verify name of symbol is valid
 			if(!Token_isValidIdentifier(&token)){
-				fatal("expected valid identifier at line %d col %d but got instead %.*s",token.line,token.col,token.len,token.p);
+				return SYMBOL_INVALID;
 			}
 			symbol->name=allocAndCopy(sizeof(Token),&token);
 			TokenIter_nextToken(token_iter,&token);
@@ -94,6 +97,8 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Symbol*symbol,struct TokenIter*token_iter)
 
 		break;
 	}
+
+	*token_iter_in=this_iter;
 
 	return SYMBOL_PRESENT;
 }

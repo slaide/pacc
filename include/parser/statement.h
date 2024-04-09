@@ -28,6 +28,7 @@ enum STATEMENT_KIND{
 	STATEMENT_LABEL,
 	STATEMENT_WHILE,
 	STATEMENT_FOR,
+	STATEMENT_VALUE,
 };
 const char* Statementkind_asString(enum STATEMENT_KIND kind);
 
@@ -71,6 +72,10 @@ struct Statement{
 		struct{
 			Value* retval;
 		}return_;
+
+		struct{
+			Value* value;
+		}value;
 	};
 };
 

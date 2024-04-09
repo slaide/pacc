@@ -150,11 +150,11 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 	}
 
 	// parse symbol definition
-	{
+	do{
 		Symbol symbol={};
 		enum SYMBOL_PARSE_RESULT symbolParseResult=Symbol_parse(&symbol,token_iter);
 		if(symbolParseResult==STATEMENT_INVALID){
-			fatal("invalid symbol in statement. TODO parse value instead");
+			break;
 		}
 		TokenIter_lastToken(token_iter,&token);
 
@@ -234,7 +234,27 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 				TokenIter_nextToken(token_iter,&token);
 				return STATEMENT_PRESENT;
 		}
-	}
+	}while(0);
+
+	do{
+		Value value;
+		enum VALUE_PARSE_RESULT res=Value_parse(&value,token_iter);
+		TokenIter_lastToken(token_iter,&token);
+		if(res==VALUE_INVALID){
+			break;
+		}
+
+		out->tag=STATEMENT_VALUE;
+		out->value.value=allocAndCopy(sizeof(Value),&value);
+
+		// check for terminating ;
+		if(!Token_equalString(&token,";")){
+			fatal("expected semicolon after statement: line %d col %d %.*s",token.line,token.col,token.len,token.p);
+		}
+		TokenIter_nextToken(token_iter,&token);
+
+		return STATEMENT_PRESENT;
+	}while(0);
 
 	return STATEMENT_INVALID;
 }
