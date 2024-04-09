@@ -9,6 +9,7 @@ enum VALUE_KIND{
 	VALUE_KIND_STATIC_VALUE,
 	VALUE_KIND_OPERATOR,
 	VALUE_KIND_SYMBOL_REFERENCE,
+	VALUE_KIND_FUNCTION_CALL,
 };
 const char* ValueKind_asString(enum VALUE_KIND kind);
 
@@ -23,6 +24,7 @@ enum VALUE_OPERATOR{
 	VALUE_OPERATOR_POSTFIX_DECREMENT,
 	
 	VALUE_OPERATOR_CALL,
+	VALUE_OPERATOR_INDEX,
 	VALUE_OPERATOR_DOT,
 	VALUE_OPERATOR_ARROW,
 };
@@ -32,16 +34,24 @@ struct Value{
 	union{
 		/// @brief VALUE_KIND_SYMBOL_REFERENCE reference to a symbol
 		Token*symbol;
+
 		/// @brief VALUE_KIND_STATIC_VALUE static value
 		struct{
 			Token*value_repr;
 		}static_value;
+
 		/// @brief VALUE_KIND_OPERATOR operator
 		struct{
 			Value*left;
 			Value*right;
 			enum VALUE_OPERATOR op;
 		}op;
+
+		/// @brief VALUE_KIND_FUNCTION_CALL function call
+		struct{
+			Token*name;
+			array args;
+		}function_call;
 	};
 	Type* type;
 };

@@ -112,7 +112,7 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter){
 				TokenIter_lastToken(token_iter,&token);
 				switch(res){
 					case VALUE_INVALID:
-						fatal("invalid value in function call");
+						fatal("invalid value in function call, got instead %.*s",token.len,token.p);
 						break;
 					case VALUE_PRESENT:
 						println("got value in function call");
@@ -121,7 +121,11 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter){
 				}
 			}
 			println("found function call with %d arguments",values.len);
-			break;
+
+			value->kind=VALUE_KIND_FUNCTION_CALL;
+			value->function_call.args=values;			
+
+			return VALUE_PRESENT;
 		}
 		default:{
 			Value ret={
