@@ -53,6 +53,7 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter){
 	TokenIter_lastToken(token_iter,&token);
 	enum VALUE_OPERATOR op;
 	bool requiresSecondOperand=false;
+	const char*opTerminator=nullptr;
 	if(Token_equalString(&token,"+")){
 		op=VALUE_OPERATOR_ADD;
 		requiresSecondOperand=true;
@@ -83,6 +84,12 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter){
 		op=VALUE_OPERATOR_ARROW;
 	}else if(Token_equalString(&token,"(")){
 		op=VALUE_OPERATOR_CALL;
+		requiresSecondOperand=false;
+		opTerminator=")";
+	}else if(Token_equalString(&token,"[")){
+		op=VALUE_OPERATOR_INDEX;
+		requiresSecondOperand=true;
+		opTerminator="]";
 	}
 	else{
 		return VALUE_PRESENT;
@@ -149,6 +156,13 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter){
 						println("got value after operator");
 						break;
 				}
+			}
+
+			if(opTerminator){
+				if(!Token_equalString(&token,opTerminator)){
+					fatal("expected %s after operator",opTerminator);
+				}
+				TokenIter_nextToken(token_iter,&token);
 			}
 
 			*value=ret;
