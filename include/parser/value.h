@@ -29,6 +29,8 @@ enum VALUE_OPERATOR{
 	VALUE_OPERATOR_ARROW,
 };
 typedef struct Value Value;
+
+char*Value_asString(Value*value);
 struct Value{
 	enum VALUE_KIND kind;
 	union{

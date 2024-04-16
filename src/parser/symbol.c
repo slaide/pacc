@@ -52,8 +52,6 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Symbol*symbol,struct TokenIter*token_iter_
 
 		// check for function
 		if(Token_equalString(&token,"(")){
-			println("function %.*s",symbol->name->len,symbol->name->p);
-
 			Type* ret=symbol->type;
 			Type_init(&symbol->type);
 
@@ -81,8 +79,6 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Symbol*symbol,struct TokenIter*token_iter_
 				Symbol argument={};
 				Symbol_parse(&argument,token_iter);
 				TokenIter_lastToken(token_iter,&token);
-				println("argument name %.*s",argument.name->len,argument.name->p);
-				Type_print(argument.type);
 
 				array_append(&args,&argument);
 			}

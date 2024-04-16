@@ -6,19 +6,20 @@
 enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter){
 	Token token;
 	TokenIter_lastToken(token_iter,&token);
+	/// used by some cases
+	Token nameToken=token;
 
 	switch(token.tag){
 		case TOKEN_TAG_LITERAL_CHAR:{
-			println("got char value %.*s",token.len,token.p);
+			Token literalValueToken=token;
 			TokenIter_nextToken(token_iter,&token);
 
 			value->kind=VALUE_KIND_STATIC_VALUE;
-			value->static_value.value_repr=allocAndCopy(sizeof(Token),&token);
+			value->static_value.value_repr=allocAndCopy(sizeof(Token),&literalValueToken);
 			break;
 		}
 		case TOKEN_TAG_LITERAL_INTEGER:
 		{
-			println("got integer value %.*s",token.len,token.p);
 			Token literalValueToken=token;
 			TokenIter_nextToken(token_iter,&token);
 
@@ -28,19 +29,19 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter){
 		}
 		case TOKEN_TAG_LITERAL_STRING:
 		{
-			println("got string value %.*s",token.len,token.p);
+			Token literalValueToken=token;
 			TokenIter_nextToken(token_iter,&token);
 
 			value->kind=VALUE_KIND_STATIC_VALUE;
-			value->static_value.value_repr=allocAndCopy(sizeof(Token),&token);
+			value->static_value.value_repr=allocAndCopy(sizeof(Token),&literalValueToken);
 			break;
 		}
 		case TOKEN_TAG_SYMBOL:
 		{
-			println("got symbol value %.*s",token.len,token.p);
 			TokenIter_nextToken(token_iter,&token);
 
 			value->kind=VALUE_KIND_SYMBOL_REFERENCE;
+			value->symbol=allocAndCopy(sizeof(Token),&nameToken);
 
 			break;
 		}
@@ -122,14 +123,13 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter){
 						fatal("invalid value in function call, got instead %.*s",token.len,token.p);
 						break;
 					case VALUE_PRESENT:
-						println("got value in function call");
 						array_append(&values,&arg);
 						break;
 				}
 			}
-			println("found function call with %d arguments",values.len);
 
 			value->kind=VALUE_KIND_FUNCTION_CALL;
+			value->function_call.name=allocAndCopy(sizeof(Token),&nameToken);
 			value->function_call.args=values;			
 
 			return VALUE_PRESENT;
@@ -153,7 +153,6 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter){
 						fatal("invalid value after operator");
 						break;
 					case VALUE_PRESENT:
-						println("got value after operator");
 						break;
 				}
 			}
@@ -170,6 +169,34 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter){
 		}
 	}
 	fatal("");
+}
+char*Value_asString(Value*value){
+	switch(value->kind){
+		case VALUE_KIND_STATIC_VALUE:{
+			char*ret=calloc(1024,1);
+			sprintf(ret,"%.*s",value->static_value.value_repr->len,value->static_value.value_repr->p);
+			return ret;
+		}
+		case VALUE_KIND_OPERATOR:
+			return "VALUE_KIND_OPERATOR unimplemented";
+		case VALUE_KIND_SYMBOL_REFERENCE:{
+			char*ret=calloc(1024,1);
+			sprintf(ret,"%.*s",value->symbol->len,value->symbol->p);
+			return ret;
+		}
+		case VALUE_KIND_FUNCTION_CALL:{
+			char*ret=calloc(1024,1);
+			sprintf(ret,"calling function %.*s with %d arguments",value->function_call.name->len,value->function_call.name->p,value->function_call.args.len);
+			for(int i=0;i<value->function_call.args.len;i++){
+				Value*arg=array_get(&value->function_call.args,i);
+				char*arg_str=Value_asString(arg);
+				sprintf(ret+strlen(ret),"\narg %d: %s",i,arg_str);
+			}
+			return ret;
+		}			
+		default:
+			fatal("unimplemented %d",value->kind);
+	}
 }
 
 bool Value_equal(Value*a,Value*b){

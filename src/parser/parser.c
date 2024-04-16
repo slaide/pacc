@@ -22,11 +22,10 @@ bool Token_isValidIdentifier(Token*token){
 	return true;
 }
 
-void Module_parse(Module* module,Tokenizer*tokenizer){
+enum MODULE_PARSE_RESULT Module_parse(Module* module,struct TokenIter*token_iter_in){
 	array_init(&module->statements,sizeof(Statement));
 
-	struct TokenIter token_iter;
-	TokenIter_init(&token_iter,tokenizer,(struct TokenIterConfig){.skip_comments=true,});
+	struct TokenIter token_iter=*token_iter_in;
 
 	Token token;
 	TokenIter_nextToken(&token_iter,&token);
@@ -82,17 +81,6 @@ void Module_parse(Module* module,Tokenizer*tokenizer){
 					// adjust for closing parenthesis
 					array_pop_front(&prep_body_tokens);
 				}
-				// debug print define name, args and body
-				println("define name %.*s",name.len,name.p);
-				for(int i=0;i<prep_args_tokens.len;i++){
-					Token* token=array_get(&prep_args_tokens,i);
-					println("define arg %.*s",token->len,token->p);
-				}
-				for(int i=0;i<prep_body_tokens.len;i++){
-					Token*t=array_get(&prep_body_tokens,i);
-					println("define body %.*s",t->len,t->p);
-				}
-
 
 				Statement prep_statement={
 					.tag=STATEMENT_PREP_DEFINE,
@@ -111,11 +99,10 @@ void Module_parse(Module* module,Tokenizer*tokenizer){
 				}
 
 				Token* incl_token=array_get(&prep_body_tokens,0);
-				println("including file %.*s",incl_token->len,incl_token->p);
 				Statement prep_statement={
 					.tag=STATEMENT_PREP_INCLUDE,
 					.prep_include={
-						.path=token,
+						.path=*incl_token,
 					}
 				};
 				array_append(&module->statements,&prep_statement);
@@ -130,7 +117,6 @@ void Module_parse(Module* module,Tokenizer*tokenizer){
 					fatal("invalid statement at line %d col %d",token.line,token.col);
 					break;
 				case STATEMENT_PRESENT:
-					println("found statement at line %d col %d",token.line,token.col);
 					array_append(&module->statements,&statement);
 					continue;
 			}
@@ -138,6 +124,9 @@ void Module_parse(Module* module,Tokenizer*tokenizer){
 			fatal("leftover tokens at end of file. next token is: line %d col %d %.*s",token.line,token.col,token.len,token.p);
 		}
 	}
+
+	*token_iter_in=token_iter;
+	return MODULE_PRESENT;
 }
 bool Module_equal(Module*a,Module*b){
 	if(a->statements.len!=b->statements.len){

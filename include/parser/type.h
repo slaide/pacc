@@ -58,7 +58,7 @@ struct Type{
 		}function;
 	};
 };
-void Type_print(Type* type);
+char* Type_asString(Type* type);
 
 void Type_init(Type**type);
 bool Type_equal(Type*a,Type*b);

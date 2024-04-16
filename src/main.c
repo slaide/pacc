@@ -1,3 +1,4 @@
+#include "parser/statement.h"
 #include <util/util.h>
 #include <parser/parser.h>
 #include<util/ansi_esc_codes.h>
@@ -6,26 +7,7 @@
 void Module_print(Module*module){
 	for(int i=0;i<module->statements.len;i++){
 		Statement*statement=array_get(&module->statements,i);
-		switch(statement->tag){
-			case STATEMENT_PREP_DEFINE:
-				println("#define <unimplemented>");
-				break;
-			case STATEMENT_PREP_INCLUDE:
-				println("#include %.*s",statement->prep_include.path.len,statement->prep_include.path.p);
-				break;
-			case STATEMENT_FUNCTION_DECLARATION:
-				println("declaration of function %.*s",statement->functionDecl.symbol.name->len,statement->functionDecl.symbol.name->p);
-				println("return type");
-				Type_print(statement->functionDecl.symbol.type);
-				break;
-			case STATEMENT_FUNCTION_DEFINITION:
-				println("definition of function %.*s",statement->functionDef.symbol.name->len,statement->functionDef.symbol.name->p);
-				println("return type");
-				Type_print(statement->functionDef.symbol.type);
-				break;
-			default:
-				fatal("unimplemented %d",statement->tag);
-		}
+		println("statement %d is : %s",i,Statement_asString(statement));
 	}
 }
 
@@ -41,8 +23,11 @@ bool test1(){
 	Tokenizer tokenizer={};
 	Tokenizer_init(&tokenizer,&testFile);
 
+	struct TokenIter token_iter;
+	TokenIter_init(&token_iter,&tokenizer,(struct TokenIterConfig){.skip_comments=true,});
+
 	Module module={};
-	Module_parse(&module,&tokenizer);
+	Module_parse(&module,&token_iter);
 
 	Module expected_module={};
 	array_init(&expected_module.statements,sizeof(Statement));
@@ -88,8 +73,11 @@ bool test2(){
 	Tokenizer tokenizer={};
 	Tokenizer_init(&tokenizer,&testFile);
 
+	struct TokenIter token_iter;
+	TokenIter_init(&token_iter,&tokenizer,(struct TokenIterConfig){.skip_comments=true,});
+
 	Module module={};
-	Module_parse(&module,&tokenizer);
+	Module_parse(&module,&token_iter);
 
 	Module expected_module={};
 	array_init(&expected_module.statements,sizeof(Statement));
@@ -114,7 +102,7 @@ bool test2(){
 		array_init(&statements[0].functionDef.bodyStatements,sizeof(Statement));
 
 		array_append(&statements[0].functionDef.bodyStatements,&(Statement){
-			.tag=STATEMENT_RETURN,
+			.tag=STATEMENT_KIND_RETURN,
 			.return_={
 				.retval=&(Value){
 					.kind=VALUE_KIND_STATIC_VALUE,
@@ -135,7 +123,6 @@ void print_test_result(const char*testname,bool passed){
 	}else{
 		println(TEXT_COLOR_RED "%s failed" TEXT_COLOR_RESET,testname);
 	}
-
 }
 
 int main(int argc, const char**argv){
@@ -152,8 +139,19 @@ int main(int argc, const char**argv){
 	Tokenizer tokenizer={};
 	Tokenizer_init(&tokenizer,&code_file);
 
+	struct TokenIter token_iter;
+	TokenIter_init(&token_iter,&tokenizer,(struct TokenIterConfig){.skip_comments=true,});
+
 	Module module={};
-	Module_parse(&module,&tokenizer);
+	Module_parse(&module,&token_iter);
+
+	Module_print(&module);
+
+	if(!TokenIter_isEmpty(&token_iter)){
+		Token next_token;
+		TokenIter_nextToken(&token_iter,&next_token);
+		fatal("unexpected tokens at end of file at line %d col %d: %.*s",next_token.line,next_token.col,next_token.len,next_token.p);
+	}
 	
 	return 0;
 }

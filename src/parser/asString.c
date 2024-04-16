@@ -1,4 +1,5 @@
 #include<parser/parser.h>
+#include <string.h>
 #include<util/util.h>
 
 const char* Symbolkind_asString(enum SYMBOLKIND kind){
@@ -26,8 +27,8 @@ const char* Statementkind_asString(enum STATEMENT_KIND kind){
 			return("STATEMENT_FUNCTION_DECLARATION");
 		case STATEMENT_FUNCTION_DEFINITION:
 			return("STATEMENT_FUNCTION_DEFINITION");
-		case STATEMENT_RETURN:
-			return("STATEMENT_RETURN");
+		case STATEMENT_KIND_RETURN:
+			return("STATEMENT_KIND_RETURN");
 		case STATEMENT_IF:
 			return("STATEMENT_IF");
 		case STATEMENT_SWITCH:
@@ -44,10 +45,14 @@ const char* Statementkind_asString(enum STATEMENT_KIND kind){
 			return("STATEMENT_GOTO");
 		case STATEMENT_LABEL:
 			return("STATEMENT_LABEL");
-		case STATEMENT_WHILE:
-			return("STATEMENT_WHILE");
-		case STATEMENT_FOR:
-			return("STATEMENT_FOR");
+		case STATEMENT_KIND_WHILE:
+			return("STATEMENT_KIND_WHILE");
+		case STATEMENT_KIND_FOR:
+			return("STATEMENT_KIND_FOR");
+		case STATEMENT_KIND_SYMBOL_DEFINITION:
+			return("STATEMENT_KIND_SYMBOL_DEFINITION");
+		case STATEMENT_VALUE:
+			return("STATEMENT_VALUE");
 		default:
 			fatal("unknown symbol kind %d",kind);
 	}
@@ -66,42 +71,58 @@ const char* ValueKind_asString(enum VALUE_KIND kind){
 
 }
 
-void Type_print(Type* type){
+char* Type_asString(Type* type){
 	Type* type_ref=type;
 	bool printing_done=false;
+
+	char*ret=malloc(1024);
+	memset(ret,0,1024);
+	char*ret_ptr=ret;
 	while(!printing_done){
-		if(type_ref->is_const)
-			println("const ");
+		if(type_ref->is_const){
+			sprintf(ret_ptr,"const ");
+			ret_ptr=ret+strlen(ret);
+		}
 
 		switch(type_ref->kind){
 			case TYPE_KIND_REFERENCE:
-				println("referencing type %.*s",type_ref->reference.len,type_ref->reference.p);
+				sprintf(ret_ptr,"%.*s",type_ref->reference.len,type_ref->reference.p);
+				ret_ptr=ret+strlen(ret);
+
 				printing_done=true;
 				break;
 			case TYPE_KIND_POINTER:
-				println("pointer to ");
+				sprintf(ret_ptr,"pointer to ");
+				ret_ptr=ret+strlen(ret);
+
 				if(type_ref->pointer.base==type_ref)
 					fatal("pointer to self");
+
 				type_ref=type_ref->pointer.base;
 				break;
 			case TYPE_KIND_ARRAY:
-				println("array");
+				sprintf(ret_ptr,"array");
+				ret_ptr=ret+strlen(ret);
+
 				type_ref=type_ref->array.base;
 				break;
 			case TYPE_KIND_FUNCTION:
-				println("function");
-				println("return type is");
-				Type_print(type_ref->function.ret);
+				sprintf(ret_ptr,"function, return type is %s, with args (",Type_asString(type_ref->function.ret));
+				ret_ptr=ret+strlen(ret);
 
 				for(int i=0;i<type_ref->function.args.len;i++){
 					Symbol* arg=array_get(&type_ref->function.args,i);
-					println("argument #%d called %.*s is of type",i,arg->name->len,arg->name->p);
-					Type_print(arg->type);
+					sprintf(ret_ptr,"argument #%d called %.*s is of type %s,",i,arg->name->len,arg->name->p,Type_asString(arg->type));
+					ret_ptr=ret+strlen(ret);
 				}
+				sprintf(ret_ptr,")");
+				ret_ptr=ret+strlen(ret);
 				printing_done=true;
 				break;
 			default:
 				fatal("unknown type kind %d",type_ref->kind);
 		}
 	}
+
+	return ret;
 }

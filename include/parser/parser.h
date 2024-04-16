@@ -10,7 +10,12 @@
 #include<parser/statement.h>
 
 typedef struct Module Module;
-void Module_parse(Module* module,Tokenizer*tokenizer);
+
+enum MODULE_PARSE_RESULT{
+	MODULE_INVALID,
+	MODULE_PRESENT,
+};
+enum MODULE_PARSE_RESULT Module_parse(Module* module,struct TokenIter*token_iter_in);
 struct Module{
 	array statements;
 };

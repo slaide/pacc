@@ -17,7 +17,7 @@ enum STATEMENT_KIND{
 	/// @brief function definition, e.g. int foo(int a, int b){ return a+b; }
 	STATEMENT_FUNCTION_DEFINITION,
 	/// @brief return statement, e.g. return 0;
-	STATEMENT_RETURN,
+	STATEMENT_KIND_RETURN,
 	STATEMENT_IF,
 	STATEMENT_SWITCH,
 	STATEMENT_CASE,
@@ -26,13 +26,18 @@ enum STATEMENT_KIND{
 	STATEMENT_DEFAULT,
 	STATEMENT_GOTO,
 	STATEMENT_LABEL,
-	STATEMENT_WHILE,
-	STATEMENT_FOR,
+	STATEMENT_KIND_WHILE,
+	STATEMENT_KIND_FOR,
 	STATEMENT_VALUE,
+
+	STATEMENT_KIND_SYMBOL_DEFINITION,
 };
 const char* Statementkind_asString(enum STATEMENT_KIND kind);
 
 typedef struct Statement Statement;
+
+char*Statement_asString(Statement*statement);
+
 struct Statement{
 	enum STATEMENT_KIND tag;
 	union{
@@ -67,6 +72,10 @@ struct Statement{
 			array bodyStatements;
 		}functionDef;
 
+		struct{
+			Symbol symbol;
+			Value*init_value;
+		}symbolDef;
 
 		/// @brief return statement
 		struct{
@@ -76,6 +85,14 @@ struct Statement{
 		struct{
 			Value* value;
 		}value;
+
+		struct{
+			Statement* init;
+			Value* condition;
+			Value* step;
+
+			array body;
+		}forLoop;
 	};
 };
 
