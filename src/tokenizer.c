@@ -112,6 +112,7 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 	int col=0;
 
 	char*p=file->contents;
+	char*const end=file->contents+file->contents_len;
 
 	// parse token one at a time
 	while(1){
@@ -124,7 +125,7 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 		};
 
 		// parse characters
-		while(1){
+		while(p<end){
 			switch((int)*p){
 				// end of file
 				case 0:
@@ -195,7 +196,7 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 
 			// include all characters until next quotation mark
 			// note escaped quotation mark though (which is part of the string, does not terminate it)
-			while(1){
+			while(p<end){
 				if(*p=='"'){
 					if(*(p-1)!='\\'){
 						break;
@@ -238,7 +239,7 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 					// begin comment -> parse until end of line
 					last_token->tag=TOKEN_TAG_COMMENT;
 
-					while(*p!='\n')
+					while(*p!='\n' && p<end)
 						p++;
 
 					last_token->len=p-last_token->p;
@@ -249,7 +250,7 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 					// begin multiline comment -> parse until */
 					last_token->tag=TOKEN_TAG_COMMENT;
 
-					while(1){
+					while(p<end){
 						p++;
 						if(*p=='*' && *(p+1)=='/'){
 							p+=2;
@@ -433,10 +434,11 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
             ){
                 token.tag=TOKEN_TAG_PREP_INCLUDE_ARGUMENT;
 
-                while(*p!='>'){
+                while(*p!='>' && p<end){
                     p++;
                 }
-                p++;
+				if(p<end)
+                	p++;
 
                 token.len=p-token.p;
             }
