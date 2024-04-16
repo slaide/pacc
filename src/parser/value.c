@@ -246,6 +246,16 @@ char*Value_asString(Value*value){
 			}
 			return ret;
 		}			
+		case VALUE_KIND_DOT:{
+			char*ret=calloc(1024,1);
+			sprintf(ret,"left (%s) DOT right (%.*s)",Value_asString(value->dot.left),value->dot.right->len,value->dot.right->p);
+			return ret;
+		}
+		case VALUE_KIND_ARROW:{
+			char*ret=calloc(1024,1);
+			sprintf(ret,"left (%s) ARROW right (%.*s)",Value_asString(value->arrow.left),value->arrow.right->len,value->arrow.right->p);
+			return ret;
+		}
 		default:
 			fatal("unimplemented %d",value->kind);
 	}

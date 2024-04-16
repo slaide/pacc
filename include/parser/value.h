@@ -10,6 +10,8 @@ enum VALUE_KIND{
 	VALUE_KIND_OPERATOR,
 	VALUE_KIND_SYMBOL_REFERENCE,
 	VALUE_KIND_FUNCTION_CALL,
+	VALUE_KIND_ARROW,
+	VALUE_KIND_DOT,
 };
 const char* ValueKind_asString(enum VALUE_KIND kind);
 
@@ -54,6 +56,16 @@ struct Value{
 			Token*name;
 			array args;
 		}function_call;
+
+		struct{
+			Value*left;
+			Token*right;
+		}dot;
+
+		struct{
+			Value*left;
+			Token*right;
+		}arrow;
 	};
 	Type* type;
 };
