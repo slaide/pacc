@@ -444,8 +444,9 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
             }
         }
 
+		// if token is empty, break (e.g. if EOF reached)
         if(token.len==0){
-            fatal("how did this happen!? line %d col %d \n",line,col);
+            break;
         }
 
 		tokenizer->num_tokens++;
