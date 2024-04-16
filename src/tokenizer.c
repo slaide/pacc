@@ -297,6 +297,9 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 				||
 				// decrement
 				(last_token->p[0]=='-' && token.p[0]=='-')
+				||
+				// arrow
+				(last_token->p[0]=='-' && token.p[0]=='>')
 			){
 				last_token->len=2;
 				last_token->tag=TOKEN_TAG_KEYWORD;
