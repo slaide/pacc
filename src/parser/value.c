@@ -177,8 +177,60 @@ char*Value_asString(Value*value){
 			sprintf(ret,"%.*s",value->static_value.value_repr->len,value->static_value.value_repr->p);
 			return ret;
 		}
-		case VALUE_KIND_OPERATOR:
+		case VALUE_KIND_OPERATOR:{
+			switch(value->op.op){
+				case VALUE_OPERATOR_ADD:{
+					char *ret=calloc(1024,1);
+					sprintf(ret,"left (%s) ADD right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					return ret;
+				}
+				case VALUE_OPERATOR_SUB:{
+					char *ret=calloc(1024,1);
+					sprintf(ret,"left (%s) SUB right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					return ret;
+				}
+				case VALUE_OPERATOR_MULT:{
+					char *ret=calloc(1024,1);
+					sprintf(ret,"left (%s) MULT right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					return ret;
+				}
+				case VALUE_OPERATOR_DIV:{
+					char *ret=calloc(1024,1);
+					sprintf(ret,"left (%s) DIV right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					return ret;
+				}
+				case VALUE_OPERATOR_LESS_THAN:{
+					char *ret=calloc(1024,1);
+					sprintf(ret,"left (%s) LESS_THAN right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					return ret;
+				}
+				case VALUE_OPERATOR_GREATER_THAN:{
+					char *ret=calloc(1024,1);
+					sprintf(ret,"left (%s) GREATER_THAN right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					return ret;
+				}
+				case VALUE_OPERATOR_POSTFIX_INCREMENT:{
+					char *ret=calloc(1024,1);
+					sprintf(ret,"POSTFIX_INCREMENT %s",Value_asString(value->op.left));
+					return ret;
+				}
+				case VALUE_OPERATOR_POSTFIX_DECREMENT:{
+					char *ret=calloc(1024,1);
+					sprintf(ret,"POSTFIX_DECREMENT %s",Value_asString(value->op.left));
+					return ret;
+				}
+				case VALUE_OPERATOR_DOT:
+					fatal("unimplemented %d",value->op.op);
+				case VALUE_OPERATOR_INDEX:{
+					char *ret=calloc(1024,1);
+					sprintf(ret,"left (%s) INDEX right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					return ret;
+				}
+				default:
+					fatal("unimplemented %d",value->op.op);
+			}
 			return "VALUE_KIND_OPERATOR unimplemented";
+		}
 		case VALUE_KIND_SYMBOL_REFERENCE:{
 			char*ret=calloc(1024,1);
 			sprintf(ret,"%.*s",value->symbol->len,value->symbol->p);
