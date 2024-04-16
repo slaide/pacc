@@ -50,125 +50,154 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter){
 			return VALUE_INVALID;
 	}
 
-	// check for operators
-	TokenIter_lastToken(token_iter,&token);
-	enum VALUE_OPERATOR op;
-	bool requiresSecondOperand=false;
-	const char*opTerminator=nullptr;
-	if(Token_equalString(&token,"+")){
-		op=VALUE_OPERATOR_ADD;
-		requiresSecondOperand=true;
-	}else if(Token_equalString(&token,"-")){
-		op=VALUE_OPERATOR_SUB;
-		requiresSecondOperand=true;
-	}else if(Token_equalString(&token,"*")){
-		op=VALUE_OPERATOR_MULT;
-		requiresSecondOperand=true;
-	}else if(Token_equalString(&token,"/")){
-		op=VALUE_OPERATOR_DIV;
-		requiresSecondOperand=true;
-	}else if(Token_equalString(&token,"<")){
-		op=VALUE_OPERATOR_LESS_THAN;
-		requiresSecondOperand=true;
-	}else if(Token_equalString(&token,">")){
-		op=VALUE_OPERATOR_GREATER_THAN;
-		requiresSecondOperand=true;
-	}else if(Token_equalString(&token,"++")){
-		op=VALUE_OPERATOR_POSTFIX_INCREMENT;
-		requiresSecondOperand=false;
-	}else if(Token_equalString(&token,"--")){
-		op=VALUE_OPERATOR_POSTFIX_DECREMENT;
-		requiresSecondOperand=false;
-	}else if(Token_equalString(&token,".")){
-		op=VALUE_OPERATOR_DOT;
-	}else if(Token_equalString(&token,"->")){
-		op=VALUE_OPERATOR_ARROW;
-	}else if(Token_equalString(&token,"(")){
-		op=VALUE_OPERATOR_CALL;
-		requiresSecondOperand=false;
-		opTerminator=")";
-	}else if(Token_equalString(&token,"[")){
-		op=VALUE_OPERATOR_INDEX;
-		requiresSecondOperand=true;
-		opTerminator="]";
-	}
-	else{
-		return VALUE_PRESENT;
-	}
-	TokenIter_nextToken(token_iter,&token);
-
-	switch(op){
-		case VALUE_OPERATOR_DOT:
-			fatal("unimplemented");
-		case VALUE_OPERATOR_ARROW:
-			fatal("unimplemented");
-		case VALUE_OPERATOR_CALL:{
-			array values;
-			array_init(&values,sizeof(Value));
-			while(1){
-				if(Token_equalString(&token,")")){
-					TokenIter_nextToken(token_iter,&token);
-					break;
-				}
-				if(Token_equalString(&token,",")){
-					TokenIter_nextToken(token_iter,&token);
-					continue;
-				}
-
-				Value arg={};
-				enum VALUE_PARSE_RESULT res=Value_parse(&arg,token_iter);
-				TokenIter_lastToken(token_iter,&token);
-				switch(res){
-					case VALUE_INVALID:
-						fatal("invalid value in function call, got instead %.*s",token.len,token.p);
-						break;
-					case VALUE_PRESENT:
-						array_append(&values,&arg);
-						break;
-				}
-			}
-
-			value->kind=VALUE_KIND_FUNCTION_CALL;
-			value->function_call.name=allocAndCopy(sizeof(Token),&nameToken);
-			value->function_call.args=values;			
-
+	while(1){
+		// check for operators
+		TokenIter_lastToken(token_iter,&token);
+		enum VALUE_OPERATOR op;
+		bool requiresSecondOperand=false;
+		const char*opTerminator=nullptr;
+		if(Token_equalString(&token,"+")){
+			op=VALUE_OPERATOR_ADD;
+			requiresSecondOperand=true;
+		}else if(Token_equalString(&token,"-")){
+			op=VALUE_OPERATOR_SUB;
+			requiresSecondOperand=true;
+		}else if(Token_equalString(&token,"*")){
+			op=VALUE_OPERATOR_MULT;
+			requiresSecondOperand=true;
+		}else if(Token_equalString(&token,"/")){
+			op=VALUE_OPERATOR_DIV;
+			requiresSecondOperand=true;
+		}else if(Token_equalString(&token,"<")){
+			op=VALUE_OPERATOR_LESS_THAN;
+			requiresSecondOperand=true;
+		}else if(Token_equalString(&token,">")){
+			op=VALUE_OPERATOR_GREATER_THAN;
+			requiresSecondOperand=true;
+		}else if(Token_equalString(&token,"++")){
+			op=VALUE_OPERATOR_POSTFIX_INCREMENT;
+			requiresSecondOperand=false;
+		}else if(Token_equalString(&token,"--")){
+			op=VALUE_OPERATOR_POSTFIX_DECREMENT;
+			requiresSecondOperand=false;
+		}else if(Token_equalString(&token,".")){
+			op=VALUE_OPERATOR_DOT;
+		}else if(Token_equalString(&token,"->")){
+			op=VALUE_OPERATOR_ARROW;
+		}else if(Token_equalString(&token,"(")){
+			op=VALUE_OPERATOR_CALL;
+			requiresSecondOperand=false;
+			opTerminator=")";
+		}else if(Token_equalString(&token,"[")){
+			op=VALUE_OPERATOR_INDEX;
+			requiresSecondOperand=true;
+			opTerminator="]";
+		}
+		else{
 			return VALUE_PRESENT;
 		}
-		default:{
-			Value ret={
-				.kind=VALUE_KIND_OPERATOR,
-				.op={
-					.left=allocAndCopy(sizeof(Value),value),
-					.op=op,
-				}
-			};
+		TokenIter_nextToken(token_iter,&token);
 
-			if(requiresSecondOperand){
-				ret.op.right=malloc(sizeof(Value));
-
-				enum VALUE_PARSE_RESULT res=Value_parse(ret.op.right,token_iter);
-				TokenIter_lastToken(token_iter,&token);
-				switch(res){
-					case VALUE_INVALID:
-						fatal("invalid value after operator");
-						break;
-					case VALUE_PRESENT:
-						break;
-				}
-			}
-
-			if(opTerminator){
-				if(!Token_equalString(&token,opTerminator)){
-					fatal("expected %s after operator",opTerminator);
-				}
+		switch(op){
+			case VALUE_OPERATOR_DOT:{
+				// get member name via next token
+				Token memberToken=token;
 				TokenIter_nextToken(token_iter,&token);
-			}
 
-			*value=ret;
-			return VALUE_PRESENT;
+				*value=(Value){
+					.kind=VALUE_KIND_DOT,
+					.dot={
+						.left=allocAndCopy(sizeof(Value),value),
+						.right=allocAndCopy(sizeof(Token),&memberToken),
+					}
+				};
+				continue;
+			}
+			case VALUE_OPERATOR_ARROW:{
+				// get member name via next token
+				Token memberToken=token;
+				TokenIter_nextToken(token_iter,&token);
+
+				*value=(Value){
+					.kind=VALUE_KIND_ARROW,
+					.arrow={
+						.left=allocAndCopy(sizeof(Value),value),
+						.right=allocAndCopy(sizeof(Token),&memberToken),
+					}
+				};
+				continue;
+			}
+			case VALUE_OPERATOR_CALL:{
+				array values;
+				array_init(&values,sizeof(Value));
+				while(1){
+					if(Token_equalString(&token,")")){
+						TokenIter_nextToken(token_iter,&token);
+						break;
+					}
+					if(Token_equalString(&token,",")){
+						TokenIter_nextToken(token_iter,&token);
+						continue;
+					}
+
+					Value arg={};
+					enum VALUE_PARSE_RESULT res=Value_parse(&arg,token_iter);
+					TokenIter_lastToken(token_iter,&token);
+					switch(res){
+						case VALUE_INVALID:
+							fatal("invalid value in function call, got instead %.*s",token.len,token.p);
+							break;
+						case VALUE_PRESENT:
+							array_append(&values,&arg);
+							break;
+					}
+				}
+
+				value->kind=VALUE_KIND_FUNCTION_CALL;
+				value->function_call.name=allocAndCopy(sizeof(Token),&nameToken);
+				value->function_call.args=values;			
+
+				continue;
+			}
+			default:{
+				Value ret={
+					.kind=VALUE_KIND_OPERATOR,
+					.op={
+						.left=allocAndCopy(sizeof(Value),value),
+						.op=op,
+					}
+				};
+
+				if(requiresSecondOperand){
+					ret.op.right=malloc(sizeof(Value));
+
+					enum VALUE_PARSE_RESULT res=Value_parse(ret.op.right,token_iter);
+					switch(res){
+						case VALUE_INVALID:
+							// print next token
+							println("next token is: line %d col %d %.*s",token.line,token.col,token.len,token.p);
+							fatal("invalid value after operator at line %d col %d",token.line,token.col);
+							break;
+						case VALUE_PRESENT:
+							TokenIter_lastToken(token_iter,&token);
+							break;
+					}
+				}
+
+				if(opTerminator){
+					if(!Token_equalString(&token,opTerminator)){
+						fatal("expected %s after operator",opTerminator);
+					}
+					TokenIter_nextToken(token_iter,&token);
+				}
+
+				*value=ret;
+				continue;
+			}
 		}
+		fatal("");
 	}
-	fatal("");
+	return VALUE_PRESENT;
 }
 char*Value_asString(Value*value){
 	switch(value->kind){
@@ -245,7 +274,7 @@ char*Value_asString(Value*value){
 				sprintf(ret+strlen(ret),"\narg %d: %s",i,arg_str);
 			}
 			return ret;
-		}			
+		}
 		case VALUE_KIND_DOT:{
 			char*ret=calloc(1024,1);
 			sprintf(ret,"left (%s) DOT right (%.*s)",Value_asString(value->dot.left),value->dot.right->len,value->dot.right->p);
