@@ -1,3 +1,4 @@
+#include "parser/value.h"
 #include<parser/parser.h>
 #include<util/util.h>
 #include<tokenizer.h>
@@ -44,6 +45,39 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter){
 			value->symbol=allocAndCopy(sizeof(Token),&nameToken);
 
 			break;
+		}
+		case TOKEN_TAG_LITERAL_FLOAT:{
+			fatal("unimplemented");
+		}
+
+		case TOKEN_TAG_KEYWORD:{
+			//Token_map(&token);
+
+			if(token.p==KEYWORD_ASTERISK){
+				fatal("unimplemented");
+			}else if(token.p==KEYWORD_AMPERSAND){
+				TokenIter_nextToken(token_iter,&token);
+
+				Value addressedValue={};
+				enum VALUE_PARSE_RESULT res=Value_parse(&addressedValue,token_iter);
+				if(res==VALUE_INVALID){
+					fatal("invalid value after &");
+				}
+
+				*value=(Value){
+					.kind=VALUE_KIND_ADDRESS_OF,
+					.addrOf.addressedValue=allocAndCopy(sizeof(Value), &addressedValue),
+				};
+
+				break;
+			}else{
+				// print token and location
+				println("unexpected keyword %.*s at line %d col %d",token.len,token.p,token.line,token.col);
+				// and token after that
+				TokenIter_nextToken(token_iter,&token);
+				println("next token is: line %d col %d %.*s",token.line,token.col,token.len,token.p);
+				fatal("unimplemented");
+			}
 		}
 
 		default:
@@ -283,6 +317,11 @@ char*Value_asString(Value*value){
 		case VALUE_KIND_ARROW:{
 			char*ret=calloc(1024,1);
 			sprintf(ret,"left (%s) ARROW right (%.*s)",Value_asString(value->arrow.left),value->arrow.right->len,value->arrow.right->p);
+			return ret;
+		}
+		case VALUE_KIND_ADDRESS_OF:{
+			char*ret=calloc(1024,1);
+			sprintf(ret,"ADDR_OF ( %s )",Value_asString(value->addrOf.addressedValue));
 			return ret;
 		}
 		default:

@@ -50,7 +50,8 @@ bool TokenIter_isEmpty(struct TokenIter*iter);
 // returns true if token was returned
 int TokenIter_lastToken(struct TokenIter*iter,Token*out);
 
-
+/// @brief map token to keyword
+void Token_map(Token*token);
 static const char*KEYWORD_SWITCH="switch";
 static const char*KEYWORD_CASE="case";
 static const char*KEYWORD_RETURN="return";
@@ -100,3 +101,4 @@ static const char*KEYWORD_CURLY_BRACES_CLOSE="}";
 static const char*KEYWORD_COLON=":";
 static const char*KEYWORD_SEMICOLON=";";
 static const char*KEYWORD_COMMA=",";
+static const char*KEYWORD_AMPERSAND="&";

@@ -53,14 +53,14 @@ void Token_map(Token*token){
 		KEYWORD_FOR,
 		KEYWORD_WHILE,
 
-		KEYWORD_VOID,
-		KEYWORD_INT,
-		KEYWORD_FLOAT,
-		KEYWORD_DOUBLE,
-		KEYWORD_CHAR,
+		//KEYWORD_VOID,
+		//KEYWORD_INT,
+		//KEYWORD_FLOAT,
+		//KEYWORD_DOUBLE,
+		//KEYWORD_CHAR,
 
-		KEYWORD_LONG,
-		KEYWORD_UNSIGNED,
+		//KEYWORD_LONG,
+		//KEYWORD_UNSIGNED,
 
 		KEYWORD_ASTERISK,
 		KEYWORD_PLUS,
@@ -78,6 +78,7 @@ void Token_map(Token*token){
 		KEYWORD_COLON,
 		KEYWORD_SEMICOLON,
 		KEYWORD_COMMA,
+		KEYWORD_AMPERSAND,
 	};
 
 	static const int NUM_KEYWORDS=sizeof(KEYWORDS)/sizeof(KEYWORDS[0]);
@@ -118,7 +119,7 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 	while(1){
 		Token token={
 			.filename=nullptr,
-			.line=line,
+			.line=line+1,
 			.col=col,
 			.p=p,
 			.tag=TOKEN_TAG_UNDEFINED,
@@ -141,7 +142,7 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 						line++;
 						col=0;
 						p++;
-						token.line=line;
+						token.line=line+1;
 						token.col=col;
 						token.p=p;
 						continue;
@@ -459,7 +460,7 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 		// go through tokens and make sure none are undefined
 		for(int i=0;i<tokenizer->num_tokens;i++){
 
-			//Token_map(&tokenizer->tokens[i]);
+			Token_map(&tokenizer->tokens[i]);
 
 			if(tokenizer->tokens[i].tag!=TOKEN_TAG_UNDEFINED){
 				continue;
