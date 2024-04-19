@@ -13,6 +13,9 @@ enum VALUE_KIND{
 	VALUE_KIND_ARROW,
 	VALUE_KIND_DOT,
 	VALUE_KIND_ADDRESS_OF,
+	VALUE_KIND_STRUCT_INITIALIZER,
+	VALUE_KIND_PARENS_WRAPPED,
+	VALUE_KIND_CAST,
 };
 const char* ValueKind_asString(enum VALUE_KIND kind);
 
@@ -34,6 +37,11 @@ enum VALUE_OPERATOR{
 typedef struct Value Value;
 
 char*Value_asString(Value*value);
+
+struct StructFieldInitializer{
+	Token*name;
+	Value*value;
+};
 struct Value{
 	enum VALUE_KIND kind;
 	union{
@@ -71,6 +79,23 @@ struct Value{
 		struct{
 			Value*addressedValue;
 		}addrOf;
+
+		struct{
+			/// array of struct StructInitializerField
+			array structFields;
+		}struct_initializer;
+
+		struct{
+			Value*innerValue;
+		}parens_wrapped;
+
+		/// hacky implementation of a cast operation
+		struct{
+			/// tricky.. castTo should be a type, but we dont know that it is a type while parsing
+			/// and a type may look like a value expression when used for casting..
+			Value*castTo;
+			Value*value;
+		}cast;
 	};
 	Type* type;
 };

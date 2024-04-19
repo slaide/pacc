@@ -47,7 +47,16 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter){
 			break;
 		}
 		case TOKEN_TAG_LITERAL_FLOAT:{
-			fatal("unimplemented");
+			Token literalValueToken=token;
+			TokenIter_nextToken(token_iter,&token);
+
+			// print message with token
+			println("float literal %.*s at line %d col %d",token.len,token.p,token.line,token.col);
+
+			value->kind=VALUE_KIND_STATIC_VALUE;
+			value->static_value.value_repr=allocAndCopy(sizeof(Token),&literalValueToken);
+
+			break;
 		}
 
 		case TOKEN_TAG_KEYWORD:{
@@ -67,6 +76,35 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter){
 				*value=(Value){
 					.kind=VALUE_KIND_ADDRESS_OF,
 					.addrOf.addressedValue=allocAndCopy(sizeof(Value), &addressedValue),
+				};
+
+				break;
+			}else if(token.p==KEYWORD_PARENS_OPEN){
+				TokenIter_nextToken(token_iter,&token);
+
+				println("found (");
+				Value innerValue={};
+				enum VALUE_PARSE_RESULT res=Value_parse(&innerValue,token_iter);
+				println("parsed inner value")
+				if(res==VALUE_INVALID){
+					fatal("invalid value after (");
+				}
+				TokenIter_lastToken(token_iter, &token);
+				if(token.p!=KEYWORD_PARENS_CLOSE){
+					fatal("expected ) after (");
+				}
+				TokenIter_nextToken(token_iter, &token);
+				println("got ), next token is now %.*s",token.len,token.p);
+
+				// the current value could now be
+				// 1) operator precendence override, e.g. (a+b)*c
+				// 2) value cast, e.g. (int)2.3f
+
+				*value=(Value){
+					.kind=VALUE_KIND_PARENS_WRAPPED,
+					.parens_wrapped={
+						.innerValue=allocAndCopy(sizeof(Value),&innerValue),
+					}
 				};
 
 				break;
@@ -126,8 +164,25 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter){
 			op=VALUE_OPERATOR_INDEX;
 			requiresSecondOperand=true;
 			opTerminator="]";
-		}
-		else{
+		}else{
+			// if current value is parensWrapped, interpret as casting operation, i.e. parse new value
+			// and continue this parsing loop with the new casted value
+			if(value->kind==VALUE_KIND_PARENS_WRAPPED){
+				Value castedValue={};
+				enum VALUE_PARSE_RESULT res=Value_parse(&castedValue,token_iter);
+				TokenIter_lastToken(token_iter,&token);
+				if(res==VALUE_INVALID){
+					fatal("invalid value after (");
+				}
+				*value=(Value){
+					.kind=VALUE_KIND_CAST,
+					.cast={
+						.castTo=allocAndCopy(sizeof(Value),value),
+						.value=allocAndCopy(sizeof(Value),&castedValue),
+					}
+				};
+				continue;
+			}
 			return VALUE_PRESENT;
 		}
 		TokenIter_nextToken(token_iter,&token);
@@ -322,6 +377,16 @@ char*Value_asString(Value*value){
 		case VALUE_KIND_ADDRESS_OF:{
 			char*ret=calloc(1024,1);
 			sprintf(ret,"ADDR_OF ( %s )",Value_asString(value->addrOf.addressedValue));
+			return ret;
+		}
+		case VALUE_KIND_PARENS_WRAPPED:{
+			char*ret=calloc(1024,1);
+			sprintf(ret,"_( %s )_",Value_asString(value->parens_wrapped.innerValue));
+			return ret;
+		}
+		case VALUE_KIND_CAST:{
+			char*ret=calloc(1024,1);
+			sprintf(ret,"CAST %s TO %s",Value_asString(value->cast.value),Value_asString(value->cast.castTo));
 			return ret;
 		}
 		default:
