@@ -82,10 +82,8 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter){
 			}else if(token.p==KEYWORD_PARENS_OPEN){
 				TokenIter_nextToken(token_iter,&token);
 
-				println("found (");
 				Value innerValue={};
 				enum VALUE_PARSE_RESULT res=Value_parse(&innerValue,token_iter);
-				println("parsed inner value")
 				if(res==VALUE_INVALID){
 					fatal("invalid value after (");
 				}
@@ -94,7 +92,6 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter){
 					fatal("expected ) after (");
 				}
 				TokenIter_nextToken(token_iter, &token);
-				println("got ), next token is now %.*s",token.len,token.p);
 
 				// the current value could now be
 				// 1) operator precendence override, e.g. (a+b)*c
@@ -104,6 +101,62 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter){
 					.kind=VALUE_KIND_PARENS_WRAPPED,
 					.parens_wrapped={
 						.innerValue=allocAndCopy(sizeof(Value),&innerValue),
+					}
+				};
+
+				break;
+			}else if(token.p==KEYWORD_CURLY_BRACES_OPEN){
+				// parse struct initializer
+				TokenIter_nextToken(token_iter, &token);
+
+				array structFields;
+				array_init(&structFields,sizeof(struct StructFieldInitializer));
+				while(!TokenIter_isEmpty(token_iter)){
+					if (Token_equalString(&token, "}")){
+						break;
+					}
+
+					struct StructFieldInitializer field={};
+
+					// if next token is dot, parse field name followed by assignment symbol
+					if(Token_equalString(&token,".")){
+						TokenIter_nextToken(token_iter,&token);
+						field.name=allocAndCopy(sizeof(Token),&token);
+						TokenIter_nextToken(token_iter,&token);
+						if(!Token_equalString(&token,"=")){
+							fatal("expected = after field name");
+						}
+						TokenIter_nextToken(token_iter,&token);
+					}
+
+					Value fieldValue={};
+					enum VALUE_PARSE_RESULT res=Value_parse(&fieldValue,token_iter);
+					TokenIter_lastToken(token_iter, &token);
+					if(res==VALUE_INVALID){
+						fatal("invalid value in struct initializer");
+					}
+					field.value=allocAndCopy(sizeof(Value),&fieldValue);
+
+					array_append(&structFields,&field);
+
+					// check for comma
+					if(Token_equalString(&token,",")){
+						TokenIter_nextToken(token_iter,&token);
+						continue;
+					}
+
+					break;
+				}
+
+				if (!Token_equalString(&token, "}")){
+					fatal("expected } after struct initializer");	
+				}
+				TokenIter_nextToken(token_iter, &token);
+
+				*value=(Value){
+					.kind=VALUE_KIND_STRUCT_INITIALIZER,
+					.struct_initializer={
+						.structFields=structFields,
 					}
 				};
 
@@ -386,7 +439,21 @@ char*Value_asString(Value*value){
 		}
 		case VALUE_KIND_CAST:{
 			char*ret=calloc(1024,1);
-			sprintf(ret,"CAST %s TO %s",Value_asString(value->cast.value),Value_asString(value->cast.castTo));
+			sprintf(ret,"CAST ( %s ) TO ( %s )",Value_asString(value->cast.value),Value_asString(value->cast.castTo));
+			return ret;
+		}
+		case VALUE_KIND_STRUCT_INITIALIZER:{
+			char*ret=calloc(1024,1);
+			sprintf(ret,"init struct with fields:");
+			for(int i=0;i<value->struct_initializer.structFields.len;i++){
+				struct StructFieldInitializer*field=array_get(&value->struct_initializer.structFields,i);
+				char*field_str=Value_asString(field->value);
+				if(field->name){
+					sprintf(ret+strlen(ret),"\nfield %d (%.*s): %s",i,field->name->len,field->name->p,field_str);
+				}else{
+					sprintf(ret+strlen(ret),"\nfield %d : %s",i,field_str);
+				}
+			}
 			return ret;
 		}
 		default:
