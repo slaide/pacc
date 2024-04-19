@@ -1,6 +1,9 @@
 int main(){
     float a=1.0;
-    int b=(int)a;
-    return b;
+    float b=1.0e2;
+    float c=-1.0;
+    float d=-1.e4;
+    int r=(int)a;
+    return r;
 }
-// TESTGOAL : check casting operation
+// TESTGOAL : float literals and casting operation

@@ -318,36 +318,30 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 			int hasSign=false;
 			if(numericToken->p[0]=='-' || numericToken->p[0]=='+'){
 				hasSign=true;
-				if(numericToken->len==1)
-					break;
+				/*if(numericToken->len==1)
+					break;*/
 			}
 
 			int offset=hasSign;
 
 			// check for prefix (0x, 0b, 0o)
 			int hasPrefix=false;
-			if(numericToken->len>=2 && numericToken->p[offset]==0){
+			if(numericToken->p[offset]==0){
 				if(numericToken->p[offset+1]=='x' || numericToken->p[offset+1]=='X'){
 					hasPrefix=true;
-					if(numericToken->len==2)
-						break;
 				}
 				if(numericToken->p[offset+1]=='b' || numericToken->p[offset+1]=='B'){
 					hasPrefix=true;
-					if(numericToken->len==2)
-						break;
 				}
 				if(numericToken->p[offset+1]=='o' || numericToken->p[offset+1]=='O'){
 					hasPrefix=true;
-					if(numericToken->len==2)
-						break;
 				}
 			}
 			offset+=hasPrefix;
 
 			// check for leading digit[s]
 			int hasLeadingDigits=false;
-			while(offset<numericToken->len && numericToken->p[offset]>='0' && numericToken->p[offset]<='9'){
+			while(numericToken->p[offset]>='0' && numericToken->p[offset]<='9'){
 				hasLeadingDigits=true;
 				offset++;
 			}
@@ -365,7 +359,7 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 			int hasTrailingDigits=false;
 			if(hasDecimalPoint){
 				// check for trailing digits
-				while(offset<numericToken->len && numericToken->p[offset]>='0' && numericToken->p[offset]<='9'){
+				while(numericToken->p[offset]>='0' && numericToken->p[offset]<='9'){
 					hasTrailingDigits=true;
 					offset++;
 				}
@@ -373,7 +367,7 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 
 			// check for exponent
 			int hasExponent=false;
-			if(offset<numericToken->len && (numericToken->p[offset]=='e' || numericToken->p[offset]=='E')){
+			if((numericToken->p[offset]=='e' || numericToken->p[offset]=='E')){
 				hasExponent=true;
 				offset++;
 				if(offset==numericToken->len)
@@ -391,7 +385,7 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 
 			// check for exponent digits (exponent must have at least one digit, and be base10 integer)
 			int hasExponentDigits=false;
-			while(offset<numericToken->len && numericToken->p[offset]>='0' && numericToken->p[offset]<='9'){
+			while(numericToken->p[offset]>='0' && numericToken->p[offset]<='9'){
 				hasExponentDigits=true;
 				offset++;
 			}
@@ -403,6 +397,10 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 			if(hasExponent && !hasExponentDigits){
 				fatal("invalid number literal");
 			}
+
+			// adjust token based on symbols in its vicinity
+			numericToken->len=offset;
+			p+=offset-1;
 
 			// check for flags to determine number type
 			if(hasDecimalPoint || hasExponent){
