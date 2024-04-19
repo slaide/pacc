@@ -46,6 +46,7 @@ struct TokenIter{
 void TokenIter_init(struct TokenIter*token_iter,Tokenizer*tokenizer,struct TokenIterConfig config);
 // returns true if token was returned
 int TokenIter_nextToken(struct TokenIter*iter,Token*out);
+// returns true if there are tokens left, i.e. next token index is within valid range of token indices
 bool TokenIter_isEmpty(struct TokenIter*iter);
 // returns true if token was returned
 int TokenIter_lastToken(struct TokenIter*iter,Token*out);

@@ -81,7 +81,7 @@ struct Value{
 		}addrOf;
 
 		struct{
-			/// array of struct StructInitializerField
+			/// array of struct StructFieldInitializer
 			array structFields;
 		}struct_initializer;
 
