@@ -117,7 +117,9 @@ char* Type_asString(Type* type){
 				printing_done=true;
 				break;
 			default:
-				fatal("unknown type kind %d",type_ref->kind);
+				if(type_ref->name==nullptr)
+					fatal("")
+				fatal("\nFATAL type %.*s of kind %d\n",type_ref->name->len,type_ref->name->p,type_ref->kind);
 		}
 	}
 

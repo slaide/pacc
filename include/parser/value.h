@@ -6,6 +6,8 @@
 #include<parser/type.h>
 
 enum VALUE_KIND{
+	VALUE_KIND_UNKNOWN,
+	
 	VALUE_KIND_STATIC_VALUE,
 
 	VALUE_KIND_OPERATOR,

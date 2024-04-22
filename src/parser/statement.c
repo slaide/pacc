@@ -208,24 +208,10 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 		fatal("switch not yet implemented");
 	}
 
-	// check for value [expression]
-	if(0){
-		Value value={};
-		enum VALUE_PARSE_RESULT res=Value_parse(&value,token_iter);
-		TokenIter_lastToken(token_iter,&token);
-		switch(res){
-			case VALUE_INVALID:
-				fatal("invalid value in statement");
-				break;
-			case VALUE_PRESENT:
-				println("got value in statement");
-				break;
-		}
-	}
-
 	// parse symbol definition
 	do{
 		Symbol symbol={};
+		struct TokenIter preSymbolParseIter=*token_iter;
 		enum SYMBOL_PARSE_RESULT symbolParseResult=Symbol_parse(&symbol,token_iter);
 		if(symbolParseResult==STATEMENT_INVALID){
 			break;
@@ -277,7 +263,39 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 					return STATEMENT_PRESENT;
 				}
 				break;
-			default:
+			default:{
+				// check for value [expression]
+				if(symbolParseResult==SYMBOL_WITHOUT_NAME){
+					Value value={};
+					struct TokenIter valueParseIter=preSymbolParseIter;
+					enum VALUE_PARSE_RESULT res=Value_parse(&value,&valueParseIter);
+					TokenIter_lastToken(token_iter,&token);
+
+					bool foundValue=false;
+					switch(res){
+						case VALUE_INVALID:
+							fatal("invalid value in statement");
+							break;
+						case VALUE_PRESENT:
+							*token_iter=valueParseIter;
+							println("got value in statement %s",Value_asString(&value));
+							foundValue=true;
+							break;
+					}
+
+					if(foundValue){
+						*out=(Statement){.tag=STATEMENT_VALUE,.value.value=allocAndCopy(sizeof(Value), &value)};
+
+						// check for termination with semicolon
+						TokenIter_lastToken(token_iter,&token);
+						if(!Token_equalString(&token,";")){
+							fatal("expected semicolon after statement: line %d col %d %.*s",token.line,token.col,token.len,token.p);
+						}
+						TokenIter_nextToken(token_iter,&token);
+						return STATEMENT_PRESENT;
+					}
+				}
+
 				statement.tag=STATEMENT_KIND_SYMBOL_DEFINITION;
 				statement.symbolDef.symbol=symbol;
 				statement.symbolDef.init_value=nullptr;
@@ -304,6 +322,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 
 				*out=statement;
 				return STATEMENT_PRESENT;
+			}
 		}
 	}while(0);
 

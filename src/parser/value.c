@@ -89,9 +89,22 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 				{
 					Symbol castTypeSymbol={};
 					enum SYMBOL_PARSE_RESULT res=Symbol_parse(&castTypeSymbol,token_iter);
-					if(res==SYMBOL_PRESENT){
-						// if symbol is present, assume this is a type cast
-						// and continue parsing value
+
+					bool foundValue=false;
+					switch(res){
+						case SYMBOL_PRESENT:
+							fatal("cannot cast to named symbol");
+						case SYMBOL_INVALID:
+							// fallthrough outer switch to parse value 
+							println("invalid symbol at line %d col %d",token.line,token.col);
+							break;
+						case SYMBOL_WITHOUT_NAME:{
+							println("valid symbol after (, type %s",Type_asString(castTypeSymbol.type));
+							// print next token
+							TokenIter_lastToken(token_iter, &token);
+							println("next token is: line %d col %d %.*s",token.line,token.col,token.len,token.p);
+							// if symbol is present, assume this is a type cast and continue parsing value
+
 						// make sure there is no symbol name though
 						if(castTypeSymbol.name){
 							fatal("expected type name after (, instead got declaration of symbol %.*s",castTypeSymbol.name->len,castTypeSymbol.name->p);
@@ -117,9 +130,14 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 								.value=allocAndCopy(sizeof(Value),&castValue),
 							}
 						};
+							foundValue=true;
+							break;
+						}
+					}
+
+					if(foundValue){
 						break;
 					}
-					// else fallthrough to parse value
 				}
 
 				Value innerValue={};
@@ -203,12 +221,12 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 
 				break;
 			}else{
-				// print token and location
-				println("unexpected keyword %.*s at line %d col %d",token.len,token.p,token.line,token.col);
-				// and token after that
-				TokenIter_nextToken(token_iter,&token);
-				println("next token is: line %d col %d %.*s",token.line,token.col,token.len,token.p);
-				fatal("unimplemented");
+				// encountered unexpected keyword
+				if(value->kind!=VALUE_KIND_UNKNOWN){
+					// if value kind is already set, return valid value
+					return VALUE_PRESENT;
+				}
+				return VALUE_INVALID;
 			}
 		}
 

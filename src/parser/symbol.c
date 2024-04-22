@@ -1,3 +1,5 @@
+#include "parser/symbol.h"
+#include "parser/type.h"
 #include<parser/parser.h>
 #include<util/util.h>
 #include<tokenizer.h>
@@ -7,35 +9,46 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Symbol*symbol,struct TokenIter*token_iter_
 	struct TokenIter *token_iter=&this_iter;
 
 	*symbol=(Symbol){};
-	Type_init(&symbol->type);
 
 	// currently, nothing else is possible (rest is unimplemented)
-	symbol->kind=SYMBOL_KIND_DECLARATION;
+	//symbol->kind=SYMBOL_KIND_DECLARATION;
 
 	Token token;
 	TokenIter_lastToken(token_iter,&token);
 
-	if(Token_equalString(&token,"const")){
-		symbol->type->is_const=true;
+	// check if type has prefix: const
+	bool type_is_const=Token_equalString(&token,"const");
+	if(type_is_const){
 		TokenIter_nextToken(token_iter,&token);
 	}
 
-	// if token is struct,enum,union then parse as such (via reference)
-	if(Token_equalString(&token,"struct")||Token_equalString(&token,"enum")||Token_equalString(&token,"union")){
-		Token last_token=token;
+	// check if type has prefix: struct,enum,union
+	bool type_is_struct=Token_equalString(&token,"struct");
+	bool type_is_enum=Token_equalString(&token,"enum");
+	bool type_is_union=Token_equalString(&token,"union");
+	if(type_is_struct||type_is_enum||type_is_union){
 		TokenIter_nextToken(token_iter,&token);
-		symbol->type->reference.is_struct=Token_equalString(&last_token,"struct");
-		symbol->type->reference.is_enum=Token_equalString(&last_token,"enum");
-		symbol->type->reference.is_union=Token_equalString(&last_token,"union");
 	}
 
 	// verify name of type is valid
 	if(!Token_isValidIdentifier(&token)){
-		return SYMBOL_INVALID;
+		goto SYMBOL_PARSE_RET_FAILURE;
 	}
 
-	symbol->type->kind=TYPE_KIND_REFERENCE;
-	symbol->type->reference.name=token;
+	Type_init(&symbol->type);
+
+	*symbol->type=(Type){
+		.kind=TYPE_KIND_REFERENCE,
+		.is_const=type_is_const,
+		.reference={
+			.name=token,
+			.is_struct=type_is_struct,
+			.is_enum=type_is_enum,
+			.is_union=type_is_union,
+		}
+	};
+
+	// skip over name token
 	TokenIter_nextToken(token_iter,&token);
 
 	while(1){
@@ -54,21 +67,7 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Symbol*symbol,struct TokenIter*token_iter_
 		if(symbol->name==nullptr){
 			// verify name of symbol is valid
 			if(!Token_isValidIdentifier(&token)){
-				if(
-					symbol->type->kind==TYPE_KIND_REFERENCE
-					&& (
-						symbol->type->reference.is_struct
-						||
-						symbol->type->reference.is_enum
-						||
-						symbol->type->reference.is_union
-					)
-				){
-					// a type may stand by itself as declaration without a symbol name
-					return SYMBOL_PRESENT;
-				}else{
-					return SYMBOL_INVALID;
-				}
+				goto SYMBOL_PARSE_RET_NONAME;
 			}
 			symbol->name=allocAndCopy(sizeof(Token),&token);
 			TokenIter_nextToken(token_iter,&token);
@@ -118,9 +117,16 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Symbol*symbol,struct TokenIter*token_iter_
 		break;
 	}
 
+SYMBOL_PARSE_RET_SUCCESS:
 	*token_iter_in=this_iter;
-
 	return SYMBOL_PRESENT;
+
+SYMBOL_PARSE_RET_NONAME:
+	*token_iter_in=this_iter;
+	return SYMBOL_WITHOUT_NAME;
+
+SYMBOL_PARSE_RET_FAILURE:
+	return SYMBOL_INVALID;
 }
 bool Symbol_equal(Symbol*a,Symbol*b){
 	if(a->kind!=b->kind){

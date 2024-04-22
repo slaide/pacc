@@ -25,6 +25,8 @@ enum SYMBOL_PARSE_RESULT{
 	SYMBOL_PRESENT,
 	/// @brief symbol was not parsed successfully (e.g. syntax error)
 	SYMBOL_INVALID,
+	/// @brief something that looks like a type was present, but no name for the symbol (this _may_ be an error, depending on the context)
+	SYMBOL_WITHOUT_NAME,
 };
 /// @brief  type cannot be parsed separate from symbol, so we parse a symbol as combination of type and name parser
 /// @param symbol 
