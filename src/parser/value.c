@@ -96,13 +96,10 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 							fatal("cannot cast to named symbol");
 						case SYMBOL_INVALID:
 							// fallthrough outer switch to parse value 
-							println("invalid symbol at line %d col %d",token.line,token.col);
 							break;
 						case SYMBOL_WITHOUT_NAME:{
-							println("valid symbol after (, type %s",Type_asString(castTypeSymbol.type));
 							// print next token
 							TokenIter_lastToken(token_iter, &token);
-							println("next token is: line %d col %d %.*s",token.line,token.col,token.len,token.p);
 							// if symbol is present, assume this is a type cast and continue parsing value
 
 						// make sure there is no symbol name though
@@ -176,14 +173,15 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 					}
 
 					struct StructFieldInitializer field={};
+					array_init(&field.fieldNameSegments,sizeof(Token));
 
 					// if next token is dot, parse field name followed by assignment symbol
-					if(Token_equalString(&token,".")){
+					while(Token_equalString(&token,".")){
 						TokenIter_nextToken(token_iter,&token);
-						field.name=allocAndCopy(sizeof(Token),&token);
+						array_append(&field.fieldNameSegments,&token);
 						TokenIter_nextToken(token_iter,&token);
 						if(!Token_equalString(&token,"=")){
-							fatal("expected = after field name");
+							fatal("expected = after field name at line %d col %d but got %.*s",token.line,token.col,token.len,token.p);
 						}
 						TokenIter_nextToken(token_iter,&token);
 					}
@@ -506,15 +504,15 @@ char*Value_asString(Value*value){
 		}
 		case VALUE_KIND_STRUCT_INITIALIZER:{
 			char*ret=calloc(1024,1);
-			sprintf(ret,"init struct with fields:");
+			sprintf(ret,"init struct with fields: ");
 			for(int i=0;i<value->struct_initializer.structFields.len;i++){
 				struct StructFieldInitializer*field=array_get(&value->struct_initializer.structFields,i);
-				char*field_str=Value_asString(field->value);
-				if(field->name){
-					sprintf(ret+strlen(ret),"\nfield %d (%.*s): %s",i,field->name->len,field->name->p,field_str);
-				}else{
-					sprintf(ret+strlen(ret),"\nfield %d : %s",i,field_str);
+				sprintf(ret+strlen(ret),"field %d ",i);
+				for(int j=0;j<field->fieldNameSegments.len;j++){
+					Token*segment=array_get(&field->fieldNameSegments,j);
+					sprintf(ret+strlen(ret),".%.*s",segment->len,segment->p);
 				}
+				sprintf(ret+strlen(ret)," = %s , ",Value_asString(field->value));
 			}
 			return ret;
 		}

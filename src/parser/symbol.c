@@ -1,5 +1,3 @@
-#include "parser/symbol.h"
-#include "parser/type.h"
 #include<parser/parser.h>
 #include<util/util.h>
 #include<tokenizer.h>
@@ -111,7 +109,36 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Symbol*symbol,struct TokenIter*token_iter_
 		}
 
 		if(Token_equalString(&token,"[")){
-			fatal("arrays not yet implemented");
+			TokenIter_nextToken(token_iter,&token);
+
+			Value array_len={};
+			enum VALUE_PARSE_RESULT res=Value_parse(&array_len,token_iter);
+			// if there is a value: dynamic array
+			// otherwise, value with some size (may be static or runtime determined)
+			if(res==VALUE_PRESENT){
+				symbol->type=allocAndCopy(sizeof(Type),&(Type){
+					.kind=TYPE_KIND_ARRAY,
+					.array={
+						.base=symbol->type,
+						.len=allocAndCopy(sizeof(Value), &array_len),
+					},
+				});
+			}else{
+				symbol->type=allocAndCopy(sizeof(Type),&(Type){
+					.kind=TYPE_KIND_ARRAY,
+					.array={
+						.base=symbol->type,
+					},
+				});
+			}
+			// check for trailing ]
+			TokenIter_lastToken(token_iter,&token);
+			if(!Token_equalString(&token,"]")){
+				goto SYMBOL_PARSE_RET_FAILURE;
+			}
+			TokenIter_nextToken(token_iter,&token);
+
+			continue;
 		}
 
 		break;

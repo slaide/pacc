@@ -3,11 +3,13 @@
 #include<util/array.h>
 #include<tokenizer.h>
 
+typedef struct Value Value;
+
 #include<parser/type.h>
 
 enum VALUE_KIND{
 	VALUE_KIND_UNKNOWN,
-	
+
 	VALUE_KIND_STATIC_VALUE,
 
 	VALUE_KIND_OPERATOR,
@@ -39,12 +41,19 @@ enum VALUE_OPERATOR{
 	VALUE_OPERATOR_DOT,
 	VALUE_OPERATOR_ARROW,
 };
-typedef struct Value Value;
 
 char*Value_asString(Value*value);
 
 struct StructFieldInitializer{
-	Token*name;
+	/// @brief field name tokens
+	///
+	/// may be nested
+	///
+	/// e.g.
+	/// 1) {field1value}
+	/// 2) {.field=field1value}
+	/// 3) (.field.subfield.innervalue=field1value}
+	array fieldNameSegments;
 	Value*value;
 };
 struct Value{

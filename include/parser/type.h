@@ -1,8 +1,11 @@
 #pragma once
 
 #include<util/array.h>
-
 #include<tokenizer.h>
+
+typedef struct Type Type;
+
+#include<parser/value.h>
 
 enum TYPEKIND{
 	TYPE_KIND_UNKNOWN=0,
@@ -15,7 +18,6 @@ enum TYPEKIND{
 	TYPE_KIND_UNION,
 	TYPE_KIND_ENUM,	
 };
-typedef struct Type Type;
 struct Type{
 	bool is_const;
 
@@ -51,7 +53,7 @@ struct Type{
 		 */
 		struct{
 			Type* base;
-			int len;
+			Value* len;
 		}array;
 		struct{
 			/**
