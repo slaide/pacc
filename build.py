@@ -4,7 +4,7 @@ import argparse, platform
 from dataclasses import dataclass
 from pathlib import Path
 
-from libbuild import Command
+from libbuild import Command, InputVariant, OutputVariant
 
 arg_parser=argparse.ArgumentParser(
     prog="build.py",
@@ -95,15 +95,15 @@ clang_link_str = f"""
     {{input}}
 """.replace("\n"," ")
 
-mkdir=Command(cmd="mkdir {output}",output="manual",overwrite=False,phony=True)
+mkdir=Command(cmd="mkdir {output}",output=OutputVariant.Manual,overwrite=False,phony=True)
 
 cc=Command(cmd=clang_comp_str,
-    input="manual",
+    input=InputVariant.Manual,
     dependencies=[mkdir(output="build")],
-    output="generated",
-    output_generator=lambda i:f"build/{Path(i).stem}.o"
+    output=OutputVariant.Generated,
+    output_generator=lambda i:f"build/{Path(i).stem}.o" if i else "build/ERROR_output_generator.o"
 )
-link=Command(cmd=clang_link_str,output="manual")
+link=Command(cmd=clang_link_str,output=OutputVariant.Manual)
 
 # get build dependencies from #inclues : clang -Iwhatever -std=c2x -M -MT main.exe -MF main.d main.c
 
@@ -119,6 +119,7 @@ if __name__=="__main__":
             "src/parser/symbol.c",
             "src/parser/type.c",
             "src/parser/value.c",
+            "src/parser/module.c",
 
             "src/file.c",
             "src/tokenizer.c",

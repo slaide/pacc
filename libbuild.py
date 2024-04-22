@@ -7,12 +7,14 @@ import shutil, shlex, json
 from pathlib import Path
 from enum import Enum
 
+"""
 build_database_filepath=Path(".build")
 if build_database_filepath.exists():
     build_database=json.parse(build_database_filepath.open("r"))
 else:
     build_database={}
-
+"""
+    
 def remove(path:tp.Union[str,Path]):
     """ remove file/symlink/directory from filesystem"""
     path=Path(path)
@@ -29,6 +31,7 @@ def remove(path:tp.Union[str,Path]):
 class InputVariant(str,Enum):
     None_="none",
     Manual="manual",
+
 class OutputVariant(str,Enum):
     None_="none",
     Manual="manual",
@@ -41,7 +44,7 @@ class CommandInstance:
         input:tp.Optional[str]=None,
         output:tp.Optional[str]=None,
         
-        depends:["Self"]=[]
+        depends:tp.List["CommandInstance"]=[]
     ):
         self.cmd=cmd
         
@@ -67,9 +70,9 @@ class CommandInstance:
 class Command:
     def __init__(self,
         cmd:str,
-        input:InputVariant="none",
-        output:OutputVariant="none",
-        output_generator:tp.Optional[callable]=None,
+        input:InputVariant=InputVariant.None_,
+        output:OutputVariant=OutputVariant.None_,
+        output_generator:tp.Optional[tp.Callable[[tp.Optional[str]],str]]=None,
         dependencies:tp.List[CommandInstance]=[],
         overwrite:bool=True,
         phony:bool=False,
@@ -150,15 +153,16 @@ class Command:
 
         # verify output
 
-        if self.output=="none":
+        if self.output==OutputVariant.None_:
             if output is not None:
                 raise ValueError("command has no output, yet an output was provided")
 
-        elif self.output=="manual":
+        elif self.output==OutputVariant.Manual:
             if output is None:
                 raise ValueError("command requires output argument, yet no output was provided")
 
-        elif self.output=="generated":
+        elif self.output==OutputVariant.Generated:
+            assert self.output_generator is not None, "output generator is not defined"
             output=self.output_generator(input)
 
         return CommandInstance(self,input=input,output=output,depends=depends)
