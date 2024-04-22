@@ -254,14 +254,21 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 					// begin multiline comment -> parse until */
 					last_token->tag=TOKEN_TAG_COMMENT;
 
-					while(p<end){
+					bool reached_end=false;
+					bool found_terminator=false;
+					while(!(reached_end||found_terminator)){
 						p++;
 						if(*p=='*' && *(p+1)=='/'){
+							found_terminator=true;
 							p+=2;
 							break;
 						}
+						reached_end=p>=(end-1);
 					}
 
+					if(!found_terminator){
+						fatal("unterminated multiline comment starting at line %d col %d",last_token->line,last_token->col);
+					}
 					last_token->len=p-last_token->p;
 
 					continue;
