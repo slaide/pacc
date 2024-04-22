@@ -20,12 +20,22 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Symbol*symbol,struct TokenIter*token_iter_
 		TokenIter_nextToken(token_iter,&token);
 	}
 
+	// if token is struct,enum,union then parse as such (via reference)
+	if(Token_equalString(&token,"struct")||Token_equalString(&token,"enum")||Token_equalString(&token,"union")){
+		Token last_token=token;
+		TokenIter_nextToken(token_iter,&token);
+		symbol->type->reference.is_struct=Token_equalString(&last_token,"struct");
+		symbol->type->reference.is_enum=Token_equalString(&last_token,"enum");
+		symbol->type->reference.is_union=Token_equalString(&last_token,"union");
+	}
+
 	// verify name of type is valid
-	if(!Token_isValidIdentifier(&token))
-		fatal("expected valid identifier at line %d col %d but got instead %.*s",token.line,token.col,token.len,token.p);
+	if(!Token_isValidIdentifier(&token)){
+		return SYMBOL_INVALID;
+	}
 
 	symbol->type->kind=TYPE_KIND_REFERENCE;
-	symbol->type->reference=token;
+	symbol->type->reference.name=token;
 	TokenIter_nextToken(token_iter,&token);
 
 	while(1){

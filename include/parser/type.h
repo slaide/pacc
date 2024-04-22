@@ -31,7 +31,12 @@ struct Type{
 		 * @brief reference some type by name
 		 * 
 		 */
-		Token reference;
+		struct{
+			Token name;
+			bool is_struct;
+			bool is_union;
+			bool is_enum;
+		}reference;
 		/**
 		 * @brief pointing to another type
 		 * 
