@@ -54,7 +54,21 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Symbol*symbol,struct TokenIter*token_iter_
 		if(symbol->name==nullptr){
 			// verify name of symbol is valid
 			if(!Token_isValidIdentifier(&token)){
-				return SYMBOL_INVALID;
+				if(
+					symbol->type->kind==TYPE_KIND_REFERENCE
+					&& (
+						symbol->type->reference.is_struct
+						||
+						symbol->type->reference.is_enum
+						||
+						symbol->type->reference.is_union
+					)
+				){
+					// a type may stand by itself as declaration without a symbol name
+					return SYMBOL_PRESENT;
+				}else{
+					return SYMBOL_INVALID;
+				}
 			}
 			symbol->name=allocAndCopy(sizeof(Token),&token);
 			TokenIter_nextToken(token_iter,&token);

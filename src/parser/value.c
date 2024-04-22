@@ -1,4 +1,3 @@
-#include "parser/value.h"
 #include<parser/parser.h>
 #include<util/util.h>
 #include<tokenizer.h>
@@ -82,6 +81,37 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 				break;
 			}else if(token.p==KEYWORD_PARENS_OPEN){
 				TokenIter_nextToken(token_iter,&token);
+
+				// try parsing type first, assuming this is a type cast
+				// if type parsing fails, attempt parsing value
+				{
+					Symbol castTypeSymbol={};
+					enum SYMBOL_PARSE_RESULT res=Symbol_parse(&castTypeSymbol,token_iter);
+					if(res==SYMBOL_PRESENT){
+						// if symbol is present, assume this is a type cast
+						// and continue parsing value
+						// make sure there is no symbol name though
+						if(castTypeSymbol.name){
+							fatal("expected type name after (, instead got declaration of symbol %.*s",castTypeSymbol.name->len,castTypeSymbol.name->p);
+						}
+
+						Value castValue={};
+						enum VALUE_PARSE_RESULT res=Value_parse(&castValue,token_iter);
+						if(res==VALUE_INVALID){
+							fatal("invalid value after cast");
+						}
+
+						*value=(Value){
+							.kind=VALUE_KIND_CAST,
+							.cast={
+								.castTo=allocAndCopy(sizeof(Value),&castTypeSymbol.type),
+								.value=allocAndCopy(sizeof(Value),&castValue),
+							}
+						};
+						break;
+					}
+					// else fallthrough to parse value
+				}
 
 				Value innerValue={};
 				enum VALUE_PARSE_RESULT res=Value_parse(&innerValue,token_iter);
