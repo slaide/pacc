@@ -7,6 +7,8 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 	struct TokenIter token_iter_=*token_iter_in;
 	struct TokenIter *token_iter=&token_iter_;
 
+	*value=(Value){};
+
 	Token token;
 	TokenIter_lastToken(token_iter,&token);
 	/// used by some cases
@@ -95,6 +97,13 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 							fatal("expected type name after (, instead got declaration of symbol %.*s",castTypeSymbol.name->len,castTypeSymbol.name->p);
 						}
 
+						// check for closing )
+						TokenIter_lastToken(token_iter, &token);
+						if(token.p!=KEYWORD_PARENS_CLOSE){
+							fatal("expected ) after cast, instead got %.*s",token.len,token.p);
+						}
+						TokenIter_nextToken(token_iter, &token);
+
 						Value castValue={};
 						enum VALUE_PARSE_RESULT res=Value_parse(&castValue,token_iter);
 						if(res==VALUE_INVALID){
@@ -104,7 +113,7 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 						*value=(Value){
 							.kind=VALUE_KIND_CAST,
 							.cast={
-								.castTo=allocAndCopy(sizeof(Value),&castTypeSymbol.type),
+								.castTo=castTypeSymbol.type,
 								.value=allocAndCopy(sizeof(Value),&castValue),
 							}
 						};
@@ -268,8 +277,7 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 				};
 				continue;
 			}
-			*token_iter_in=*token_iter;
-			return VALUE_PRESENT;
+			goto VALUE_PARSE_RET_SUCCESS;
 		}
 		TokenIter_nextToken(token_iter,&token);
 
@@ -372,6 +380,8 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 		}
 		fatal("");
 	}
+
+VALUE_PARSE_RET_SUCCESS:
 	*token_iter_in=*token_iter;
 	return VALUE_PRESENT;
 }
@@ -473,7 +483,7 @@ char*Value_asString(Value*value){
 		}
 		case VALUE_KIND_CAST:{
 			char*ret=calloc(1024,1);
-			sprintf(ret,"CAST ( %s ) TO ( %s )",Value_asString(value->cast.value),Value_asString(value->cast.castTo));
+			sprintf(ret,"CAST ( %s ) TO ( %s )",Value_asString(value->cast.value),Type_asString(value->cast.castTo));
 			return ret;
 		}
 		case VALUE_KIND_STRUCT_INITIALIZER:{

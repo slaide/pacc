@@ -101,7 +101,7 @@ struct Value{
 		struct{
 			/// tricky.. castTo should be a type, but we dont know that it is a type while parsing
 			/// and a type may look like a value expression when used for casting..
-			Value*castTo;
+			Type*castTo;
 			Value*value;
 		}cast;
 	};
