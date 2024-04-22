@@ -149,7 +149,7 @@ int main(int argc, const char**argv){
 
 	if(!TokenIter_isEmpty(&token_iter)){
 		Token next_token;
-		TokenIter_nextToken(&token_iter,&next_token);
+		TokenIter_lastToken(&token_iter,&next_token);
 		fatal("unexpected tokens at end of file at line %d col %d: %.*s",next_token.line,next_token.col,next_token.len,next_token.p);
 	}
 	
