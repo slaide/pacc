@@ -71,6 +71,18 @@ char* Type_asString(Type* type){
 
 		switch(type_ref->kind){
 			case TYPE_KIND_REFERENCE:
+				if(type_ref->reference.is_enum){
+					sprintf(ret_ptr,"enum ");
+					ret_ptr=ret+strlen(ret);
+				}
+				if(type_ref->reference.is_struct){
+					sprintf(ret_ptr,"struct ");
+					ret_ptr=ret+strlen(ret);
+				}
+				if(type_ref->reference.is_union){
+					sprintf(ret_ptr,"union ");
+					ret_ptr=ret+strlen(ret);
+				}
 				sprintf(ret_ptr,"%.*s",type_ref->reference.name.len,type_ref->reference.name.p);
 				ret_ptr=ret+strlen(ret);
 
