@@ -112,8 +112,8 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 		.tokens=nullptr
 	};
 
-	int line=0;
-	int col=0;
+	int line=1;
+	int col=1;
 
 	char*p=file->contents;
 	char*const end=file->contents+file->contents_len;
@@ -122,7 +122,7 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 	while(1){
 		Token token={
 			.filename=nullptr,
-			.line=line+1,
+			.line=line,
 			.col=col,
 			.p=p,
 			.tag=TOKEN_TAG_UNDEFINED,
@@ -143,9 +143,9 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 				case '\n':
 					if(token.p==p){
 						line++;
-						col=0;
+						col=1;
 						p++;
-						token.line=line+1;
+						token.line=line;
 						token.col=col;
 						token.p=p;
 						continue;
