@@ -4,7 +4,10 @@
 #include<tokenizer.h>
 
 
-enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter){
+enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
+	struct TokenIter token_iter_=*token_iter_in;
+	struct TokenIter *token_iter=&token_iter_;
+
 	Token token;
 	TokenIter_lastToken(token_iter,&token);
 	/// used by some cases
@@ -60,8 +63,6 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter){
 		}
 
 		case TOKEN_TAG_KEYWORD:{
-			//Token_map(&token);
-
 			if(token.p==KEYWORD_ASTERISK){
 				fatal("unimplemented");
 			}else if(token.p==KEYWORD_AMPERSAND){
@@ -89,7 +90,8 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter){
 				}
 				TokenIter_lastToken(token_iter, &token);
 				if(token.p!=KEYWORD_PARENS_CLOSE){
-					fatal("expected ) after (");
+					println("got value %s",Value_asString(&innerValue));
+					fatal("expected ) after (, instead got %.*s",token.len,token.p);
 				}
 				TokenIter_nextToken(token_iter, &token);
 
@@ -236,6 +238,7 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter){
 				};
 				continue;
 			}
+			*token_iter_in=*token_iter;
 			return VALUE_PRESENT;
 		}
 		TokenIter_nextToken(token_iter,&token);
@@ -339,6 +342,7 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter){
 		}
 		fatal("");
 	}
+	*token_iter_in=*token_iter;
 	return VALUE_PRESENT;
 }
 char*Value_asString(Value*value){
