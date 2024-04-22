@@ -31,6 +31,7 @@ bool Token_equalString(Token*,char*);
 typedef struct Tokenizer{
 	int num_tokens;
     Token*tokens;
+	const char*token_src;
 }Tokenizer;
 
 int Tokenizer_init(Tokenizer*tokenizer,File*file);

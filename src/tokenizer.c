@@ -106,8 +106,11 @@ bool char_is_token(char c){
 
 
 int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
-	tokenizer->num_tokens=0;
-	tokenizer->tokens=nullptr;
+	*tokenizer=(Tokenizer){
+		.token_src=file->filepath,
+		.num_tokens=0,
+		.tokens=nullptr
+	};
 
 	int line=0;
 	int col=0;
