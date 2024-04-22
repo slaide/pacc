@@ -26,7 +26,7 @@ bool Type_equal(Type*a,Type*b){
 
 	switch(a->kind){
 		case TYPE_KIND_REFERENCE:
-			return Token_equalToken(&a->reference,&b->reference);
+			return Token_equalToken(&a->reference.name,&b->reference.name);
 		case TYPE_KIND_POINTER:
 			return Type_equal(a->pointer.base,b->pointer.base);
 		case TYPE_KIND_ARRAY:

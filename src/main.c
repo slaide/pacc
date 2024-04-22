@@ -1,4 +1,3 @@
-#include "parser/statement.h"
 #include <util/util.h>
 #include <parser/parser.h>
 #include<util/ansi_esc_codes.h>
@@ -14,7 +13,7 @@ void Module_print(Module*module){
 bool test1(){
 	Type* intType=allocAndCopy(sizeof(Type),&(Type){
 		.kind=TYPE_KIND_REFERENCE,
-		.reference=(Token){.len=3,.p="int",},
+		.reference={.name=(Token){.len=3,.p="int",}},
 	});
 
 	File testFile;
@@ -60,7 +59,7 @@ bool test1(){
 bool test2(){
 	Type* intType=allocAndCopy(sizeof(Type),&(Type){
 		.kind=TYPE_KIND_REFERENCE,
-		.reference=(Token){.len=3,.p="int",},
+		.reference={.name=(Token){.len=3,.p="int",}},
 	});
 
 	File testFile;
