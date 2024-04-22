@@ -65,7 +65,7 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 
 		case TOKEN_TAG_KEYWORD:{
 			if(token.p==KEYWORD_ASTERISK){
-				fatal("unimplemented");
+				fatal("unimplemented dereference operator");
 			}else if(token.p==KEYWORD_AMPERSAND){
 				TokenIter_nextToken(token_iter,&token);
 
@@ -86,11 +86,12 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 
 				// try parsing type first, assuming this is a type cast
 				// if type parsing fails, attempt parsing value
-				{
+				bool foundValue=false;
+				do{
+					struct TokenIter castTestIter=*token_iter;
 					Symbol castTypeSymbol={};
-					enum SYMBOL_PARSE_RESULT res=Symbol_parse(&castTypeSymbol,token_iter);
+					enum SYMBOL_PARSE_RESULT res=Symbol_parse(&castTypeSymbol,&castTestIter);
 
-					bool foundValue=false;
 					switch(res){
 						case SYMBOL_PRESENT:
 							fatal("cannot cast to named symbol");
@@ -99,27 +100,31 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 							break;
 						case SYMBOL_WITHOUT_NAME:{
 							// print next token
-							TokenIter_lastToken(token_iter, &token);
+							TokenIter_lastToken(&castTestIter, &token);
 							// if symbol is present, assume this is a type cast and continue parsing value
 
 							// make sure there is no symbol name though
 							if(castTypeSymbol.name){
-								fatal("expected type name after (, instead got declaration of symbol %.*s",castTypeSymbol.name->len,castTypeSymbol.name->p);
+								// not a casting operation
+								break;
 							}
 
 							// check for closing )
-							TokenIter_lastToken(token_iter, &token);
+							TokenIter_lastToken(&castTestIter, &token);
 							if(token.p!=KEYWORD_PARENS_CLOSE){
-								fatal("expected ) after cast, instead got %.*s",token.len,token.p);
+								// not a casting operation
+								break;
 							}
-							TokenIter_nextToken(token_iter, &token);
+							TokenIter_nextToken(&castTestIter, &token);
 
 							Value castValue={};
-							enum VALUE_PARSE_RESULT res=Value_parse(&castValue,token_iter);
+							enum VALUE_PARSE_RESULT res=Value_parse(&castValue,&castTestIter);
 							if(res==VALUE_INVALID){
 								fatal("invalid value after cast");
 							}
 
+							*token_iter=castTestIter;
+							TokenIter_lastToken(token_iter, &token);
 							*value=(Value){
 								.kind=VALUE_KIND_CAST,
 								.cast={
@@ -131,10 +136,9 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 							break;
 						}
 					}
-
-					if(foundValue){
-						break;
-					}
+				}while(0);
+				if(foundValue){
+					break;
 				}
 
 				Value innerValue={};
@@ -208,7 +212,7 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 				}
 
 				if (!Token_equalString(&token, "}")){
-					fatal("expected } after struct initializer");	
+					fatal("expected } after struct initializer at line %d col %d",token.line,token.col);
 				}
 				TokenIter_nextToken(token_iter, &token);
 
@@ -216,6 +220,42 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 					.kind=VALUE_KIND_STRUCT_INITIALIZER,
 					.struct_initializer={
 						.structFields=structFields,
+					}
+				};
+
+				break;
+			}else if(token.p==KEYWORD_BANG){
+				TokenIter_nextToken(token_iter,&token);
+
+				Value innerValue={};
+				enum VALUE_PARSE_RESULT res=Value_parse(&innerValue,token_iter);
+				if(res==VALUE_INVALID){
+					fatal("invalid value after !");
+				}
+
+				*value=(Value){
+					.kind=VALUE_KIND_OPERATOR,
+					.op={
+						.left=allocAndCopy(sizeof(Value),&innerValue),
+						.op=VALUE_OPERATOR_LOGICAL_NOT,
+					}
+				};
+
+				break;
+			}else if(token.p==KEYWORD_TILDE){
+				TokenIter_nextToken(token_iter,&token);
+
+				Value innerValue={};
+				enum VALUE_PARSE_RESULT res=Value_parse(&innerValue,token_iter);
+				if(res==VALUE_INVALID){
+					fatal("invalid value after ~");
+				}
+
+				*value=(Value){
+					.kind=VALUE_KIND_OPERATOR,
+					.op={
+						.left=allocAndCopy(sizeof(Value),&innerValue),
+						.op=VALUE_OPERATOR_BITWISE_NOT,
 					}
 				};
 
@@ -250,8 +290,24 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 			op=VALUE_OPERATOR_DIV;
 		}else if(Token_equalString(&token,"<")){
 			op=VALUE_OPERATOR_LESS_THAN;
+		}else if(Token_equalString(&token,"<=")){
+			op=VALUE_OPERATOR_LESS_THAN_OR_EQUAL;
+		}else if(Token_equalString(&token,">=")){
+			op=VALUE_OPERATOR_GREATER_THAN_OR_EQUAL;
 		}else if(Token_equalString(&token,">")){
 			op=VALUE_OPERATOR_GREATER_THAN;
+		}else if(Token_equalString(&token,"&&")){
+			op=VALUE_OPERATOR_LOGICAL_AND;
+		}else if(Token_equalString(&token,"||")){
+			op=VALUE_OPERATOR_LOGICAL_OR;
+		}else if(Token_equalString(&token,"&")){
+			op=VALUE_OPERATOR_BITWISE_AND;
+		}else if(Token_equalString(&token,"|")){
+			op=VALUE_OPERATOR_BITWISE_OR;
+		}else if(Token_equalString(&token,"==")){
+			op=VALUE_OPERATOR_EQUAL;
+		}else if(Token_equalString(&token,"!=")){
+			op=VALUE_OPERATOR_NOT_EQUAL;
 		}else if(Token_equalString(&token,"++")){
 			op=VALUE_OPERATOR_POSTFIX_INCREMENT;
 		}else if(Token_equalString(&token,"--")){
@@ -307,6 +363,17 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 			case VALUE_OPERATOR_LESS_THAN:
 			case VALUE_OPERATOR_GREATER_THAN:
 			case VALUE_OPERATOR_INDEX:
+			case VALUE_OPERATOR_LESS_THAN_OR_EQUAL:
+			case VALUE_OPERATOR_GREATER_THAN_OR_EQUAL:
+
+			case VALUE_OPERATOR_LOGICAL_AND:
+			case VALUE_OPERATOR_LOGICAL_OR:
+			
+			case VALUE_OPERATOR_BITWISE_AND:
+			case VALUE_OPERATOR_BITWISE_OR:
+
+			case VALUE_OPERATOR_NOT_EQUAL:
+			case VALUE_OPERATOR_EQUAL:
 				requiresSecondOperand=true;
 				break;
 			default:;
@@ -452,9 +519,19 @@ char*Value_asString(Value*value){
 					sprintf(ret,"left (%s) LESS_THAN right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
 					return ret;
 				}
+				case VALUE_OPERATOR_LESS_THAN_OR_EQUAL:{
+					char *ret=calloc(1024,1);
+					sprintf(ret,"left (%s) LESS_THAN_OR_EQUAL right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					return ret;
+				}
 				case VALUE_OPERATOR_GREATER_THAN:{
 					char *ret=calloc(1024,1);
 					sprintf(ret,"left (%s) GREATER_THAN right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					return ret;
+				}
+				case VALUE_OPERATOR_GREATER_THAN_OR_EQUAL:{
+					char *ret=calloc(1024,1);
+					sprintf(ret,"left (%s) GREATER_THAN_OR_EQUAL right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
 					return ret;
 				}
 				case VALUE_OPERATOR_POSTFIX_INCREMENT:{
@@ -474,6 +551,47 @@ char*Value_asString(Value*value){
 					sprintf(ret,"left (%s) INDEX right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
 					return ret;
 				}
+				case VALUE_OPERATOR_LOGICAL_AND:{
+					char *ret=calloc(1024,1);
+					sprintf(ret,"left (%s) LOGICAL_AND right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					return ret;
+				}
+				case VALUE_OPERATOR_LOGICAL_OR:{
+					char *ret=calloc(1024,1);
+					sprintf(ret,"left (%s) LOGICAL_OR right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					return ret;
+				}
+				case VALUE_OPERATOR_BITWISE_AND:{
+					char *ret=calloc(1024,1);
+					sprintf(ret,"left (%s) BITWISE_AND right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					return ret;
+				}
+				case VALUE_OPERATOR_BITWISE_OR:{
+					char *ret=calloc(1024,1);
+					sprintf(ret,"left (%s) BITWISE_OR right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					return ret;
+				}
+				case VALUE_OPERATOR_EQUAL:{
+					char *ret=calloc(1024,1);
+					sprintf(ret,"left (%s) EQUAL right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					return ret;
+				}
+				case VALUE_OPERATOR_NOT_EQUAL:{
+					char *ret=calloc(1024,1);
+					sprintf(ret,"left (%s) NOT_EQUAL right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					return ret;
+				}
+				case VALUE_OPERATOR_LOGICAL_NOT:{
+					char *ret=calloc(1024,1);
+					sprintf(ret,"LOGICAL_NOT %s",Value_asString(value->op.left));
+					return ret;
+				}
+				case VALUE_OPERATOR_BITWISE_NOT:{
+					char *ret=calloc(1024,1);
+					sprintf(ret,"BITWISE_NOT %s",Value_asString(value->op.left));
+					return ret;
+				}
+
 				default:
 					fatal("unimplemented %d",value->op.op);
 			}

@@ -72,6 +72,22 @@ char*Statement_asString(Statement*statement){
 			}
 			return ret;
 		}
+		case STATEMENT_KIND_IF:{
+			char*ret=calloc(1024,1);
+			sprintf(ret,"if %s",Value_asString(statement->if_.condition));
+			for(int i=0;i<statement->if_.body.len;i++){
+				Statement*bodyStatement=array_get(&statement->if_.body,i);
+				sprintf(ret+strlen(ret),"\n  body %d: %s",i,Statement_asString(bodyStatement));
+			}
+			if(statement->if_.elseBodyPresent){
+				sprintf(ret+strlen(ret),"\nelse");
+				for(int i=0;i<statement->if_.elseBody.len;i++){
+					Statement*bodyStatement=array_get(&statement->if_.elseBody,i);
+					sprintf(ret+strlen(ret),"\n  body %d: %s",i,Statement_asString(bodyStatement));
+				}
+			}
+			return ret;
+		}
 		default:
 			fatal("unimplemented %s",Statementkind_asString(statement->tag));
 	}
@@ -84,7 +100,92 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 	// long list of stuff that can be a statement
 
 	if(Token_equalString(&token,"if")){
-		fatal("if not yet implemented");
+		TokenIter_nextToken(token_iter,&token);
+		// check for (
+		if(!Token_equalString(&token,"(")){
+			fatal("expected opening parenthesis after if");
+		}
+		TokenIter_nextToken(token_iter,&token);
+
+		Value condition={};
+		enum VALUE_PARSE_RESULT valres=Value_parse(&condition,token_iter);
+		if(valres==VALUE_INVALID){
+			fatal("invalid condition in if statement at line %d col %d %.*s",token.line,token.col,token.len,token.p);
+		}
+
+		TokenIter_lastToken(token_iter,&token);
+		if(!Token_equalString(&token,")")){
+			fatal("expected closing parenthesis after if condition: line %d col %d %.*s",token.line,token.col,token.len,token.p);
+		}
+		TokenIter_nextToken(token_iter,&token);
+
+		array ifBodyTokens;
+		array_init(&ifBodyTokens,sizeof(Statement));
+
+		bool singleStatementBody=!Token_equalString(&token,"{");
+		if(!singleStatementBody){
+			TokenIter_nextToken(token_iter,&token);
+		}
+
+		do{
+			Statement ifBodyStatement={};
+			enum STATEMENT_PARSE_RESULT res=Statement_parse(&ifBodyStatement,token_iter);
+			TokenIter_lastToken(token_iter,&token);
+			switch(res){
+				case STATEMENT_INVALID:
+					fatal("invalid statement in if body at line %d col %d %.*s",token.line,token.col,token.len,token.p);
+					break;
+				default:
+					array_append(&ifBodyTokens,&ifBodyStatement);
+					break;
+			}
+		}while(!singleStatementBody && !Token_equalString(&token,"}"));
+		if(!singleStatementBody)
+			TokenIter_nextToken(token_iter,&token);
+
+		bool elseBodyPresent=false;
+		array elseBody={};
+		if(Token_equalString(&token, "else")){
+			TokenIter_nextToken(token_iter,&token);
+
+			array elseBodyTokens;
+			array_init(&elseBodyTokens,sizeof(Statement));
+
+			bool singleStatementElseBody=!Token_equalString(&token,"{");
+			if(!singleStatementElseBody){
+				TokenIter_nextToken(token_iter,&token);
+			}
+
+			do{
+				Statement elseBodyStatement={};
+				enum STATEMENT_PARSE_RESULT res=Statement_parse(&elseBodyStatement,token_iter);
+				TokenIter_lastToken(token_iter,&token);
+				switch(res){
+					case STATEMENT_INVALID:
+						fatal("invalid statement in else body");
+						break;
+					default:
+						array_append(&elseBodyTokens,&elseBodyStatement);
+						break;
+				}
+			}while(!singleStatementElseBody && !Token_equalString(&token,"}"));
+			if(!singleStatementElseBody)
+				TokenIter_nextToken(token_iter,&token);
+
+			elseBodyPresent=true;
+			elseBody=elseBodyTokens;
+		}
+
+		*out=(Statement){
+			.tag=STATEMENT_KIND_IF,
+			.if_={
+				.condition=allocAndCopy(sizeof(Value),&condition),
+				.body=ifBodyTokens,
+				.elseBodyPresent=elseBodyPresent,
+				.elseBody=elseBody,
+			}
+		};
+		return STATEMENT_PRESENT;
 	}
 	if(Token_equalString(&token,"while")){
 		fatal("while not yet implemented");
@@ -278,7 +379,6 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 							break;
 						case VALUE_PRESENT:
 							*token_iter=valueParseIter;
-							println("got value in statement %s",Value_asString(&value));
 							foundValue=true;
 							break;
 					}
@@ -403,4 +503,47 @@ bool Statement_equal(Statement*a,Statement*b){
 	}
 
 	return true;
+}
+
+const char* Statementkind_asString(enum STATEMENT_KIND kind){
+	switch(kind){
+		case STATEMENT_UNKNOWN:
+			return("STATEMENT_UNKNOWN");
+		case STATEMENT_PREP_DEFINE:
+			return("STATEMENT_PREP_DEFINE");
+		case STATEMENT_PREP_INCLUDE:
+			return("STATEMENT_PREP_INCLUDE");
+		case STATEMENT_FUNCTION_DECLARATION:
+			return("STATEMENT_FUNCTION_DECLARATION");
+		case STATEMENT_FUNCTION_DEFINITION:
+			return("STATEMENT_FUNCTION_DEFINITION");
+		case STATEMENT_KIND_RETURN:
+			return("STATEMENT_KIND_RETURN");
+		case STATEMENT_KIND_IF:
+			return("STATEMENT_IF");
+		case STATEMENT_SWITCH:
+			return("STATEMENT_SWITCH");
+		case STATEMENT_CASE:
+			return("STATEMENT_CASE");
+		case STATEMENT_BREAK:
+			return("STATEMENT_BREAK");
+		case STATEMENT_CONTINUE:
+			return("STATEMENT_CONTINUE");
+		case STATEMENT_DEFAULT:
+			return("STATEMENT_DEFAULT");
+		case STATEMENT_GOTO:
+			return("STATEMENT_GOTO");
+		case STATEMENT_LABEL:
+			return("STATEMENT_LABEL");
+		case STATEMENT_KIND_WHILE:
+			return("STATEMENT_KIND_WHILE");
+		case STATEMENT_KIND_FOR:
+			return("STATEMENT_KIND_FOR");
+		case STATEMENT_KIND_SYMBOL_DEFINITION:
+			return("STATEMENT_KIND_SYMBOL_DEFINITION");
+		case STATEMENT_VALUE:
+			return("STATEMENT_VALUE");
+		default:
+			fatal("unknown symbol kind %d",kind);
+	}
 }

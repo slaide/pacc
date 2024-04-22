@@ -106,6 +106,7 @@ static const char*KEYWORD_MINUS="-";
 static const char*KEYWORD_EQUAL="=";
 static const char*KEYWORD_QUESTIONMARK="?";
 static const char*KEYWORD_BANG="!";
+static const char*KEYWORD_TILDE="~";
 static const char*KEYWORD_HASH="#";
 static const char*KEYWORD_PARENS_OPEN="(";
 static const char*KEYWORD_PARENS_CLOSE=")";

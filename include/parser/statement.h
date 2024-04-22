@@ -18,7 +18,7 @@ enum STATEMENT_KIND{
 	STATEMENT_FUNCTION_DEFINITION,
 	/// @brief return statement, e.g. return 0;
 	STATEMENT_KIND_RETURN,
-	STATEMENT_IF,
+	STATEMENT_KIND_IF,
 	STATEMENT_SWITCH,
 	STATEMENT_CASE,
 	STATEMENT_BREAK,
@@ -94,6 +94,14 @@ struct Statement{
 
 			array body;
 		}forLoop;
+
+		struct{
+			Value* condition;
+			array body;
+
+			bool elseBodyPresent;
+			array elseBody;
+		}if_;
 	};
 };
 
