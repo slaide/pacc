@@ -7,7 +7,9 @@
 
 enum VALUE_KIND{
 	VALUE_KIND_STATIC_VALUE,
+
 	VALUE_KIND_OPERATOR,
+	
 	VALUE_KIND_SYMBOL_REFERENCE,
 	VALUE_KIND_FUNCTION_CALL,
 	VALUE_KIND_ARROW,
@@ -16,6 +18,7 @@ enum VALUE_KIND{
 	VALUE_KIND_STRUCT_INITIALIZER,
 	VALUE_KIND_PARENS_WRAPPED,
 	VALUE_KIND_CAST,
+	VALUE_KIND_TYPEREF,
 };
 const char* ValueKind_asString(enum VALUE_KIND kind);
 
@@ -66,30 +69,35 @@ struct Value{
 			array args;
 		}function_call;
 
+		/// @brief VALUE_KIND_DOT dot operator
 		struct{
 			Value*left;
 			Token*right;
 		}dot;
 
+		/// @brief VALUE_KIND_ARROW arrow operator
 		struct{
 			Value*left;
 			Token*right;
 		}arrow;
 
+		/// @brief VALUE_KIND_ADDRESS_OF address of operator
 		struct{
 			Value*addressedValue;
 		}addrOf;
 
+		/// @brief VALUE_KIND_STRUCT_INITIALIZER struct initializer
 		struct{
 			/// array of struct StructFieldInitializer
 			array structFields;
 		}struct_initializer;
 
+		/// @brief VALUE_KIND_PARENS_WRAPPED parens wrapped value
 		struct{
 			Value*innerValue;
 		}parens_wrapped;
 
-		/// hacky implementation of a cast operation
+		/// @brief VALUE_KIND_CAST cast operation
 		struct{
 			/// tricky.. castTo should be a type, but we dont know that it is a type while parsing
 			/// and a type may look like a value expression when used for casting..
