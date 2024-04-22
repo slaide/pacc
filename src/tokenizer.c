@@ -325,78 +325,70 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 			Token*numericToken=&token;
 
 			// check for leading sign
-			int hasSign=false;
 			if(numericToken->p[0]=='-' || numericToken->p[0]=='+'){
-				hasSign=true;
+				token.num_info.hasLeadingSign=true;
 				/*if(numericToken->len==1)
 					break;*/
 			}
 
-			int offset=hasSign;
+			int offset=token.num_info.hasLeadingSign;
 
 			// check for prefix (0x, 0b, 0o)
-			int hasPrefix=false;
 			if(numericToken->p[offset]==0){
 				if(numericToken->p[offset+1]=='x' || numericToken->p[offset+1]=='X'){
-					hasPrefix=true;
+					token.num_info.hasPrefix=true;
 				}
 				if(numericToken->p[offset+1]=='b' || numericToken->p[offset+1]=='B'){
-					hasPrefix=true;
+					token.num_info.hasPrefix=true;
 				}
 				if(numericToken->p[offset+1]=='o' || numericToken->p[offset+1]=='O'){
-					hasPrefix=true;
+					token.num_info.hasPrefix=true;
 				}
 			}
-			offset+=hasPrefix;
+			offset+=token.num_info.hasPrefix;
 
 			// check for leading digit[s]
-			int hasLeadingDigits=false;
 			while(numericToken->p[offset]>='0' && numericToken->p[offset]<='9'){
-				hasLeadingDigits=true;
+				token.num_info.hasLeadingDigits=true;
 				offset++;
 			}
 
 			// check for decimal point (which may be the leading character, omitting any leading digit, e.g. ".5")
-			int hasDecimalPoint=false;
 			if(numericToken->p[offset]=='.'){
-				hasDecimalPoint=true;
+				token.num_info.hasDecimalPoint=true;
 				if(numericToken->len==offset+1)
 					break;
 			}
-			offset+=hasDecimalPoint;
+			offset+=token.num_info.hasDecimalPoint;
 
 			// check for trailing digits (can only be present if there is a decimal point)
-			int hasTrailingDigits=false;
-			if(hasDecimalPoint){
+			if(token.num_info.hasDecimalPoint){
 				// check for trailing digits
 				while(numericToken->p[offset]>='0' && numericToken->p[offset]<='9'){
-					hasTrailingDigits=true;
+					token.num_info.hasTrailingDigits=true;
 					offset++;
 				}
 			}
 
 			// check for exponent
-			int hasExponent=false;
 			if((numericToken->p[offset]=='e' || numericToken->p[offset]=='E')){
-				hasExponent=true;
+				token.num_info.hasExponent=true;
 				offset++;
 				if(offset==numericToken->len)
 					break;
 			}
 
 			// check for exponent sign
-			int hasExponentSign=false;
-			if(hasExponent && (numericToken->p[offset]=='-' || numericToken->p[offset]=='+')){
-				hasExponentSign=true;
+			if(token.num_info.hasExponent && (numericToken->p[offset]=='-' || numericToken->p[offset]=='+')){
+				token.num_info.hasExponentSign=true;
 				offset++;
 				if(offset==numericToken->len)
 					break;
 			}
 
 			// check for exponent digits (exponent must have at least one digit, and be base10 integer)
-			int hasExponentDigits=false;
 			while(numericToken->p[offset]>='0' && numericToken->p[offset]<='9'){
-				hasExponentDigits=true;
+				token.num_info.hasExponentDigits=true;
 				offset++;
 			}
 
@@ -404,7 +396,7 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 			if(offset<numericToken->len)
 				break;
 
-			if(hasExponent && !hasExponentDigits){
+			if(token.num_info.hasExponent && !token.num_info.hasExponentDigits){
 				fatal("invalid number literal");
 			}
 
@@ -413,7 +405,7 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 			p+=offset-1;
 
 			// check for flags to determine number type
-			if(hasDecimalPoint || hasExponent){
+			if(token.num_info.hasDecimalPoint || token.num_info.hasExponent){
 				numericToken->tag=TOKEN_TAG_LITERAL_FLOAT;
 			}else{
 				numericToken->tag=TOKEN_TAG_LITERAL_INTEGER;

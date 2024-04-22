@@ -1,5 +1,6 @@
 #pragma once
 
+#include<stdint.h>
 #include<file.h>
 
 typedef struct Token{
@@ -22,6 +23,18 @@ typedef struct Token{
 	int col;
 	int len;
 	const char*p;
+	/// @brief for numeric literals, this contains some metainformation
+	struct{
+		bool hasLeadingSign;
+		uint8_t base;
+		bool hasPrefix;
+		bool hasLeadingDigits;
+		bool hasDecimalPoint;
+		bool hasTrailingDigits;
+		bool hasExponent;
+		bool hasExponentSign;
+		bool hasExponentDigits;
+	}num_info;
 }Token;
 
 // check of two tokens point to strings with the same content

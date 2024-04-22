@@ -102,31 +102,31 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 							TokenIter_lastToken(token_iter, &token);
 							// if symbol is present, assume this is a type cast and continue parsing value
 
-						// make sure there is no symbol name though
-						if(castTypeSymbol.name){
-							fatal("expected type name after (, instead got declaration of symbol %.*s",castTypeSymbol.name->len,castTypeSymbol.name->p);
-						}
-
-						// check for closing )
-						TokenIter_lastToken(token_iter, &token);
-						if(token.p!=KEYWORD_PARENS_CLOSE){
-							fatal("expected ) after cast, instead got %.*s",token.len,token.p);
-						}
-						TokenIter_nextToken(token_iter, &token);
-
-						Value castValue={};
-						enum VALUE_PARSE_RESULT res=Value_parse(&castValue,token_iter);
-						if(res==VALUE_INVALID){
-							fatal("invalid value after cast");
-						}
-
-						*value=(Value){
-							.kind=VALUE_KIND_CAST,
-							.cast={
-								.castTo=castTypeSymbol.type,
-								.value=allocAndCopy(sizeof(Value),&castValue),
+							// make sure there is no symbol name though
+							if(castTypeSymbol.name){
+								fatal("expected type name after (, instead got declaration of symbol %.*s",castTypeSymbol.name->len,castTypeSymbol.name->p);
 							}
-						};
+
+							// check for closing )
+							TokenIter_lastToken(token_iter, &token);
+							if(token.p!=KEYWORD_PARENS_CLOSE){
+								fatal("expected ) after cast, instead got %.*s",token.len,token.p);
+							}
+							TokenIter_nextToken(token_iter, &token);
+
+							Value castValue={};
+							enum VALUE_PARSE_RESULT res=Value_parse(&castValue,token_iter);
+							if(res==VALUE_INVALID){
+								fatal("invalid value after cast");
+							}
+
+							*value=(Value){
+								.kind=VALUE_KIND_CAST,
+								.cast={
+									.castTo=castTypeSymbol.type,
+									.value=allocAndCopy(sizeof(Value),&castValue),
+								}
+							};
 							foundValue=true;
 							break;
 						}
@@ -180,6 +180,8 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 						TokenIter_nextToken(token_iter,&token);
 						array_append(&field.fieldNameSegments,&token);
 						TokenIter_nextToken(token_iter,&token);
+					}
+					if(field.fieldNameSegments.len>0){
 						if(!Token_equalString(&token,"=")){
 							fatal("expected = after field name at line %d col %d but got %.*s",token.line,token.col,token.len,token.p);
 						}
@@ -235,69 +237,84 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 	while(1){
 		// check for operators
 		TokenIter_lastToken(token_iter,&token);
-		enum VALUE_OPERATOR op;
-		bool requiresSecondOperand=false;
+
+		enum VALUE_OPERATOR op=VALUE_OPERATOR_UNKNOWN;
 		const char*opTerminator=nullptr;
 		if(Token_equalString(&token,"+")){
 			op=VALUE_OPERATOR_ADD;
-			requiresSecondOperand=true;
 		}else if(Token_equalString(&token,"-")){
 			op=VALUE_OPERATOR_SUB;
-			requiresSecondOperand=true;
 		}else if(Token_equalString(&token,"*")){
 			op=VALUE_OPERATOR_MULT;
-			requiresSecondOperand=true;
 		}else if(Token_equalString(&token,"/")){
 			op=VALUE_OPERATOR_DIV;
-			requiresSecondOperand=true;
 		}else if(Token_equalString(&token,"<")){
 			op=VALUE_OPERATOR_LESS_THAN;
-			requiresSecondOperand=true;
 		}else if(Token_equalString(&token,">")){
 			op=VALUE_OPERATOR_GREATER_THAN;
-			requiresSecondOperand=true;
 		}else if(Token_equalString(&token,"++")){
 			op=VALUE_OPERATOR_POSTFIX_INCREMENT;
-			requiresSecondOperand=false;
 		}else if(Token_equalString(&token,"--")){
 			op=VALUE_OPERATOR_POSTFIX_DECREMENT;
-			requiresSecondOperand=false;
 		}else if(Token_equalString(&token,".")){
 			op=VALUE_OPERATOR_DOT;
 		}else if(Token_equalString(&token,"->")){
 			op=VALUE_OPERATOR_ARROW;
 		}else if(Token_equalString(&token,"(")){
 			op=VALUE_OPERATOR_CALL;
-			requiresSecondOperand=false;
 			opTerminator=")";
 		}else if(Token_equalString(&token,"[")){
 			op=VALUE_OPERATOR_INDEX;
-			requiresSecondOperand=true;
 			opTerminator="]";
-		}else{
-			// if current value is parensWrapped, interpret as casting operation, i.e. parse new value
-			// and continue this parsing loop with the new casted value
-			if(value->kind==VALUE_KIND_PARENS_WRAPPED){
-				Value castedValue={};
-				enum VALUE_PARSE_RESULT res=Value_parse(&castedValue,token_iter);
-				TokenIter_lastToken(token_iter,&token);
-				if(res==VALUE_INVALID){
-					fatal("invalid value after (");
-				}
-				*value=(Value){
-					.kind=VALUE_KIND_CAST,
-					.cast={
-						.castTo=allocAndCopy(sizeof(Value),value),
-						.value=allocAndCopy(sizeof(Value),&castedValue),
-					}
-				};
-				continue;
-			}
-			goto VALUE_PARSE_RET_SUCCESS;
 		}
-		TokenIter_nextToken(token_iter,&token);
+
+		if(op==VALUE_OPERATOR_UNKNOWN && value->kind!=VALUE_KIND_UNKNOWN){
+			bool gotOperator=false;
+			// check if next token is numeric, where an operator may have been interpreted as a unary operator or a sign
+			if(token.tag==TOKEN_TAG_LITERAL_INTEGER){
+				if(token.num_info.hasLeadingSign){
+					switch(token.p[0]){
+						case '+':
+							op=VALUE_OPERATOR_ADD;
+							break;
+						case '-':
+							op=VALUE_OPERATOR_SUB;
+							break;
+						default:
+							fatal("unimplemented %c",token.p[0]);
+					}
+					token.num_info.hasLeadingSign=false;
+					token.p++;
+					token.len--;
+					gotOperator=true;
+				}
+			}
+
+			if(!gotOperator)
+				goto VALUE_PARSE_RET_SUCCESS;
+
+			// do not retrieve new token since current token contained sign for operator plus a value as second operand
+		}else{
+			TokenIter_nextToken(token_iter,&token);
+		}
+
+		bool requiresSecondOperand=false;
+		switch(op){
+			case VALUE_OPERATOR_ADD:
+			case VALUE_OPERATOR_SUB:
+			case VALUE_OPERATOR_MULT:
+			case VALUE_OPERATOR_DIV:
+			case VALUE_OPERATOR_LESS_THAN:
+			case VALUE_OPERATOR_GREATER_THAN:
+			case VALUE_OPERATOR_INDEX:
+				requiresSecondOperand=true;
+				break;
+			default:;
+		}
 
 		switch(op){
+			case VALUE_OPERATOR_UNKNOWN:
+				fatal("error lead to unknown operator, with next token %.*s",token.len,token.p);
 			case VALUE_OPERATOR_DOT:{
 				// get member name via next token
 				Token memberToken=token;
