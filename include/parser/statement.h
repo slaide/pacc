@@ -9,6 +9,9 @@
 enum STATEMENT_KIND{
 	STATEMENT_UNKNOWN=0,
 
+	/// e.g. just a semicolon
+	STATEMENT_EMPTY,
+
 	STATEMENT_PREP_DEFINE,
 	STATEMENT_PREP_INCLUDE,
 
@@ -102,6 +105,12 @@ struct Statement{
 			bool elseBodyPresent;
 			array elseBody;
 		}if_;
+
+		struct{
+			Value* condition;
+			array body;
+			bool doWhile;
+		}whileLoop;
 	};
 };
 

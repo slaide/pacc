@@ -4,6 +4,9 @@
 
 char*Statement_asString(Statement*statement){
 	switch(statement->tag){
+		case STATEMENT_EMPTY:{
+			return "empty statement";
+		}
 		case STATEMENT_KIND_RETURN:{
 			char*ret=calloc(1024,1);
 			sprintf(ret,"return %s",Value_asString(statement->return_.retval));
@@ -29,10 +32,19 @@ char*Statement_asString(Statement*statement){
 		}
 		case STATEMENT_KIND_FOR:{
 			char *ret=calloc(1024,1);
-			sprintf(ret+strlen(ret),"for loop:\n");
-			sprintf(ret+strlen(ret),"  init: %s\n",Statement_asString(statement->forLoop.init));
-			sprintf(ret+strlen(ret),"  condition: %s\n",Value_asString(statement->forLoop.condition));
-			sprintf(ret+strlen(ret),"  step: %s\n",Value_asString(statement->forLoop.step));
+			sprintf(ret+strlen(ret),"loop: for\n");
+			if(statement->forLoop.init!=nullptr)
+				sprintf(ret+strlen(ret),"  init: %s\n",Statement_asString(statement->forLoop.init));
+			else
+				sprintf(ret+strlen(ret),"  init: none\n");
+			if(statement->forLoop.condition!=nullptr)
+				sprintf(ret+strlen(ret),"  condition: %s\n",Value_asString(statement->forLoop.condition));
+			else
+				sprintf(ret+strlen(ret),"  condition: none\n");
+			if(statement->forLoop.step!=nullptr)
+				sprintf(ret+strlen(ret),"  step: %s\n",Value_asString(statement->forLoop.step));
+			else
+				sprintf(ret+strlen(ret),"  step: none\n");
 
 			for(int i=0;i<statement->forLoop.body.len;i++){
 				Statement*bodyStatement=array_get(&statement->forLoop.body,i);
@@ -88,17 +100,38 @@ char*Statement_asString(Statement*statement){
 			}
 			return ret;
 		}
+		case STATEMENT_KIND_WHILE:{
+			char*ret=calloc(1024,1);
+			if(statement->whileLoop.doWhile){
+				sprintf(ret,"loop: do while ( %s )",Value_asString(statement->whileLoop.condition));
+			}else{
+				sprintf(ret,"loop: while ( %s )",Value_asString(statement->whileLoop.condition));
+			}
+			for(int i=0;i<statement->whileLoop.body.len;i++){
+				Statement*bodyStatement=array_get(&statement->whileLoop.body,i);
+				sprintf(ret+strlen(ret),"\n  body %d: %s",i,Statement_asString(bodyStatement));
+			}
+			return ret;
+		}
 		default:
 			fatal("unimplemented %s",Statementkind_asString(statement->tag));
 	}
 }
 
-enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token_iter){
+enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token_iter_in){
+	struct TokenIter token_iter_copy=*token_iter_in;
+	struct TokenIter*token_iter=&token_iter_copy;
+
 	Token token;
 	TokenIter_lastToken(token_iter,&token);
 
 	// long list of stuff that can be a statement
 
+	if(Token_equalString(&token,";")){
+		TokenIter_nextToken(token_iter,&token);
+		*out=(Statement){.tag=STATEMENT_EMPTY};
+		goto STATEMENT_PARSE_RET_SUCCESS;
+	}
 	if(Token_equalString(&token,"if")){
 		TokenIter_nextToken(token_iter,&token);
 		// check for (
@@ -185,10 +218,133 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 				.elseBody=elseBody,
 			}
 		};
-		return STATEMENT_PRESENT;
+
+		goto STATEMENT_PARSE_RET_SUCCESS;
 	}
 	if(Token_equalString(&token,"while")){
-		fatal("while not yet implemented");
+		TokenIter_nextToken(token_iter,&token);
+		// check for (
+		if(!Token_equalString(&token,"(")){
+			fatal("expected opening parenthesis after while");
+		}
+		TokenIter_nextToken(token_iter,&token);
+
+		Value condition={};
+		enum VALUE_PARSE_RESULT valres=Value_parse(&condition,token_iter);
+		if(valres==VALUE_INVALID){
+			fatal("invalid condition in while statement at line %d col %d %.*s",token.line,token.col,token.len,token.p);
+		}
+		TokenIter_lastToken(token_iter,&token);
+
+		if(!Token_equalString(&token,")")){
+			fatal("expected closing parenthesis after while condition: line %d col %d %.*s",token.line,token.col,token.len,token.p);
+		}
+		TokenIter_nextToken(token_iter,&token);
+
+		bool singleStatementBody=!Token_equalString(&token,"{");
+		if(!singleStatementBody){
+			TokenIter_nextToken(token_iter,&token);
+		}
+
+		array body_tokens;
+		array_init(&body_tokens,sizeof(Statement));
+
+		bool endBody=false;
+		do{
+			Statement whileBodyStatement={};
+			enum STATEMENT_PARSE_RESULT res=Statement_parse(&whileBodyStatement,token_iter);
+			TokenIter_lastToken(token_iter,&token);
+			switch(res){
+				case STATEMENT_INVALID:
+					// e.g. empty body
+					endBody=true;
+					break;
+				default:
+					println("found statement %s",Statement_asString(&whileBodyStatement));
+					array_append(&body_tokens,&whileBodyStatement);
+					break;
+			}
+		}while(!singleStatementBody && !endBody &&!Token_equalString(&token,"}"));
+		if(!singleStatementBody)
+			TokenIter_nextToken(token_iter,&token);
+
+		*out=(Statement){
+			.tag=STATEMENT_KIND_WHILE,
+			.whileLoop={
+				.condition=allocAndCopy(sizeof(Value),&condition),
+				.body=body_tokens,
+			}
+		};
+
+		goto STATEMENT_PARSE_RET_SUCCESS;
+	}
+	if(Token_equalString(&token,"do")){
+		TokenIter_nextToken(token_iter,&token);
+		
+		bool singleStatementBody=!Token_equalString(&token,"{");
+		if(!singleStatementBody){
+			TokenIter_nextToken(token_iter,&token);
+		}
+
+		array body_tokens;
+		array_init(&body_tokens,sizeof(Statement));
+
+		do{
+			Statement doWhileBodyStatement={};
+			enum STATEMENT_PARSE_RESULT res=Statement_parse(&doWhileBodyStatement,token_iter);
+			TokenIter_lastToken(token_iter,&token);
+			switch(res){
+				case STATEMENT_INVALID:
+					fatal("invalid statement in do while body");
+					break;
+				default:
+					array_append(&body_tokens,&doWhileBodyStatement);
+					break;
+			}
+		}while(!singleStatementBody && !Token_equalString(&token,"}"));
+		if(!singleStatementBody)
+			TokenIter_nextToken(token_iter,&token);
+
+		if(!Token_equalString(&token,"while")){
+			fatal("expected while after do while body");
+		}
+		TokenIter_nextToken(token_iter,&token);
+
+		// check for (
+		if(!Token_equalString(&token,"(")){
+			fatal("expected opening parenthesis after do while");
+		}
+		TokenIter_nextToken(token_iter,&token);
+
+		Value condition={};
+		enum VALUE_PARSE_RESULT valres=Value_parse(&condition,token_iter);
+		if(valres==VALUE_INVALID){
+			fatal("invalid condition in do while statement at line %d col %d %.*s",token.line,token.col,token.len,token.p);
+		}
+		TokenIter_lastToken(token_iter,&token);
+
+		// check for )
+		if(!Token_equalString(&token,")")){
+			fatal("expected closing parenthesis after do while condition: line %d col %d %.*s",token.line,token.col,token.len,token.p);
+		}
+		TokenIter_nextToken(token_iter,&token);
+
+		// check for trailing semicolon
+		if(!Token_equalString(&token,";")){
+			fatal("expected semicolon after do while statement: line %d col %d %.*s",token.line,token.col,token.len,token.p);
+		}
+		TokenIter_nextToken(token_iter,&token);
+
+		*out=(Statement){
+			.tag=STATEMENT_KIND_WHILE,
+			.whileLoop={
+				.doWhile=true,
+				.condition=allocAndCopy(sizeof(Value),&condition),
+				.body=body_tokens,
+			}
+		};
+
+		goto STATEMENT_PARSE_RET_SUCCESS;
 	}
 	if(Token_equalString(&token,"for")){
 		TokenIter_nextToken(token_iter,&token);
@@ -201,16 +357,21 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 
 		Statement init_statement={};
 		enum STATEMENT_PARSE_RESULT res=Statement_parse(&init_statement,token_iter);
-		if(res==STATEMENT_INVALID) fatal("invalid init statement in for loop");
-		TokenIter_lastToken(token_iter,&token);
-		out->forLoop.init=allocAndCopy(sizeof(Statement),&init_statement);
+		if(res==STATEMENT_INVALID){
+			out->forLoop.init=nullptr;
+		}else{
+			TokenIter_lastToken(token_iter,&token);
+			out->forLoop.init=allocAndCopy(sizeof(Statement),&init_statement);
+		}
 
 		Value condition={};
 		enum VALUE_PARSE_RESULT valres=Value_parse(&condition,token_iter);
-		if(valres==VALUE_INVALID) fatal("invalid condition in for loop");
-		TokenIter_lastToken(token_iter,&token);
-
-		out->forLoop.condition=allocAndCopy(sizeof(Value),&condition);
+		if(valres==VALUE_INVALID){
+			out->forLoop.condition=nullptr;
+		}else{
+			TokenIter_lastToken(token_iter,&token);
+			out->forLoop.condition=allocAndCopy(sizeof(Value),&condition);
+		}
 
 		// check for semicolon
 		if(!Token_equalString(&token,";")){
@@ -220,10 +381,13 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 
 		Value post_expression={};
 		valres=Value_parse(&post_expression,token_iter);
-		if(valres==VALUE_INVALID) fatal("invalid post expression in for loop");
-		TokenIter_lastToken(token_iter,&token);
+		if(valres==VALUE_INVALID){
+			out->forLoop.step=nullptr;
+		}else{
+			TokenIter_lastToken(token_iter,&token);
 
-		out->forLoop.step=allocAndCopy(sizeof(Value),&post_expression);
+			out->forLoop.step=allocAndCopy(sizeof(Value),&post_expression);
+		}
 
 		// check for closing paranthesis
 		if(!Token_equalString(&token,")")){
@@ -274,7 +438,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 
 		out->forLoop.body=body_tokens;
 
-		return STATEMENT_PRESENT;
+		goto STATEMENT_PARSE_RET_SUCCESS;
 	}
 
 	if(Token_equalString(&token,"return")){
@@ -295,7 +459,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 		if(Token_equalString(&token,";")){
 			TokenIter_nextToken(token_iter,&token);
 
-			return STATEMENT_PRESENT;
+			goto STATEMENT_PARSE_RET_SUCCESS;
 		}
 		fatal("missing semicolon after return statement at line %d col %d %.*s",token.line,token.col,token.len,token.p);
 	}
@@ -361,7 +525,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 					}
 
 					*out=statement;
-					return STATEMENT_PRESENT;
+					goto STATEMENT_PARSE_RET_SUCCESS;
 				}
 				break;
 			default:{
@@ -392,7 +556,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 							fatal("expected semicolon after statement: line %d col %d %.*s",token.line,token.col,token.len,token.p);
 						}
 						TokenIter_nextToken(token_iter,&token);
-						return STATEMENT_PRESENT;
+						goto STATEMENT_PARSE_RET_SUCCESS;
 					}
 				}
 
@@ -421,7 +585,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 				TokenIter_nextToken(token_iter,&token);
 
 				*out=statement;
-				return STATEMENT_PRESENT;
+				goto STATEMENT_PARSE_RET_SUCCESS;
 			}
 		}
 	}while(0);
@@ -443,10 +607,14 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 		}
 		TokenIter_nextToken(token_iter,&token);
 
-		return STATEMENT_PRESENT;
+		goto STATEMENT_PARSE_RET_SUCCESS;
 	}while(0);
 
 	return STATEMENT_INVALID;
+
+STATEMENT_PARSE_RET_SUCCESS:
+	*token_iter_in=*token_iter;
+	return STATEMENT_PRESENT;
 }
 bool Statement_equal(Statement*a,Statement*b){
 	if(a->tag!=b->tag){
