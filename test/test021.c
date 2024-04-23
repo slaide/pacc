@@ -11,4 +11,4 @@ int main(int argc, const char**argv){
 	return 0;
 }
 
-// TESTGOAL unary logical negation, unary binary negation
+// TESTFOR unary logical negation, unary binary negation

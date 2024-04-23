@@ -31,4 +31,4 @@ int main(int argc, const char**argv){
 	return 0;
 }
 
-// TESTGOAL dereference a pointer
+// TESTFOR dereference a pointer

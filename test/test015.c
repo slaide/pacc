@@ -11,4 +11,4 @@ bool test1(){
 
 	return true;
 }
-// TESTGOAL casting expression on struct initializer
+// TESTFOR casting expression on struct initializer

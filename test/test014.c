@@ -5,4 +5,4 @@ int main(){
 	return test;
 }
 
-// TESTGOAL : const type
+// TESTFOR const type

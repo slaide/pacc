@@ -37,4 +37,4 @@ struct Test{
     int;
 };
 
-// TESTGOAL unnamed symbol declarations, type declarations, type definitions
+// TESTFOR unnamed symbol declarations, type declarations, type definitions

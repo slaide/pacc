@@ -18,4 +18,4 @@ int main(){
     return 0;
 }
 
-// TESTGOAL break and continue in loops, modulo operator
+// TESTFOR break and continue in loops, modulo operator

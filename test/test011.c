@@ -6,4 +6,4 @@ int main(){
     int r=(int)a;
     return r;
 }
-// TESTGOAL : float literals and casting operation
+// TESTFOR float literals and casting operation

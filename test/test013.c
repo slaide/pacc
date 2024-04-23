@@ -5,4 +5,4 @@ int main(){
 	return 0;
 }
 
-// TESTGOAL : explicit struct typename
+// TESTFOR explicit struct typename

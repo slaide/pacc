@@ -10,4 +10,4 @@ int main(int argc, const char**argv){
 	return 0;
 }
 
-// TESTGOAL while loop, for loop
+// TESTFOR while loop, for loop

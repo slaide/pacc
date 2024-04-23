@@ -23,4 +23,4 @@ int main(int argc, const char**argv){
 	return 0;
 }
 
-// TESTGOAL do while loop, multiple versions of a for loop
+// TESTFOR do while loop, multiple versions of a for loop

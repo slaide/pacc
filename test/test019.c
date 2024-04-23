@@ -8,4 +8,4 @@ int main(int argc, const char**argv){
 	return 0;
 }
 
-// TESTGOAL if statement with single statement in body, nested logical operators
+// TESTFOR if statement with single statement in body, nested logical operators

@@ -10,4 +10,4 @@ void Module_print(Module*module){
 	}
 }
 
-// TESTGOAL : include directive with quotation marks and angle brackets, function definition, for loop, arrow operator, dot operator
+// TESTFOR include directive with quotation marks and angle brackets, function definition, for loop, arrow operator, dot operator
