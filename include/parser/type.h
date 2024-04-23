@@ -14,35 +14,29 @@ enum TYPEKIND{
 	TYPE_KIND_POINTER,
 	TYPE_KIND_ARRAY,
 	TYPE_KIND_FUNCTION,
+
 	TYPE_KIND_STRUCT,
 	TYPE_KIND_UNION,
 	TYPE_KIND_ENUM,	
 };
+char* TypeKind_asString(enum TYPEKIND kind);
+
 struct Type{
 	bool is_const;
 
-	/**
-	 * @brief name of the type, if any (e.g. for struct, union, enum, typedef, etc.)
-	 * 
-	 */
+	/// @brief name of the type, if any (e.g. for struct, union, enum, typedef, etc.)
 	Token* name;
 
 	enum TYPEKIND kind;
 	union{
-		/**
-		 * @brief reference some type by name
-		 * 
-		 */
+		/// @brief reference some type by name
 		struct{
 			Token name;
 			bool is_struct;
 			bool is_union;
 			bool is_enum;
 		}reference;
-		/**
-		 * @brief pointing to another type
-		 * 
-		 */
+		/// @brief pointing to another type
 		struct{
 			Type* base;
 		}pointer;
@@ -56,13 +50,25 @@ struct Type{
 			Value* len;
 		}array;
 		struct{
-			/**
-			 * @brief array of argument symbols
-			 * 
-			 */
+			/// @brief array of argument symbols
 			array args;
 			Type* ret;
 		}function;
+		struct{
+			Token*name;
+			/// @brief array of struct members, which are Symbols
+			array members;
+		}struct_;
+		struct{
+			Token*name;
+			/// @brief array of struct members, which are Symbols
+			array members;
+		}union_;
+		struct{
+			Token*name;
+			/// @brief array of struct members, which are Values (e.g. symbol ref, or assignment for "ENUM_MEMBER=2", etc.)
+			array members;
+		}enum_;
 	};
 };
 char* Type_asString(Type* type);

@@ -7,6 +7,8 @@ int main(){
         if(i==10){
             continue;
         }
+        int i=2;
+        i=4;
         printf("i is %d",i);
         if(i>0 && i%111==0){
             break;

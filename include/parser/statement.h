@@ -21,16 +21,26 @@ enum STATEMENT_KIND{
 	STATEMENT_FUNCTION_DEFINITION,
 	/// @brief return statement, e.g. return 0;
 	STATEMENT_KIND_RETURN,
+	/// @brief if statement with body
 	STATEMENT_KIND_IF,
+	/// @brief switch statement with body (cases are regular statements in this body)
 	STATEMENT_SWITCH,
-	STATEMENT_CASE,
+	/// @brief a case statement, e.g. case 0:
+	STATEMENT_SWITCHCASE,
+
+	/// @brief a break statement, e.g. break;
 	STATEMENT_BREAK,
+	/// @brief a continue statement, e.g. continue;
 	STATEMENT_CONTINUE,
+	/// @brief default label in switch case statement, e.g. default:
 	STATEMENT_DEFAULT,
+	/// @brief goto statement, e.g. goto label;
 	STATEMENT_GOTO,
 	STATEMENT_LABEL,
 	STATEMENT_KIND_WHILE,
 	STATEMENT_KIND_FOR,
+
+	STATEMENT_BLOCK,
 	
 	STATEMENT_VALUE,
 
@@ -99,6 +109,10 @@ struct Statement{
 		}forLoop;
 
 		struct{
+			array body;
+		}block;
+
+		struct{
 			Value* condition;
 			array body;
 
@@ -111,6 +125,24 @@ struct Statement{
 			array body;
 			bool doWhile;
 		}whileLoop;
+
+		struct{
+			Value* condition;
+			array body;
+		}switch_;
+
+		struct{
+			Value* value;
+		}switchCase;
+
+		struct{
+			/// @brief label, which is value instead of token since C23 computed goto
+			Value*label;
+		}goto_;
+
+		struct{
+			Token* label;
+		}labelDefinition;
 	};
 };
 

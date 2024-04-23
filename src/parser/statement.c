@@ -1,3 +1,5 @@
+#include "parser/statement.h"
+#include "parser/value.h"
 #include<parser/parser.h>
 #include<util/util.h>
 #include<tokenizer.h>
@@ -24,7 +26,11 @@ char*Statement_asString(Statement*statement){
 		}
 		case STATEMENT_KIND_SYMBOL_DEFINITION:{
 			char*ret=calloc(1024,1);
-			sprintf(ret,"%.*s:%s",statement->symbolDef.symbol.name->len,statement->symbolDef.symbol.name->p,Type_asString(statement->symbolDef.symbol.type));
+			if(statement->symbolDef.symbol.name!=nullptr)
+				sprintf(ret,"%.*s of type %s",statement->symbolDef.symbol.name->len,statement->symbolDef.symbol.name->p,Type_asString(statement->symbolDef.symbol.type));
+			else
+				sprintf(ret,"unnamed symbol of type %s",Type_asString(statement->symbolDef.symbol.type));
+
 			if(statement->symbolDef.init_value){
 				sprintf(ret+strlen(ret)," = %s",Value_asString(statement->symbolDef.init_value));
 			}
@@ -113,6 +119,48 @@ char*Statement_asString(Statement*statement){
 			}
 			return ret;
 		}
+		case STATEMENT_SWITCH:{
+			char*ret=calloc(1024,1);
+			sprintf(ret,"switch %s",Value_asString(statement->switch_.condition));
+			for(int i=0;i<statement->switch_.body.len;i++){
+				Statement*bodyStatement=array_get(&statement->switch_.body,i);
+				sprintf(ret+strlen(ret),"\n  body %d: %s",i,Statement_asString(bodyStatement));
+			}
+			return ret;
+		}
+		case STATEMENT_DEFAULT:{
+			return "default:";
+		}
+		case STATEMENT_BREAK:{
+			return "break";
+		}
+		case STATEMENT_CONTINUE:{
+			return "continue";
+		}
+		case STATEMENT_SWITCHCASE:{
+			char*ret=calloc(1024,1);
+			sprintf(ret,"case %s:",Value_asString(statement->switchCase.value));
+			return ret;
+		}
+		case STATEMENT_BLOCK:{
+			char*ret=calloc(1024,1);
+			sprintf(ret,"block:");
+			for(int i=0;i<statement->block.body.len;i++){
+				Statement*bodyStatement=array_get(&statement->block.body,i);
+				sprintf(ret+strlen(ret),"\n  body %d: %s",i,Statement_asString(bodyStatement));
+			}
+			return ret;
+		}
+		case STATEMENT_LABEL:{
+			char*ret=calloc(1024,1);
+			sprintf(ret,"label %.*s:",statement->labelDefinition.label->len,statement->labelDefinition.label->p);
+			return ret;
+		}
+		case STATEMENT_GOTO:{
+			char*ret=calloc(1024,1);
+			sprintf(ret,"goto %s",Value_asString(statement->goto_.label));
+			return ret;
+		}
 		default:
 			fatal("unimplemented %s",Statementkind_asString(statement->tag));
 	}
@@ -130,6 +178,77 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 	if(Token_equalString(&token,";")){
 		TokenIter_nextToken(token_iter,&token);
 		*out=(Statement){.tag=STATEMENT_EMPTY};
+		goto STATEMENT_PARSE_RET_SUCCESS;
+	}
+	if(Token_equalString(&token, "{")){
+		TokenIter_nextToken(token_iter,&token);
+
+		array body;
+		array_init(&body,sizeof(Statement));
+
+		bool stopParsingBody=false;
+		while(!stopParsingBody){
+			if(Token_equalString(&token,"}")){
+				TokenIter_nextToken(token_iter,&token);
+				break;
+			}
+
+			Statement bodyStatement={};
+			enum STATEMENT_PARSE_RESULT res=Statement_parse(&bodyStatement,token_iter);
+			TokenIter_lastToken(token_iter,&token);
+			switch(res){
+				case STATEMENT_INVALID:
+					fatal("invalid statement in block");
+					stopParsingBody=true;
+					break;
+				case STATEMENT_PRESENT:
+					array_append(&body,&bodyStatement);
+					break;
+			}
+		}
+
+		*out=(Statement){
+			.tag=STATEMENT_BLOCK,
+			.block={
+				.body=body,
+			}
+		};
+
+		goto STATEMENT_PARSE_RET_SUCCESS;
+	}
+	if(Token_equalString(&token,"default")){
+		TokenIter_nextToken(token_iter,&token);
+		if(!Token_equalString(&token,":")){
+			fatal("expected colon after default: line %d col %d %.*s",token.line,token.col,token.len,token.p);
+		}
+		TokenIter_nextToken(token_iter,&token);
+
+		*out=(Statement){.tag=STATEMENT_DEFAULT};
+		goto STATEMENT_PARSE_RET_SUCCESS;
+	
+	}
+	if(Token_equalString(&token,"case")){
+		TokenIter_nextToken(token_iter,&token);
+
+		Value caseValue={};
+		enum VALUE_PARSE_RESULT res=Value_parse(&caseValue,token_iter);
+		if(res==VALUE_INVALID){
+			fatal("invalid case value at line %d col %d %.*s",token.line,token.col,token.len,token.p);
+		}
+		TokenIter_lastToken(token_iter,&token);
+
+		if(!Token_equalString(&token,":")){
+			fatal("expected colon after case value: line %d col %d %.*s",token.line,token.col,token.len,token.p);
+		}
+		TokenIter_nextToken(token_iter,&token);
+
+		*out=(Statement){
+			.tag=STATEMENT_SWITCHCASE,
+			.switchCase={
+				.value=allocAndCopy(sizeof(Value),&caseValue),
+			}
+		};
+
 		goto STATEMENT_PARSE_RET_SUCCESS;
 	}
 	if(Token_equalString(&token,"if")){
@@ -481,8 +600,82 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 		TokenIter_nextToken(token_iter,&token);
 		goto STATEMENT_PARSE_RET_SUCCESS;
 	}
+	if(Token_equalString(&token,"goto")){
+		TokenIter_nextToken(token_iter,&token);
+		Value label={};
+		enum VALUE_PARSE_RESULT res=Value_parse(&label,token_iter);
+		if(res==VALUE_INVALID){
+			fatal("invalid label in goto statement at line %d col %d %.*s",token.line,token.col,token.len,token.p);
+		}
+		TokenIter_lastToken(token_iter,&token);
+		if(!Token_equalString(&token,";")){
+			fatal("expected semicolon after goto statement: line %d col %d %.*s",token.line,token.col,token.len,token.p);
+		}
+		TokenIter_nextToken(token_iter,&token);
+
+		*out=(Statement){
+			.tag=STATEMENT_GOTO,
+			.goto_={
+				.label=allocAndCopy(sizeof(Value),&label)
+			}
+		};
+		goto STATEMENT_PARSE_RET_SUCCESS;
+	}
 	if(Token_equalString(&token,"switch")){
-		fatal("switch not yet implemented");
+		TokenIter_nextToken(token_iter,&token);
+		*out=(Statement){.tag=STATEMENT_SWITCH,.switch_={}};
+
+		// check for (
+		if(!Token_equalString(&token,"(")){
+			fatal("expected opening parenthesis after switch");
+		}
+		TokenIter_nextToken(token_iter,&token);
+
+		Value switchValue={};
+		enum VALUE_PARSE_RESULT res=Value_parse(&switchValue,token_iter);
+		if(res==VALUE_INVALID){
+			fatal("invalid switch value at line %d col %d %.*s",token.line,token.col,token.len,token.p);
+		}
+		TokenIter_lastToken(token_iter,&token);
+
+		if(!Token_equalString(&token,")")){
+			fatal("expected closing parenthesis after switch value: line %d col %d %.*s",token.line,token.col,token.len,token.p);
+		}
+		TokenIter_nextToken(token_iter,&token);
+
+		if(!Token_equalString(&token,"{")){
+			fatal("expected opening curly brace after switch value: line %d col %d %.*s",token.line,token.col,token.len,token.p);
+		}
+		TokenIter_nextToken(token_iter,&token);
+
+		array body;
+		array_init(&body,sizeof(Statement));
+
+		bool stopParsingSwitchBody=false;
+		while(!stopParsingSwitchBody){
+			if(Token_equalString(&token,"}")){
+				TokenIter_nextToken(token_iter,&token);
+				break;
+			}
+
+			Statement bodyStatement={};
+			enum STATEMENT_PARSE_RESULT res=Statement_parse(&bodyStatement,token_iter);
+			TokenIter_lastToken(token_iter,&token);
+			switch(res){
+				case STATEMENT_INVALID:
+					fatal("invalid statement in switch body");
+					stopParsingSwitchBody=true;
+					break;
+				case STATEMENT_PRESENT:
+					array_append(&body,&bodyStatement);
+					break;
+			}
+		}
+
+		out->switch_.condition=allocAndCopy(sizeof(Value),&switchValue);
+		out->switch_.body=body;
+
+		goto STATEMENT_PARSE_RET_SUCCESS;
 	}
 
 	// parse symbol definition
@@ -551,23 +744,55 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 					bool foundValue=false;
 					switch(res){
 						case VALUE_INVALID:
-							fatal("invalid value in statement");
 							break;
 						case VALUE_PRESENT:
 							*token_iter=valueParseIter;
 							foundValue=true;
 							break;
+						default:fatal("unreachable");
 					}
 
 					if(foundValue){
-						*out=(Statement){.tag=STATEMENT_VALUE,.value.value=allocAndCopy(sizeof(Value), &value)};
-
 						// check for termination with semicolon
 						TokenIter_lastToken(token_iter,&token);
+						// check for label definition
+						if(Token_equalString(&token,":") && value.kind==VALUE_KIND_SYMBOL_REFERENCE){
+							TokenIter_nextToken(token_iter,&token);
+							*out=(Statement){
+								.tag=STATEMENT_LABEL,
+								.labelDefinition={
+									.label=value.symbol,
+								}
+							};
+							goto STATEMENT_PARSE_RET_SUCCESS;
+						}
 						if(!Token_equalString(&token,";")){
 							fatal("expected semicolon after statement: line %d col %d %.*s",token.line,token.col,token.len,token.p);
 						}
 						TokenIter_nextToken(token_iter,&token);
+						
+						*out=(Statement){
+							.tag=STATEMENT_VALUE,
+							.value={
+								.value=allocAndCopy(sizeof(Value), &value)
+							},
+						};
+						goto STATEMENT_PARSE_RET_SUCCESS;
+					}else{
+						// we got a symbol declaration without a name
+						// i.e. still valid statement, of kind STATEMENT_KIND_SYMBOL_DEFINITION
+						// next token should be semicolon
+						if(!Token_equalString(&token,";")){
+							fatal("expected semicolon after statement: line %d col %d %.*s",token.line,token.col,token.len,token.p);
+						}
+						TokenIter_nextToken(token_iter,&token);
+						*out=(Statement){
+							.tag=STATEMENT_KIND_SYMBOL_DEFINITION,
+							.symbolDef={
+								.symbol=symbol,
+								.init_value=nullptr,
+							}
+						};
 						goto STATEMENT_PARSE_RET_SUCCESS;
 					}
 				}
@@ -703,8 +928,8 @@ const char* Statementkind_asString(enum STATEMENT_KIND kind){
 			return("STATEMENT_IF");
 		case STATEMENT_SWITCH:
 			return("STATEMENT_SWITCH");
-		case STATEMENT_CASE:
-			return("STATEMENT_CASE");
+		case STATEMENT_SWITCHCASE:
+			return("STATEMENT_SWITCHCASE");
 		case STATEMENT_BREAK:
 			return("STATEMENT_BREAK");
 		case STATEMENT_CONTINUE:
@@ -723,7 +948,11 @@ const char* Statementkind_asString(enum STATEMENT_KIND kind){
 			return("STATEMENT_KIND_SYMBOL_DEFINITION");
 		case STATEMENT_VALUE:
 			return("STATEMENT_VALUE");
-		default:
-			fatal("unknown symbol kind %d",kind);
+		case STATEMENT_BLOCK:
+			return("STATEMENT_BLOCK");
+		case STATEMENT_EMPTY:
+			return("STATEMENT_EMPTY");
+
+		default: fatal("unknown statement kind %d",kind);
 	}
 }

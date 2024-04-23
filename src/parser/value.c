@@ -304,6 +304,10 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 			op=VALUE_OPERATOR_MULT;
 		}else if(Token_equalString(&token,"/")){
 			op=VALUE_OPERATOR_DIV;
+		}else if(Token_equalString(&token,"%")){
+			op=VALUE_OPERATOR_MODULO;
+		}else if(Token_equalString(&token,"=")){
+			op=VALUE_OPERATOR_ASSIGNMENT;
 		}else if(Token_equalString(&token,"<")){
 			op=VALUE_OPERATOR_LESS_THAN;
 		}else if(Token_equalString(&token,"<=")){
@@ -376,6 +380,8 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 			case VALUE_OPERATOR_SUB:
 			case VALUE_OPERATOR_MULT:
 			case VALUE_OPERATOR_DIV:
+			case VALUE_OPERATOR_MODULO:
+			case VALUE_OPERATOR_ASSIGNMENT:
 			case VALUE_OPERATOR_LESS_THAN:
 			case VALUE_OPERATOR_GREATER_THAN:
 			case VALUE_OPERATOR_INDEX:
@@ -528,6 +534,16 @@ char*Value_asString(Value*value){
 				case VALUE_OPERATOR_DIV:{
 					char *ret=calloc(1024,1);
 					sprintf(ret,"left (%s) DIV right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					return ret;
+				}
+				case VALUE_OPERATOR_MODULO:{
+					char *ret=calloc(1024,1);
+					sprintf(ret,"left (%s) MODULO right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					return ret;
+				}
+				case VALUE_OPERATOR_ASSIGNMENT:{
+					char *ret=calloc(1024,1);
+					sprintf(ret,"left (%s) ASSIGN right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
 					return ret;
 				}
 				case VALUE_OPERATOR_LESS_THAN:{

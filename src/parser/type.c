@@ -72,15 +72,15 @@ char* Type_asString(Type* type){
 		switch(type_ref->kind){
 			case TYPE_KIND_REFERENCE:
 				if(type_ref->reference.is_enum){
-					sprintf(ret_ptr,"enum ");
+					sprintf(ret_ptr,"ref enum ");
 					ret_ptr=ret+strlen(ret);
 				}
 				if(type_ref->reference.is_struct){
-					sprintf(ret_ptr,"struct ");
+					sprintf(ret_ptr,"ref struct ");
 					ret_ptr=ret+strlen(ret);
 				}
 				if(type_ref->reference.is_union){
-					sprintf(ret_ptr,"union ");
+					sprintf(ret_ptr,"ref union ");
 					ret_ptr=ret+strlen(ret);
 				}
 				sprintf(ret_ptr,"%.*s",type_ref->reference.name.len,type_ref->reference.name.p);
@@ -98,8 +98,18 @@ char* Type_asString(Type* type){
 				type_ref=type_ref->pointer.base;
 				break;
 			case TYPE_KIND_ARRAY:
-				sprintf(ret_ptr,"array");
+				sprintf(ret_ptr,"array ");
 				ret_ptr=ret+strlen(ret);
+				// print length
+				if(type_ref->array.len!=nullptr){
+					sprintf(ret_ptr,"[%s] ",Value_asString(type_ref->array.len));
+					ret_ptr=ret+strlen(ret);
+				}else{
+					sprintf(ret_ptr,"[] ");
+					ret_ptr=ret+strlen(ret);
+				}
+				// print base type
+				sprintf(ret_ptr,"of type %s",Type_asString(type_ref->array.base));
 
 				type_ref=type_ref->array.base;
 				break;
@@ -116,12 +126,91 @@ char* Type_asString(Type* type){
 				ret_ptr=ret+strlen(ret);
 				printing_done=true;
 				break;
+			case TYPE_KIND_STRUCT:
+				if(type_ref->struct_.name==nullptr){
+					sprintf(ret_ptr,"struct");
+				}else{
+					sprintf(ret_ptr,"struct %.*s",type_ref->struct_.name->len,type_ref->struct_.name->p);
+				}
+				ret_ptr=ret+strlen(ret);
+
+				for(int i=0;i<type_ref->struct_.members.len;i++){
+					Symbol* member=array_get(&type_ref->struct_.members,i);
+					if(member->name==nullptr){
+						sprintf(ret_ptr,"\n  member of type %s",Type_asString(member->type));
+					}else{
+						sprintf(ret_ptr,"\n  member %.*s of type %s",member->name->len,member->name->p,Type_asString(member->type));
+					}
+					ret_ptr=ret+strlen(ret);
+				}
+
+				printing_done=true;
+				break;
+			case TYPE_KIND_UNION:
+				if(type_ref->union_.name==nullptr){
+					sprintf(ret_ptr,"union");
+				}else{
+					sprintf(ret_ptr,"union %.*s",type_ref->union_.name->len,type_ref->union_.name->p);
+				}
+				ret_ptr=ret+strlen(ret);
+				for(int i=0;i<type_ref->union_.members.len;i++){
+					Symbol* member=array_get(&type_ref->union_.members,i);
+					if(member->name==nullptr){
+						sprintf(ret_ptr,"\n  member of type %s",Type_asString(member->type));
+					}else{
+						sprintf(ret_ptr,"\n  member %.*s of type %s",member->name->len,member->name->p,Type_asString(member->type));
+					}
+					ret_ptr=ret+strlen(ret);
+				}
+
+				printing_done=true;
+				break;
+			case TYPE_KIND_ENUM:
+				if(type_ref->enum_.name==nullptr){
+					sprintf(ret_ptr,"enum");
+				}else{
+					sprintf(ret_ptr,"enum %.*s",type_ref->enum_.name->len,type_ref->enum_.name->p);
+				}
+				ret_ptr=ret+strlen(ret);
+				for(int i=0;i<type_ref->enum_.members.len;i++){
+					Value* member=array_get(&type_ref->enum_.members,i);
+					sprintf(ret_ptr,"\n  member %s",Value_asString(member));
+					ret_ptr=ret+strlen(ret);
+				}
+
+				printing_done=true;
+				break;
 			default:
-				if(type_ref->name==nullptr)
-					fatal("")
-				fatal("\nFATAL type %.*s of kind %d\n",type_ref->name->len,type_ref->name->p,type_ref->kind);
+				if(type_ref->name==nullptr){
+					fatal("unnamed type of kind %s",TypeKind_asString(type_ref->kind));
+				}else{
+					fatal("type %.*s of kind %s",type_ref->name->len,type_ref->name->p,TypeKind_asString(type_ref->kind));
+				}
 		}
 	}
 
 	return ret;
+}
+
+char* TypeKind_asString(enum TYPEKIND kind){
+	switch(kind){
+	case TYPE_KIND_UNKNOWN:
+		return "TYPE_KIND_UNKNOWN";
+	case TYPE_KIND_REFERENCE:
+		return "TYPE_KIND_REFERENCE";
+	case TYPE_KIND_POINTER:
+		return "TYPE_KIND_POINTER";
+	case TYPE_KIND_ARRAY:
+		return "TYPE_KIND_ARRAY";
+	case TYPE_KIND_FUNCTION:
+		return "TYPE_KIND_FUNCTION";
+	case TYPE_KIND_STRUCT:
+		return "TYPE_KIND_STRUCT";
+	case TYPE_KIND_UNION:
+		return "TYPE_KIND_UNION";
+	case TYPE_KIND_ENUM:
+		return "TYPE_KIND_ENUM";
+	default:
+		fatal("unimplemented %d",kind);
+	}
 }

@@ -1,3 +1,4 @@
+#include "parser/symbol.h"
 #include<parser/parser.h>
 #include<util/util.h>
 #include<tokenizer.h>
@@ -24,32 +25,149 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Symbol*symbol,struct TokenIter*token_iter_
 	bool type_is_struct=Token_equalString(&token,"struct");
 	bool type_is_enum=Token_equalString(&token,"enum");
 	bool type_is_union=Token_equalString(&token,"union");
-	if(type_is_struct||type_is_enum||type_is_union){
+	bool possible_type_definition=type_is_struct||type_is_enum||type_is_union;
+	Token nameToken=token;
+	if(possible_type_definition){
 		TokenIter_nextToken(token_iter,&token);
+		nameToken=token;
 	}
 
 	// verify name of type is valid
-	if(!Token_isValidIdentifier(&token)){
+	bool tokenIsValidIdentifier=Token_isValidIdentifier(&token);
+	if(!tokenIsValidIdentifier && !possible_type_definition){
 		goto SYMBOL_PARSE_RET_FAILURE;
 	}
+	bool possibleUnnamedTypeDefinition=!tokenIsValidIdentifier&&possible_type_definition;
 
 	Type_init(&symbol->type);
 
-	*symbol->type=(Type){
-		.kind=TYPE_KIND_REFERENCE,
-		.is_const=type_is_const,
-		.reference={
-			.name=token,
-			.is_struct=type_is_struct,
-			.is_enum=type_is_enum,
-			.is_union=type_is_union,
-		}
-	};
+	if(tokenIsValidIdentifier){
+		*symbol->type=(Type){
+			.kind=TYPE_KIND_REFERENCE,
+			.is_const=type_is_const,
+			.reference={
+				.name=nameToken,
+				.is_struct=type_is_struct,
+				.is_enum=type_is_enum,
+				.is_union=type_is_union,
+			}
+		};
 
-	// skip over name token
-	TokenIter_nextToken(token_iter,&token);
+		// skip over name token
+		TokenIter_nextToken(token_iter,&token);
+	}
 
 	while(1){
+		if(possible_type_definition && Token_equalString(&token,"{")){
+			TokenIter_nextToken(token_iter,&token);
+
+			if(type_is_struct){
+				array structMembers={};
+				array_init(&structMembers,sizeof(Symbol));
+
+				// parse struct
+				while(!Token_equalString(&token,"}")){
+					Symbol member={};
+					enum SYMBOL_PARSE_RESULT symres=Symbol_parse(&member,token_iter);
+					if(symres==SYMBOL_INVALID){
+						fatal("invalid symbol in struct at line %d col %d %.*s",token.line,token.col,token.len,token.p);
+					}
+					array_append(&structMembers,&member);
+					TokenIter_lastToken(token_iter,&token);
+					
+					// check for semicolon
+					if(!Token_equalString(&token,";")){
+						fatal("expected semicolon after member declaration");
+					}
+					TokenIter_nextToken(token_iter,&token);
+				}
+				TokenIter_nextToken(token_iter,&token);
+
+				symbol->name=nullptr;
+				*(symbol->type)=(Type){
+					.kind=TYPE_KIND_STRUCT,
+					.struct_={
+						.name=nullptr,
+						.members=structMembers,
+					},
+				};
+				if(tokenIsValidIdentifier)
+					symbol->type->struct_.name=allocAndCopy(sizeof(Token),&nameToken);
+				goto SYMBOL_PARSE_RET_SUCCESS;
+			}
+			if(type_is_union){
+				array unionMembers={};
+				array_init(&unionMembers,sizeof(Symbol));
+
+				// parse union
+				while(!Token_equalString(&token,"}")){
+					Symbol member={};
+					enum SYMBOL_PARSE_RESULT symres=Symbol_parse(&member,token_iter);
+					if(symres==SYMBOL_INVALID){
+						fatal("invalid symbol in union");
+					}
+					array_append(&unionMembers,&member);
+					TokenIter_lastToken(token_iter,&token);
+					
+					// check for semicolon
+					if(!Token_equalString(&token,";")){
+						fatal("expected semicolon after member declaration");
+					}
+					TokenIter_nextToken(token_iter,&token);
+				}
+				TokenIter_nextToken(token_iter,&token);
+
+				symbol->name=nullptr;
+				*(symbol->type)=(Type){
+					.kind=TYPE_KIND_UNION,
+					.union_={
+						.name=nullptr,
+						.members=unionMembers,
+					},
+				};
+				if(tokenIsValidIdentifier)
+					symbol->type->union_.name=allocAndCopy(sizeof(Token),&nameToken);
+				goto SYMBOL_PARSE_RET_SUCCESS;
+			}
+			if(type_is_enum){
+				array enumMembers={};
+				array_init(&enumMembers,sizeof(Value));
+
+				// parse enum
+				while(!Token_equalString(&token,"}")){
+					Value member={};
+					enum VALUE_PARSE_RESULT valres=Value_parse(&member,token_iter);
+					if(valres==VALUE_INVALID){
+						fatal("invalid value in enum");
+					}
+					array_append(&enumMembers,&member);
+					TokenIter_lastToken(token_iter,&token);
+					
+					// check for comma
+					if(!Token_equalString(&token,",")){
+						break;
+					}
+					TokenIter_nextToken(token_iter,&token);
+				}
+				TokenIter_nextToken(token_iter,&token);
+
+				symbol->name=nullptr;
+				*(symbol->type)=(Type){
+					.kind=TYPE_KIND_ENUM,
+					.enum_={
+						.name=nullptr,
+						.members=enumMembers,
+					},
+				};
+				if(tokenIsValidIdentifier)
+					symbol->type->struct_.name=allocAndCopy(sizeof(Token),&nameToken);
+				goto SYMBOL_PARSE_RET_SUCCESS;
+			}
+			fatal("unreachable");
+		}
+		if(possibleUnnamedTypeDefinition)
+			goto SYMBOL_PARSE_RET_FAILURE;
+
 		if(Token_equalString(&token,"*")){
 			TokenIter_nextToken(token_iter,&token);
 
