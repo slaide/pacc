@@ -65,7 +65,20 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 
 		case TOKEN_TAG_KEYWORD:{
 			if(token.p==KEYWORD_ASTERISK){
-				fatal("unimplemented dereference operator");
+				Value dereferencedValue={};
+				enum VALUE_PARSE_RESULT res=Value_parse(&dereferencedValue,token_iter);
+				if(res==VALUE_INVALID){
+					fatal("invalid value after *");
+				}
+				*value=(Value){
+					.kind=VALUE_KIND_OPERATOR,
+					.op={
+						.left=allocAndCopy(sizeof(Value),&dereferencedValue),
+						.op=VALUE_OPERATOR_DEREFERENCE,
+					}
+				};
+				
+				break;
 			}else if(token.p==KEYWORD_AMPERSAND){
 				TokenIter_nextToken(token_iter,&token);
 
@@ -337,7 +350,7 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 							op=VALUE_OPERATOR_SUB;
 							break;
 						default:
-							fatal("unimplemented %c",token.p[0]);
+							fatal("invalid sign %c",token.p[0]);
 					}
 					token.num_info.hasLeadingSign=false;
 					token.p++;
