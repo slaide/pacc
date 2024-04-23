@@ -1,4 +1,3 @@
-#include "parser/symbol.h"
 #include<parser/parser.h>
 #include<util/util.h>
 #include<tokenizer.h>
