@@ -402,8 +402,8 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 			}
 
 			// adjust token based on symbols in its vicinity
-			numericToken->len=offset;
-			p+=offset-1;
+			p+=offset-numericToken->len; // advance p to end of token, which may have been extend beyond its initial length
+			numericToken->len=offset; // write back the adjusted length
 
 			// check for flags to determine number type
 			if(token.num_info.hasDecimalPoint || token.num_info.hasExponent){
