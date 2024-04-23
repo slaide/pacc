@@ -1,3 +1,4 @@
+#include "parser/value.h"
 #include<parser/parser.h>
 #include<util/util.h>
 #include<tokenizer.h>
@@ -65,6 +66,8 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 
 		case TOKEN_TAG_KEYWORD:{
 			if(token.p==KEYWORD_ASTERISK){
+				TokenIter_nextToken(token_iter,&token);
+
 				Value dereferencedValue={};
 				enum VALUE_PARSE_RESULT res=Value_parse(&dereferencedValue,token_iter);
 				if(res==VALUE_INVALID){
@@ -602,6 +605,11 @@ char*Value_asString(Value*value){
 				case VALUE_OPERATOR_BITWISE_NOT:{
 					char *ret=calloc(1024,1);
 					sprintf(ret,"BITWISE_NOT %s",Value_asString(value->op.left));
+					return ret;
+				}
+				case VALUE_OPERATOR_DEREFERENCE:{
+					char *ret=calloc(1024,1);
+					sprintf(ret,"DEREFERENCE %s",Value_asString(value->op.left));
 					return ret;
 				}
 
