@@ -464,10 +464,22 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 		fatal("missing semicolon after return statement at line %d col %d %.*s",token.line,token.col,token.len,token.p);
 	}
 	if(Token_equalString(&token,"break")){
-		fatal("break not yet implemented");
+		TokenIter_nextToken(token_iter,&token);
+		*out=(Statement){.tag=STATEMENT_BREAK};
+		if(!Token_equalString(&token,";")){
+			fatal("expected semicolon after break statement: line %d col %d %.*s",token.line,token.col,token.len,token.p);
+		}
+		TokenIter_nextToken(token_iter,&token);
+		goto STATEMENT_PARSE_RET_SUCCESS;
 	}
 	if(Token_equalString(&token,"continue")){
-		fatal("continue not yet implemented");
+		TokenIter_nextToken(token_iter,&token);
+		*out=(Statement){.tag=STATEMENT_CONTINUE};
+		if(!Token_equalString(&token,";")){
+			fatal("expected semicolon after continue statement: line %d col %d %.*s",token.line,token.col,token.len,token.p);
+		}
+		TokenIter_nextToken(token_iter,&token);
+		goto STATEMENT_PARSE_RET_SUCCESS;
 	}
 	if(Token_equalString(&token,"switch")){
 		fatal("switch not yet implemented");
