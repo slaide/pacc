@@ -90,6 +90,7 @@ enum MODULE_PARSE_RESULT Module_parse(Module* module,struct TokenIter*token_iter
 				fatal("unknown preprocessor directive %.*s",directiveName.len,directiveName.p);
 			}
 		}else{
+			TokenIter_lastToken(&token_iter,&token);
 			Statement statement={};
 			enum STATEMENT_PARSE_RESULT res=Statement_parse(&statement,&token_iter);
 			switch(res){
