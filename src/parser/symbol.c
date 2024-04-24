@@ -8,173 +8,204 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Symbol*symbol,struct TokenIter*token_iter_
 
 	*symbol=(Symbol){};
 
+	Type type={};
+
 	// currently, nothing else is possible (rest is unimplemented)
 	//symbol->kind=SYMBOL_KIND_DECLARATION;
 
 	Token token;
 	TokenIter_lastToken(token_iter,&token);
 
-	// check if type has prefix: const
-	bool type_is_const=Token_equalString(&token,"const");
-	if(type_is_const){
-		TokenIter_nextToken(token_iter,&token);
-	}
-
-	// check if type has prefix: struct,enum,union
-	bool type_is_struct=Token_equalString(&token,"struct");
-	bool type_is_enum=Token_equalString(&token,"enum");
-	bool type_is_union=Token_equalString(&token,"union");
-	bool possible_type_definition=type_is_struct||type_is_enum||type_is_union;
-	Token nameToken=token;
-	if(possible_type_definition){
-		TokenIter_nextToken(token_iter,&token);
-		nameToken=token;
-	}
-
-	// verify name of type is valid
-	bool tokenIsValidIdentifier=Token_isValidIdentifier(&token);
-	if(!tokenIsValidIdentifier && !possible_type_definition){
-		goto SYMBOL_PARSE_RET_FAILURE;
-	}
-	bool possibleUnnamedTypeDefinition=!tokenIsValidIdentifier&&possible_type_definition;
-
-	Type_init(&symbol->type);
-
-	if(tokenIsValidIdentifier){
-		*symbol->type=(Type){
-			.kind=TYPE_KIND_REFERENCE,
-			.is_const=type_is_const,
-			.reference={
-				.name=nameToken,
-				.is_struct=type_is_struct,
-				.is_enum=type_is_enum,
-				.is_union=type_is_union,
-			}
-		};
-
-		// skip over name token
-		TokenIter_nextToken(token_iter,&token);
-	}
-
 	while(1){
-		if(possible_type_definition && Token_equalString(&token,"{")){
+		bool type_is_struct=false;
+		bool type_is_enum=false;
+		bool type_is_union=false;
+		bool possible_type_definition=false;
+		bool possibleUnnamedTypeDefinition=false;
+
+		if(Token_equalString(&token,"const")){
+			TokenIter_nextToken(token_iter,&token);
+			type.is_const=true;
+			continue;
+		}
+		if(Token_equalString(&token,"static")){
+			TokenIter_nextToken(token_iter,&token);
+			type.is_static=true;
+			continue;
+		}
+		if(Token_equalString(&token,"thread_local")){
+			TokenIter_nextToken(token_iter,&token);
+			type.is_thread_local=true;
+			continue;
+		}
+
+		Token nameToken=token;
+
+		// check if type has prefix: struct,enum,union
+		if(Token_equalString(&token,"struct"))
+			type_is_struct=true;
+		if(Token_equalString(&token,"enum"))
+			type_is_enum=true;
+		if(Token_equalString(&token,"union"))
+			type_is_union=true;
+		possible_type_definition=type_is_struct||type_is_enum||type_is_union;
+		if(possible_type_definition){
 			TokenIter_nextToken(token_iter,&token);
 
-			if(type_is_struct){
-				array structMembers={};
-				array_init(&structMembers,sizeof(Symbol));
+			if(Token_isValidIdentifier(&token)){
+				nameToken=token;
+				possibleUnnamedTypeDefinition=false;
+				TokenIter_nextToken(token_iter,&token);
+			}else{
+				nameToken=(Token){};
+				possibleUnnamedTypeDefinition=true;
+			}
 
-				// parse struct
-				while(!Token_equalString(&token,"}")){
-					Symbol member={};
-					enum SYMBOL_PARSE_RESULT symres=Symbol_parse(&member,token_iter);
-					if(symres==SYMBOL_INVALID){
-						fatal("invalid symbol in struct at line %d col %d %.*s",token.line,token.col,token.len,token.p);
-					}
-					array_append(&structMembers,&member);
-					TokenIter_lastToken(token_iter,&token);
-					
-					// check for semicolon
-					if(!Token_equalString(&token,";")){
-						fatal("expected semicolon after member declaration");
-					}
-					TokenIter_nextToken(token_iter,&token);
-				}
+			if(Token_equalString(&token,"{")){
 				TokenIter_nextToken(token_iter,&token);
 
-				symbol->name=nullptr;
-				*(symbol->type)=(Type){
-					.kind=TYPE_KIND_STRUCT,
-					.struct_={
-						.name=nullptr,
-						.members=structMembers,
-					},
-				};
-				if(tokenIsValidIdentifier)
-					symbol->type->struct_.name=allocAndCopy(sizeof(Token),&nameToken);
-				goto SYMBOL_PARSE_RET_SUCCESS;
-			}
-			if(type_is_union){
-				array unionMembers={};
-				array_init(&unionMembers,sizeof(Symbol));
+				if(type_is_struct){
+					array structMembers={};
+					array_init(&structMembers,sizeof(Symbol));
 
-				// parse union
-				while(!Token_equalString(&token,"}")){
-					Symbol member={};
-					enum SYMBOL_PARSE_RESULT symres=Symbol_parse(&member,token_iter);
-					if(symres==SYMBOL_INVALID){
-						fatal("invalid symbol in union");
-					}
-					array_append(&unionMembers,&member);
-					TokenIter_lastToken(token_iter,&token);
-					
-					// check for semicolon
-					if(!Token_equalString(&token,";")){
-						fatal("expected semicolon after member declaration");
+					// parse struct
+					while(!Token_equalString(&token,"}")){
+						Symbol member={};
+						enum SYMBOL_PARSE_RESULT symres=Symbol_parse(&member,token_iter);
+						if(symres==SYMBOL_INVALID){
+							fatal("invalid symbol in struct at line %d col %d %.*s",token.line,token.col,token.len,token.p);
+						}
+						array_append(&structMembers,&member);
+						TokenIter_lastToken(token_iter,&token);
+						
+						// check for semicolon
+						if(!Token_equalString(&token,";")){
+							fatal("expected semicolon after member declaration");
+						}
+						TokenIter_nextToken(token_iter,&token);
 					}
 					TokenIter_nextToken(token_iter,&token);
+
+					symbol->name=nullptr;
+					type.kind=TYPE_KIND_STRUCT;
+					type.struct_.name=possibleUnnamedTypeDefinition?nullptr:allocAndCopy(sizeof(Token),&nameToken);
+					type.struct_.members=structMembers;
+
+					goto SYMBOL_PARSE_RET_SUCCESS;
 				}
-				TokenIter_nextToken(token_iter,&token);
+				if(type_is_union){
+					array unionMembers={};
+					array_init(&unionMembers,sizeof(Symbol));
 
-				symbol->name=nullptr;
-				*(symbol->type)=(Type){
-					.kind=TYPE_KIND_UNION,
-					.union_={
-						.name=nullptr,
-						.members=unionMembers,
-					},
-				};
-				if(tokenIsValidIdentifier)
-					symbol->type->union_.name=allocAndCopy(sizeof(Token),&nameToken);
-				goto SYMBOL_PARSE_RET_SUCCESS;
-			}
-			if(type_is_enum){
-				array enumMembers={};
-				array_init(&enumMembers,sizeof(Value));
-
-				// parse enum
-				while(!Token_equalString(&token,"}")){
-					Value member={};
-					enum VALUE_PARSE_RESULT valres=Value_parse(&member,token_iter);
-					if(valres==VALUE_INVALID){
-						fatal("invalid value in enum");
-					}
-					array_append(&enumMembers,&member);
-					TokenIter_lastToken(token_iter,&token);
-					
-					// check for comma
-					if(!Token_equalString(&token,",")){
-						break;
+					// parse union
+					while(!Token_equalString(&token,"}")){
+						Symbol member={};
+						enum SYMBOL_PARSE_RESULT symres=Symbol_parse(&member,token_iter);
+						if(symres==SYMBOL_INVALID){
+							fatal("invalid symbol in union");
+						}
+						array_append(&unionMembers,&member);
+						TokenIter_lastToken(token_iter,&token);
+						
+						// check for semicolon
+						if(!Token_equalString(&token,";")){
+							fatal("expected semicolon after member declaration");
+						}
+						TokenIter_nextToken(token_iter,&token);
 					}
 					TokenIter_nextToken(token_iter,&token);
-				}
-				TokenIter_nextToken(token_iter,&token);
 
-				symbol->name=nullptr;
-				*(symbol->type)=(Type){
-					.kind=TYPE_KIND_ENUM,
-					.enum_={
-						.name=nullptr,
-						.members=enumMembers,
-					},
-				};
-				if(tokenIsValidIdentifier)
-					symbol->type->struct_.name=allocAndCopy(sizeof(Token),&nameToken);
-				goto SYMBOL_PARSE_RET_SUCCESS;
+					symbol->name=nullptr;
+					type.kind=TYPE_KIND_UNION;
+					type.union_.name=possibleUnnamedTypeDefinition?nullptr:allocAndCopy(sizeof(Token),&nameToken);
+					type.union_.members=unionMembers;
+
+					goto SYMBOL_PARSE_RET_SUCCESS;
+				}
+				if(type_is_enum){
+					array enumMembers={};
+					array_init(&enumMembers,sizeof(Value));
+
+					// parse enum
+					while(!Token_equalString(&token,"}")){
+						Value member={};
+						enum VALUE_PARSE_RESULT valres=Value_parse(&member,token_iter);
+						if(valres==VALUE_INVALID){
+							fatal("invalid value in enum");
+						}
+						array_append(&enumMembers,&member);
+						TokenIter_lastToken(token_iter,&token);
+						
+						// check for comma
+						if(!Token_equalString(&token,",")){
+							break;
+						}
+						TokenIter_nextToken(token_iter,&token);
+					}
+					TokenIter_nextToken(token_iter,&token);
+
+					symbol->name=nullptr;
+					type=(Type){
+						.kind=TYPE_KIND_ENUM,
+						.enum_={
+							.name=possibleUnnamedTypeDefinition?nullptr:allocAndCopy(sizeof(Token),&nameToken),
+							.members=enumMembers,
+						},
+					};
+
+					goto SYMBOL_PARSE_RET_SUCCESS;
+				}
+				
+				continue;
+			}else{
+				type.kind=TYPE_KIND_REFERENCE;
+
+				// go to name token
+				goto SYMBOL_PARSE_HANDLE_NAME_TOKEN;
 			}
-			fatal("unreachable");
 		}
-		if(possibleUnnamedTypeDefinition)
-			goto SYMBOL_PARSE_RET_FAILURE;
+
+SYMBOL_PARSE_HANDLE_NAME_TOKEN:
+
+		if(Token_isValidIdentifier(&token)||possible_type_definition){
+			bool usedNameToken=false;
+			if(type.kind==TYPE_KIND_UNKNOWN){
+				type.kind=TYPE_KIND_REFERENCE;
+				type.reference.name=token;
+				usedNameToken=true;
+				TokenIter_nextToken(token_iter,&token);
+			}else if(possible_type_definition){
+				if(type_is_struct){
+					type.struct_.name=allocAndCopy(sizeof(Token),&nameToken);
+					type.reference.is_struct=true;
+				}
+				if(type_is_enum){
+					type.enum_.name=allocAndCopy(sizeof(Token),&nameToken);
+					type.reference.is_enum=true;
+				}
+				if(type_is_union){
+					type.union_.name=allocAndCopy(sizeof(Token),&nameToken);
+					type.reference.is_union=true;
+				}
+				usedNameToken=true;
+			}
+
+			if(usedNameToken){
+				continue;
+			}
+		}
+		// if struct/enum/union is not followed by { or a name, it is invalid, e.g. "struct;" is invalid
+		if(possible_type_definition) goto SYMBOL_PARSE_RET_FAILURE;
 
 		if(Token_equalString(&token,"*")){
 			TokenIter_nextToken(token_iter,&token);
 
-			Type*base_type=symbol->type;
-
-			Type_init(&symbol->type);
-			symbol->type->kind=TYPE_KIND_POINTER;
-			symbol->type->pointer.base=base_type;
+			type=(Type){
+				.kind=TYPE_KIND_POINTER,
+				.pointer={
+					.base=allocAndCopy(sizeof(Type),&type),
+				},
+			};
 
 			continue;
 		}
@@ -186,20 +217,13 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Symbol*symbol,struct TokenIter*token_iter_
 			}
 			symbol->name=allocAndCopy(sizeof(Token),&token);
 			TokenIter_nextToken(token_iter,&token);
+
+			continue;
 		}
 
 		// check for function
 		if(Token_equalString(&token,"(")){
-			Type* ret=symbol->type;
-			Type_init(&symbol->type);
-
-			symbol->type->kind=TYPE_KIND_FUNCTION;
-			symbol->type->function.ret=ret;
 			TokenIter_nextToken(token_iter,&token);
-			if(Token_equalString(&token,")")){
-				TokenIter_nextToken(token_iter,&token);
-				break;
-			}
 			
 			// parse function arguments
 			array args;
@@ -220,7 +244,13 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Symbol*symbol,struct TokenIter*token_iter_
 
 				array_append(&args,&argument);
 			}
-			symbol->type->function.args=args;
+			type=(Type){
+				.kind=TYPE_KIND_FUNCTION,
+				.function={
+					.ret=allocAndCopy(sizeof(Type), &type),
+					.args=args,
+				},
+			};
 
 			break;
 		}
@@ -233,20 +263,20 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Symbol*symbol,struct TokenIter*token_iter_
 			// if there is a value: dynamic array
 			// otherwise, value with some size (may be static or runtime determined)
 			if(res==VALUE_PRESENT){
-				symbol->type=allocAndCopy(sizeof(Type),&(Type){
+				type=(Type){
 					.kind=TYPE_KIND_ARRAY,
 					.array={
-						.base=symbol->type,
+						.base=allocAndCopy(sizeof(Type),&type),
 						.len=allocAndCopy(sizeof(Value), &array_len),
 					},
-				});
+				};
 			}else{
-				symbol->type=allocAndCopy(sizeof(Type),&(Type){
+				type=(Type){
 					.kind=TYPE_KIND_ARRAY,
 					.array={
-						.base=symbol->type,
+						.base=allocAndCopy(sizeof(Type),&type),
 					},
-				});
+				};
 			}
 			// check for trailing ]
 			TokenIter_lastToken(token_iter,&token);
@@ -262,10 +292,16 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Symbol*symbol,struct TokenIter*token_iter_
 	}
 
 SYMBOL_PARSE_RET_SUCCESS:
+
+	symbol->type=allocAndCopy(sizeof(Type), &type);
+
 	*token_iter_in=this_iter;
 	return SYMBOL_PRESENT;
 
 SYMBOL_PARSE_RET_NONAME:
+
+	symbol->type=allocAndCopy(sizeof(Type), &type);
+
 	*token_iter_in=this_iter;
 	return SYMBOL_WITHOUT_NAME;
 

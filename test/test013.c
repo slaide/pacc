@@ -2,6 +2,8 @@
 
 int main(){
 	struct Test test;
+	struct Test *test;
+	struct Test *test=0;
 	return 0;
 }
 

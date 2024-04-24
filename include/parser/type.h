@@ -22,6 +22,8 @@ enum TYPEKIND{
 char* TypeKind_asString(enum TYPEKIND kind);
 
 struct Type{
+	bool is_thread_local;
+	bool is_static;
 	bool is_const;
 
 	/// @brief name of the type, if any (e.g. for struct, union, enum, typedef, etc.)

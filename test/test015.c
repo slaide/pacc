@@ -1,13 +1,16 @@
-#include <util/util.h>
-
+#include<stdlib.h>
+#include<string.h>
+struct Token{int len;char*p;};
 bool test1(){
-	Type* intType=allocAndCopy(sizeof(Type),&(Type){
-		.kind=TYPE_KIND_REFERENCE,
-		.reference=(Token){.len=3,.p="int",},
-	});
-
-	struct TokenIter token_iter;
-	TokenIter_init(&token_iter,&tokenizer,(struct TokenIterConfig){.skip_comments.dothat=true,});
+	Token;
+	struct Token;
+	struct Token token={.len=0,.p=0};
+	struct Token token2=(Token){.len=0,.p=0};
+	struct Token token3=(struct Token){.len=0,.p=0};
+	struct Token*tokenp1;
+	struct Token*tokenp2=&token;
+	struct Token*tokenp3=&(Token){.len=0,.p=0};
+	struct Token*tokenp4=&(struct Token){.len=0,.p=0};
 
 	return true;
 }

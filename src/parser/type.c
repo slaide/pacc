@@ -64,6 +64,14 @@ char* Type_asString(Type* type){
 	memset(ret,0,1024);
 	char*ret_ptr=ret;
 	while(!printing_done){
+		if(type_ref->is_thread_local){
+			sprintf(ret_ptr,"thread_local ");
+			ret_ptr=ret+strlen(ret);
+		}
+		if(type_ref->is_static){
+			sprintf(ret_ptr,"static ");
+			ret_ptr=ret+strlen(ret);
+		}
 		if(type_ref->is_const){
 			sprintf(ret_ptr,"const ");
 			ret_ptr=ret+strlen(ret);
@@ -119,7 +127,10 @@ char* Type_asString(Type* type){
 
 				for(int i=0;i<type_ref->function.args.len;i++){
 					Symbol* arg=array_get(&type_ref->function.args,i);
-					sprintf(ret_ptr,"argument #%d called %.*s is of type %s,",i,arg->name->len,arg->name->p,Type_asString(arg->type));
+					if(arg->name!=nullptr)
+						sprintf(ret_ptr,"argument #%d called %.*s is of type %s,",i,arg->name->len,arg->name->p,Type_asString(arg->type));
+					else
+						sprintf(ret_ptr,"argument #%d is of type %s,",i,Type_asString(arg->type));
 					ret_ptr=ret+strlen(ret);
 				}
 				sprintf(ret_ptr,")");
