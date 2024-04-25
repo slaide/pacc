@@ -172,7 +172,8 @@ SYMBOL_PARSE_HANDLE_NAME_TOKEN:
 		// if struct/enum/union is not followed by { or a name, it is invalid, e.g. "struct;" is invalid
 		if(possible_type_definition) goto SYMBOL_PARSE_RET_FAILURE;
 
-		if(Token_equalString(&token,"*")){
+		// check for pointer
+		if(type.kind!=TYPE_KIND_UNKNOWN && Token_equalString(&token,"*")){
 			TokenIter_nextToken(token_iter,&token);
 
 			type=(Type){
@@ -225,7 +226,7 @@ SYMBOL_PARSE_HANDLE_NAME_TOKEN:
 			break;
 		}
 
-		if(Token_equalString(&token,"[")){
+		if(type.kind!=TYPE_KIND_UNKNOWN && Token_equalString(&token,"[")){
 			TokenIter_nextToken(token_iter,&token);
 
 			Value array_len={};
