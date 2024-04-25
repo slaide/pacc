@@ -229,28 +229,37 @@ SYMBOL_PARSE_HANDLE_NAME_TOKEN:
 		if(type.kind!=TYPE_KIND_UNKNOWN && Token_equalString(&token,"[")){
 			TokenIter_nextToken(token_iter,&token);
 
+			// test for static
+			bool typeLenIsStatic=false;
+			if(Token_equalString(&token,"static")){
+				TokenIter_nextToken(token_iter,&token);
+				typeLenIsStatic=true;
+			}
+
 			Value array_len={};
 			enum VALUE_PARSE_RESULT res=Value_parse(&array_len,token_iter);
 			// if there is a value: dynamic array
 			// otherwise, value with some size (may be static or runtime determined)
+			Value*arrayLen=nullptr;
 			if(res==VALUE_PRESENT){
-				type=(Type){
-					.kind=TYPE_KIND_ARRAY,
-					.array={
-						.base=allocAndCopy(sizeof(Type),&type),
-						.len=allocAndCopy(sizeof(Value), &array_len),
-					},
-				};
+				arrayLen=allocAndCopy(sizeof(Value),&array_len);
+				TokenIter_lastToken(token_iter,&token);
 			}else{
-				type=(Type){
-					.kind=TYPE_KIND_ARRAY,
-					.array={
-						.base=allocAndCopy(sizeof(Type),&type),
-					},
-				};
+				if(typeLenIsStatic){
+					goto SYMBOL_PARSE_RET_FAILURE;
+				}
 			}
+
+			type=(Type){
+				.kind=TYPE_KIND_ARRAY,
+				.array={
+					.base=allocAndCopy(sizeof(Type),&type),
+					.len=arrayLen,
+					.is_static=typeLenIsStatic,
+				},
+			};
+
 			// check for trailing ]
-			TokenIter_lastToken(token_iter,&token);
 			if(!Token_equalString(&token,"]")){
 				goto SYMBOL_PARSE_RET_FAILURE;
 			}

@@ -50,6 +50,7 @@ struct Type{
 		struct{
 			Type* base;
 			Value* len;
+			bool is_static;
 		}array;
 		struct{
 			/// @brief array of argument symbols

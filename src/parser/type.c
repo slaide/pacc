@@ -99,13 +99,12 @@ char* Type_asString(Type* type){
 				stringAppend(ret,"array ");
 				// print length
 				if(type_ref->array.len!=nullptr){
-					stringAppend(ret,"[%s] ",Value_asString(type_ref->array.len));
+					stringAppend(ret,"[%s%s] ",type_ref->array.is_static?"static ":"",Value_asString(type_ref->array.len));
 				}else{
 					stringAppend(ret,"[] ");
 				}
+				
 				// print base type
-				stringAppend(ret,"of type %s",Type_asString(type_ref->array.base));
-
 				type_ref=type_ref->array.base;
 				break;
 			case TYPE_KIND_FUNCTION:
