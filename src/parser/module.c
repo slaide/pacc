@@ -94,10 +94,10 @@ enum MODULE_PARSE_RESULT Module_parse(Module* module,struct TokenIter*token_iter
 			Statement statement={};
 			enum STATEMENT_PARSE_RESULT res=Statement_parse(&statement,&token_iter);
 			switch(res){
-				case STATEMENT_INVALID:
+				case STATEMENT_PARSE_RESULT_INVALID:
 					fatal("invalid statement at line %d col %d",token.line,token.col);
 					break;
-				case STATEMENT_PRESENT:
+				case STATEMENT_PARSE_RESULT_PRESENT:
 					array_append(&module->statements,&statement);
 					continue;
 			}

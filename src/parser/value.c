@@ -506,188 +506,175 @@ VALUE_PARSE_RET_SUCCESS:
 	return VALUE_PRESENT;
 }
 char*Value_asString(Value*value){
+	char*ret=makeString();
 	switch(value->kind){
 		case VALUE_KIND_STATIC_VALUE:{
-			char*ret=calloc(1024,1);
-			sprintf(ret,"%.*s",value->static_value.value_repr->len,value->static_value.value_repr->p);
-			return ret;
+			stringAppend(ret,"%.*s",value->static_value.value_repr->len,value->static_value.value_repr->p);
+			break;
 		}
 		case VALUE_KIND_OPERATOR:{
 			switch(value->op.op){
 				case VALUE_OPERATOR_ADD:{
-					char *ret=calloc(1024,1);
-					sprintf(ret,"left (%s) ADD right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
-					return ret;
+					stringAppend(ret,"left (%s) ADD right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					break;
 				}
 				case VALUE_OPERATOR_SUB:{
-					char *ret=calloc(1024,1);
-					sprintf(ret,"left (%s) SUB right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
-					return ret;
+					stringAppend(ret,"left (%s) SUB right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					break;
 				}
 				case VALUE_OPERATOR_MULT:{
-					char *ret=calloc(1024,1);
-					sprintf(ret,"left (%s) MULT right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
-					return ret;
+					stringAppend(ret,"left (%s) MULT right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					break;
 				}
 				case VALUE_OPERATOR_DIV:{
-					char *ret=calloc(1024,1);
-					sprintf(ret,"left (%s) DIV right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
-					return ret;
+					stringAppend(ret,"left (%s) DIV right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					break;
 				}
 				case VALUE_OPERATOR_MODULO:{
-					char *ret=calloc(1024,1);
-					sprintf(ret,"left (%s) MODULO right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
-					return ret;
+					stringAppend(ret,"left (%s) MODULO right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					break;
 				}
 				case VALUE_OPERATOR_ASSIGNMENT:{
-					char *ret=calloc(1024,1);
-					sprintf(ret,"left (%s) ASSIGN right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
-					return ret;
+					stringAppend(ret,"left (%s) ASSIGN right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					break;
 				}
 				case VALUE_OPERATOR_LESS_THAN:{
-					char *ret=calloc(1024,1);
-					sprintf(ret,"left (%s) LESS_THAN right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
-					return ret;
+					stringAppend(ret,"left (%s) LESS_THAN right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					break;
 				}
 				case VALUE_OPERATOR_LESS_THAN_OR_EQUAL:{
-					char *ret=calloc(1024,1);
-					sprintf(ret,"left (%s) LESS_THAN_OR_EQUAL right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
-					return ret;
+					stringAppend(ret,"left (%s) LESS_THAN_OR_EQUAL right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					break;
 				}
 				case VALUE_OPERATOR_GREATER_THAN:{
-					char *ret=calloc(1024,1);
-					sprintf(ret,"left (%s) GREATER_THAN right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
-					return ret;
+					stringAppend(ret,"left (%s) GREATER_THAN right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					break;
 				}
 				case VALUE_OPERATOR_GREATER_THAN_OR_EQUAL:{
-					char *ret=calloc(1024,1);
-					sprintf(ret,"left (%s) GREATER_THAN_OR_EQUAL right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
-					return ret;
+					stringAppend(ret,"left (%s) GREATER_THAN_OR_EQUAL right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					break;
 				}
 				case VALUE_OPERATOR_POSTFIX_INCREMENT:{
-					char *ret=calloc(1024,1);
-					sprintf(ret,"POSTFIX_INCREMENT %s",Value_asString(value->op.left));
-					return ret;
+					stringAppend(ret,"POSTFIX_INCREMENT %s",Value_asString(value->op.left));
+					break;
 				}
 				case VALUE_OPERATOR_POSTFIX_DECREMENT:{
-					char *ret=calloc(1024,1);
-					sprintf(ret,"POSTFIX_DECREMENT %s",Value_asString(value->op.left));
-					return ret;
+					stringAppend(ret,"POSTFIX_DECREMENT %s",Value_asString(value->op.left));
+					break;
 				}
-				case VALUE_OPERATOR_DOT:
-					fatal("unimplemented %d",value->op.op);
+				case VALUE_OPERATOR_DOT:{
+					stringAppend(ret,"left (%s) DOT right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					break;
+				}
 				case VALUE_OPERATOR_INDEX:{
-					char *ret=calloc(1024,1);
-					sprintf(ret,"left (%s) INDEX right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
-					return ret;
+					stringAppend(ret,"left (%s) INDEX right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					break;
 				}
 				case VALUE_OPERATOR_LOGICAL_AND:{
-					char *ret=calloc(1024,1);
-					sprintf(ret,"left (%s) LOGICAL_AND right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
-					return ret;
+					stringAppend(ret,"left (%s) LOGICAL_AND right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					break;
 				}
 				case VALUE_OPERATOR_LOGICAL_OR:{
-					char *ret=calloc(1024,1);
-					sprintf(ret,"left (%s) LOGICAL_OR right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
-					return ret;
+					stringAppend(ret,"left (%s) LOGICAL_OR right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					break;
 				}
 				case VALUE_OPERATOR_BITWISE_AND:{
-					char *ret=calloc(1024,1);
-					sprintf(ret,"left (%s) BITWISE_AND right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
-					return ret;
+					stringAppend(ret,"left (%s) BITWISE_AND right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					break;
 				}
 				case VALUE_OPERATOR_BITWISE_OR:{
-					char *ret=calloc(1024,1);
-					sprintf(ret,"left (%s) BITWISE_OR right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
-					return ret;
+					stringAppend(ret,"left (%s) BITWISE_OR right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					break;
 				}
 				case VALUE_OPERATOR_EQUAL:{
-					char *ret=calloc(1024,1);
-					sprintf(ret,"left (%s) EQUAL right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
-					return ret;
+					stringAppend(ret,"left (%s) EQUAL right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					break;
 				}
 				case VALUE_OPERATOR_NOT_EQUAL:{
-					char *ret=calloc(1024,1);
-					sprintf(ret,"left (%s) NOT_EQUAL right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
-					return ret;
+					stringAppend(ret,"left (%s) NOT_EQUAL right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					break;
 				}
 				case VALUE_OPERATOR_LOGICAL_NOT:{
-					char *ret=calloc(1024,1);
-					sprintf(ret,"LOGICAL_NOT %s",Value_asString(value->op.left));
-					return ret;
+					stringAppend(ret,"LOGICAL_NOT %s",Value_asString(value->op.left));
+					break;
 				}
 				case VALUE_OPERATOR_BITWISE_NOT:{
-					char *ret=calloc(1024,1);
-					sprintf(ret,"BITWISE_NOT %s",Value_asString(value->op.left));
-					return ret;
+					stringAppend(ret,"BITWISE_NOT %s",Value_asString(value->op.left));
+					break;
 				}
 				case VALUE_OPERATOR_DEREFERENCE:{
-					char *ret=calloc(1024,1);
-					sprintf(ret,"DEREFERENCE %s",Value_asString(value->op.left));
-					return ret;
+					stringAppend(ret,"DEREFERENCE %s",Value_asString(value->op.left));
+					break;
 				}
 
 				default:
 					fatal("unimplemented %d",value->op.op);
 			}
-			return "VALUE_KIND_OPERATOR unimplemented";
+			break;
 		}
 		case VALUE_KIND_SYMBOL_REFERENCE:{
-			char*ret=calloc(1024,1);
-			sprintf(ret,"%.*s",value->symbol->len,value->symbol->p);
-			return ret;
+			stringAppend(ret,"%.*s",value->symbol->len,value->symbol->p);
+			break;
 		}
 		case VALUE_KIND_FUNCTION_CALL:{
-			char*ret=calloc(1024,1);
-			sprintf(ret,"calling function %.*s with %d arguments",value->function_call.name->len,value->function_call.name->p,value->function_call.args.len);
+			stringAppend(ret,"calling function %.*s with %d arguments (",value->function_call.name->len,value->function_call.name->p,value->function_call.args.len);
 			for(int i=0;i<value->function_call.args.len;i++){
 				Value*arg=array_get(&value->function_call.args,i);
 				char*arg_str=Value_asString(arg);
-				sprintf(ret+strlen(ret),"\narg %d: %s",i,arg_str);
+				stringAppend(ret,"arg %d: %s,",i,arg_str);
 			}
-			return ret;
+			stringAppend(ret,")");
+			break;
 		}
 		case VALUE_KIND_DOT:{
-			char*ret=calloc(1024,1);
-			sprintf(ret,"left (%s) DOT right (%.*s)",Value_asString(value->dot.left),value->dot.right->len,value->dot.right->p);
-			return ret;
+			stringAppend(ret,"left (%s) DOT right (%.*s)",Value_asString(value->dot.left),value->dot.right->len,value->dot.right->p);
+			break;
 		}
 		case VALUE_KIND_ARROW:{
-			char*ret=calloc(1024,1);
-			sprintf(ret,"left (%s) ARROW right (%.*s)",Value_asString(value->arrow.left),value->arrow.right->len,value->arrow.right->p);
-			return ret;
+			stringAppend(ret,"left (%s) ARROW right (%.*s)",Value_asString(value->arrow.left),value->arrow.right->len,value->arrow.right->p);
+			break;
 		}
 		case VALUE_KIND_ADDRESS_OF:{
-			char*ret=calloc(1024,1);
-			sprintf(ret,"ADDR_OF ( %s )",Value_asString(value->addrOf.addressedValue));
-			return ret;
+			stringAppend(ret,"ADDR_OF ( %s )",Value_asString(value->addrOf.addressedValue));
+			break;
 		}
 		case VALUE_KIND_PARENS_WRAPPED:{
-			char*ret=calloc(1024,1);
-			sprintf(ret,"_( %s )_",Value_asString(value->parens_wrapped.innerValue));
-			return ret;
+			stringAppend(ret,"_( %s )_",Value_asString(value->parens_wrapped.innerValue));
+			break;
 		}
 		case VALUE_KIND_CAST:{
-			char*ret=calloc(1024,1);
-			sprintf(ret,"CAST ( %s ) TO ( %s )",Value_asString(value->cast.value),Type_asString(value->cast.castTo));
-			return ret;
+			stringAppend(ret,"CAST ( %s ) TO ( %s )",Value_asString(value->cast.value),Type_asString(value->cast.castTo));
+			break;
 		}
 		case VALUE_KIND_STRUCT_INITIALIZER:{
-			char*ret=calloc(1024,1);
-			sprintf(ret,"init struct with fields: ");
+			stringAppend(ret,"init struct with fields: ");
 			for(int i=0;i<value->struct_initializer.structFields.len;i++){
 				struct StructFieldInitializer*field=array_get(&value->struct_initializer.structFields,i);
-				sprintf(ret+strlen(ret),"field %d ",i);
+				stringAppend(ret,"field %d ",i);
 				for(int j=0;j<field->fieldNameSegments.len;j++){
 					Token*segment=array_get(&field->fieldNameSegments,j);
-					sprintf(ret+strlen(ret),".%.*s",segment->len,segment->p);
+					stringAppend(ret,".%.*s",segment->len,segment->p);
 				}
-				sprintf(ret+strlen(ret)," = %s , ",Value_asString(field->value));
+				stringAppend(ret," = %s , ",Value_asString(field->value));
 			}
-			return ret;
+			break;
 		}
 		default:
 			fatal("unimplemented %d",value->kind);
+	}
+	return ret;
+}
+
+const char* ValueKind_asString(enum VALUE_KIND kind){
+	switch(kind){
+		case VALUE_KIND_STATIC_VALUE:
+			return("VALUE_KIND_STATIC_VALUE");
+		case VALUE_KIND_OPERATOR:
+			return("VALUE_KIND_STATIC_VALUE");
+		case VALUE_KIND_SYMBOL_REFERENCE:
+			return("VALUE_KIND_STATIC_VALUE");
+		default:
+			fatal("unknown value kind %d",kind);
 	}
 }
 

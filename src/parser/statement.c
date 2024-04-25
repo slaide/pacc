@@ -1,167 +1,192 @@
+#include "parser/symbol.h"
 #include<parser/parser.h>
 #include<util/util.h>
 #include<tokenizer.h>
 
-char*Statement_asString(Statement*statement){
+char*Statement_asString(Statement*statement,int depth){
+	char*ret=makeStringn(16000);
 	switch(statement->tag){
 		case STATEMENT_EMPTY:{
-			return "empty statement";
+			stringAppend(ret,ind(depth*4));
+			stringAppend(ret,"empty statement\n");
+			break;
 		}
 		case STATEMENT_KIND_RETURN:{
-			char*ret=calloc(1024,1);
-			sprintf(ret,"return %s",Value_asString(statement->return_.retval));
-			return ret;
+			stringAppend(ret,ind(depth*4));
+			stringAppend(ret,"return %s",Value_asString(statement->return_.retval));
+			break;
 		}
 		case STATEMENT_FUNCTION_DEFINITION:{
-			char*ret=calloc(1024,1);
-			sprintf(ret,"defined function %.*s",statement->functionDef.symbol.name->len,statement->functionDef.symbol.name->p);
-			sprintf(ret+strlen(ret)," of type %s",Type_asString(statement->functionDef.symbol.type));
+			stringAppend(ret,ind(depth*4));
+			stringAppend(ret,"defined function %.*s",statement->functionDef.symbol.name->len,statement->functionDef.symbol.name->p);
+			stringAppend(ret," of type %s",Type_asString(statement->functionDef.symbol.type));
 			for(int i=0;i<statement->functionDef.bodyStatements.len;i++){
 				Statement*bodyStatement=array_get(&statement->functionDef.bodyStatements,i);
-				sprintf(ret,"%s\n  body %d: %s",ret,i,Statement_asString(bodyStatement));
+				stringAppend(ret,"\n-%s",Statement_asString(bodyStatement,depth+1));
 			}
-			return ret;
+			break;
 		}
 		case STATEMENT_KIND_SYMBOL_DEFINITION:{
-			char*ret=calloc(1024,1);
-			if(statement->symbolDef.symbol.name!=nullptr)
-				sprintf(ret,"%.*s of type %s",statement->symbolDef.symbol.name->len,statement->symbolDef.symbol.name->p,Type_asString(statement->symbolDef.symbol.type));
-			else
-				sprintf(ret,"unnamed symbol of type %s",Type_asString(statement->symbolDef.symbol.type));
+			stringAppend(ret,ind(depth*4));
+			if(statement->symbolDef.symbol.name!=nullptr){
+				stringAppend(ret,"%.*s of type %s",statement->symbolDef.symbol.name->len,statement->symbolDef.symbol.name->p,Type_asString(statement->symbolDef.symbol.type));
+			}else{
+				stringAppend(ret,"unnamed symbol of type %s",Type_asString(statement->symbolDef.symbol.type));
+			}
 
 			if(statement->symbolDef.init_value){
-				sprintf(ret+strlen(ret)," = %s",Value_asString(statement->symbolDef.init_value));
+				stringAppend(ret," = %s",Value_asString(statement->symbolDef.init_value));
 			}
-			return ret;
+			break;
 		}
 		case STATEMENT_KIND_FOR:{
-			char *ret=calloc(1024,1);
-			sprintf(ret+strlen(ret),"loop: for\n");
+			stringAppend(ret,ind(depth*4));
+			stringAppend(ret,"for loop\n");
+
+			stringAppend(ret,ind((depth+1)*4));
 			if(statement->forLoop.init!=nullptr)
-				sprintf(ret+strlen(ret),"  init: %s\n",Statement_asString(statement->forLoop.init));
+				stringAppend(ret,"init:\n%s",Statement_asString(statement->forLoop.init,depth+1));
 			else
-				sprintf(ret+strlen(ret),"  init: none\n");
+				stringAppend(ret,"init:\n%s","none");
+
+			stringAppend(ret,ind((depth+1)*4));
 			if(statement->forLoop.condition!=nullptr)
-				sprintf(ret+strlen(ret),"  condition: %s\n",Value_asString(statement->forLoop.condition));
+				stringAppend(ret,"condition:\n%s",Value_asString(statement->forLoop.condition));
 			else
-				sprintf(ret+strlen(ret),"  condition: none\n");
+				stringAppend(ret,"condition:\n%s","none");
+
+			stringAppend(ret,ind((depth+1)*4));
 			if(statement->forLoop.step!=nullptr)
-				sprintf(ret+strlen(ret),"  step: %s\n",Value_asString(statement->forLoop.step));
+				stringAppend(ret,"step:\n%s",Value_asString(statement->forLoop.step));
 			else
-				sprintf(ret+strlen(ret),"  step: none\n");
+				stringAppend(ret,"step:\n%s","none");
 
 			for(int i=0;i<statement->forLoop.body.len;i++){
 				Statement*bodyStatement=array_get(&statement->forLoop.body,i);
-				sprintf(ret+strlen(ret),"  body %d: %s\n",i,Statement_asString(bodyStatement));
+				stringAppend(ret,Statement_asString(bodyStatement,depth+1));
 			}
 
-			return ret;
+			break;
 		}
 		case STATEMENT_VALUE:{
-			return Value_asString(statement->value.value);
+			stringAppend(ret,"%sval %s\n",ind(depth*4),Value_asString(statement->value.value));
+			break;
 		}
 		case STATEMENT_PREP_INCLUDE:{
-			char*ret=calloc(1024,1);
-			sprintf(ret,"#include %.*s",statement->prep_include.path.len,statement->prep_include.path.p);
-			return ret;
+			stringAppend(ret,ind(depth*4));
+			stringAppend(ret,"#include %.*s\n",statement->prep_include.path.len,statement->prep_include.path.p);
+			break;
 		}
 		case STATEMENT_PREP_DEFINE:{
-			char*ret=calloc(1024,1);
-			sprintf(ret,"#define %.*s",statement->prep_define.name.len,statement->prep_define.name.p);
+			stringAppend(ret,ind(depth*4));
+			stringAppend(ret,"#define %.*s",statement->prep_define.name.len,statement->prep_define.name.p);
 
 			if(statement->prep_define.args.len>0){
-				sprintf(ret+strlen(ret)," args (");
+				stringAppend(ret," args (");
 				for(int i=0;i<statement->prep_define.args.len;i++){
 					Token*arg=array_get(&statement->prep_define.args,i);
-					sprintf(ret+strlen(ret)," %.*s ",arg->len,arg->p);
+					stringAppend(ret," %.*s ",arg->len,arg->p);
 				}
-				sprintf(ret+strlen(ret),")");
+				stringAppend(ret,")");
 			}
 
 			if(statement->prep_define.body.len>0){
-				sprintf(ret+strlen(ret)," body {");
+				stringAppend(ret," body {");
 				for(int i=0;i<statement->prep_define.body.len;i++){
 					Token*body_token=array_get(&statement->prep_define.body,i);
-					sprintf(ret+strlen(ret)," %.*s ",body_token->len,body_token->p);
+					stringAppend(ret," %.*s ",body_token->len,body_token->p);
 				}
-				sprintf(ret+strlen(ret),"}");
+				stringAppend(ret,"}");
 			}
-			return ret;
+			stringAppend(ret,"\n");
+			break;
 		}
 		case STATEMENT_KIND_IF:{
-			char*ret=calloc(1024,1);
-			sprintf(ret,"if %s",Value_asString(statement->if_.condition));
+			stringAppend(ret,ind(depth*4));
+			stringAppend(ret,"if %s",Value_asString(statement->if_.condition));
 			for(int i=0;i<statement->if_.body.len;i++){
 				Statement*bodyStatement=array_get(&statement->if_.body,i);
-				sprintf(ret+strlen(ret),"\n  body %d: %s",i,Statement_asString(bodyStatement));
+				stringAppend(ret,"\n%s",ind(depth*4));
+				stringAppend(ret,"%s",Statement_asString(bodyStatement,depth+1));
 			}
 			if(statement->if_.elseBodyPresent){
-				sprintf(ret+strlen(ret),"\nelse");
+				stringAppend(ret,"\n%s",ind(depth*4));
+				stringAppend(ret,"else");
 				for(int i=0;i<statement->if_.elseBody.len;i++){
 					Statement*bodyStatement=array_get(&statement->if_.elseBody,i);
-					sprintf(ret+strlen(ret),"\n  body %d: %s",i,Statement_asString(bodyStatement));
+					stringAppend(ret,"\n%s",ind(depth*4));
+					stringAppend(ret,"%s",Statement_asString(bodyStatement,depth+1));
 				}
 			}
-			return ret;
+			break;
 		}
 		case STATEMENT_KIND_WHILE:{
-			char*ret=calloc(1024,1);
+			stringAppend(ret,"%s",ind(depth*4));
 			if(statement->whileLoop.doWhile){
-				sprintf(ret,"loop: do while ( %s )",Value_asString(statement->whileLoop.condition));
+				stringAppend(ret,"loop: do while ( %s )",Value_asString(statement->whileLoop.condition));
 			}else{
-				sprintf(ret,"loop: while ( %s )",Value_asString(statement->whileLoop.condition));
+				stringAppend(ret,"loop: while ( %s )",Value_asString(statement->whileLoop.condition));
 			}
 			for(int i=0;i<statement->whileLoop.body.len;i++){
 				Statement*bodyStatement=array_get(&statement->whileLoop.body,i);
-				sprintf(ret+strlen(ret),"\n  body %d: %s",i,Statement_asString(bodyStatement));
+				stringAppend(ret,"\n%s",ind(depth*4));
+				stringAppend(ret,"%s",Statement_asString(bodyStatement,depth+1));
 			}
-			return ret;
+			break;
 		}
 		case STATEMENT_SWITCH:{
-			char*ret=calloc(1024,1);
-			sprintf(ret,"switch %s",Value_asString(statement->switch_.condition));
+			stringAppend(ret,"%s",ind(depth*4));
+			stringAppend(ret,"switch %s",Value_asString(statement->switch_.condition));
 			for(int i=0;i<statement->switch_.body.len;i++){
 				Statement*bodyStatement=array_get(&statement->switch_.body,i);
-				sprintf(ret+strlen(ret),"\n  body %d: %s",i,Statement_asString(bodyStatement));
+				stringAppend(ret,"\n%s",ind(depth*4));
+				stringAppend(ret,"%s",Statement_asString(bodyStatement,depth+1));
 			}
-			return ret;
+			break;
 		}
 		case STATEMENT_DEFAULT:{
-			return "default:";
+			stringAppend(ret,"%s",ind(depth*4));
+			stringAppend(ret, "default\n");
+			break;
 		}
 		case STATEMENT_BREAK:{
-			return "break";
+			stringAppend(ret,"%s",ind(depth*4));
+			stringAppend(ret, "break\n");
+			break;
 		}
 		case STATEMENT_CONTINUE:{
-			return "continue";
+			stringAppend(ret,"%s",ind(depth*4));
+			stringAppend(ret, "continue\n");
+			break;
 		}
 		case STATEMENT_SWITCHCASE:{
-			char*ret=calloc(1024,1);
-			sprintf(ret,"case %s:",Value_asString(statement->switchCase.value));
-			return ret;
+			stringAppend(ret,"%s",ind(depth*4));
+			stringAppend(ret,"case %s:\n",Value_asString(statement->switchCase.value));
+			break;
 		}
 		case STATEMENT_BLOCK:{
-			char*ret=calloc(1024,1);
-			sprintf(ret,"block:");
+			stringAppend(ret,"%s",ind(depth*4));
+			stringAppend(ret,"block:\n");
 			for(int i=0;i<statement->block.body.len;i++){
 				Statement*bodyStatement=array_get(&statement->block.body,i);
-				sprintf(ret+strlen(ret),"\n  body %d: %s",i,Statement_asString(bodyStatement));
+				stringAppend(ret,"%s",Statement_asString(bodyStatement,depth+1));
 			}
-			return ret;
+			break;
 		}
 		case STATEMENT_LABEL:{
-			char*ret=calloc(1024,1);
-			sprintf(ret,"label %.*s:",statement->labelDefinition.label->len,statement->labelDefinition.label->p);
-			return ret;
+			stringAppend(ret,"%s",ind(depth*4));
+			stringAppend(ret,"label %.*s:\n",statement->labelDefinition.label->len,statement->labelDefinition.label->p);
+			break;
 		}
 		case STATEMENT_GOTO:{
-			char*ret=calloc(1024,1);
-			sprintf(ret,"goto %s",Value_asString(statement->goto_.label));
-			return ret;
+			stringAppend(ret,"%s",ind(depth*4));
+			stringAppend(ret,"goto %s\n",Value_asString(statement->goto_.label));
+			break;
 		}
 		default:
 			fatal("unimplemented %s",Statementkind_asString(statement->tag));
 	}
+	return ret;
 }
 
 enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token_iter_in){
@@ -195,11 +220,11 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 			enum STATEMENT_PARSE_RESULT res=Statement_parse(&bodyStatement,token_iter);
 			TokenIter_lastToken(token_iter,&token);
 			switch(res){
-				case STATEMENT_INVALID:
+				case STATEMENT_PARSE_RESULT_INVALID:
 					fatal("invalid statement in block");
 					stopParsingBody=true;
 					break;
-				case STATEMENT_PRESENT:
+				case STATEMENT_PARSE_RESULT_PRESENT:
 					array_append(&body,&bodyStatement);
 					break;
 			}
@@ -282,7 +307,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 			enum STATEMENT_PARSE_RESULT res=Statement_parse(&ifBodyStatement,token_iter);
 			TokenIter_lastToken(token_iter,&token);
 			switch(res){
-				case STATEMENT_INVALID:
+				case STATEMENT_PARSE_RESULT_INVALID:
 					fatal("invalid statement in if body at line %d col %d %.*s",token.line,token.col,token.len,token.p);
 					break;
 				default:
@@ -311,7 +336,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 				enum STATEMENT_PARSE_RESULT res=Statement_parse(&elseBodyStatement,token_iter);
 				TokenIter_lastToken(token_iter,&token);
 				switch(res){
-					case STATEMENT_INVALID:
+					case STATEMENT_PARSE_RESULT_INVALID:
 						fatal("invalid statement in else body");
 						break;
 					default:
@@ -372,12 +397,11 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 			enum STATEMENT_PARSE_RESULT res=Statement_parse(&whileBodyStatement,token_iter);
 			TokenIter_lastToken(token_iter,&token);
 			switch(res){
-				case STATEMENT_INVALID:
+				case STATEMENT_PARSE_RESULT_INVALID:
 					// e.g. empty body
 					endBody=true;
 					break;
 				default:
-					println("found statement %s",Statement_asString(&whileBodyStatement));
 					array_append(&body_tokens,&whileBodyStatement);
 					break;
 			}
@@ -411,7 +435,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 			enum STATEMENT_PARSE_RESULT res=Statement_parse(&doWhileBodyStatement,token_iter);
 			TokenIter_lastToken(token_iter,&token);
 			switch(res){
-				case STATEMENT_INVALID:
+				case STATEMENT_PARSE_RESULT_INVALID:
 					fatal("invalid statement in do while body");
 					break;
 				default:
@@ -474,7 +498,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 
 		Statement init_statement={};
 		enum STATEMENT_PARSE_RESULT res=Statement_parse(&init_statement,token_iter);
-		if(res==STATEMENT_INVALID){
+		if(res==STATEMENT_PARSE_RESULT_INVALID){
 			out->forLoop.init=nullptr;
 		}else{
 			TokenIter_lastToken(token_iter,&token);
@@ -529,11 +553,11 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 				enum STATEMENT_PARSE_RESULT res=Statement_parse(&forBodyStatement,token_iter);
 				TokenIter_lastToken(token_iter,&token);
 				switch(res){
-					case STATEMENT_INVALID:
+					case STATEMENT_PARSE_RESULT_INVALID:
 						fatal("invalid statement in for body");
 						stopParsingForBody=true;
 						break;
-					case STATEMENT_PRESENT:
+					case STATEMENT_PARSE_RESULT_PRESENT:
 						array_append(&body_tokens,&forBodyStatement);
 						break;
 				}
@@ -544,10 +568,10 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 			enum STATEMENT_PARSE_RESULT res=Statement_parse(&forBodyStatement,token_iter);
 			TokenIter_lastToken(token_iter,&token);
 			switch(res){
-				case STATEMENT_INVALID:
+				case STATEMENT_PARSE_RESULT_INVALID:
 					fatal("invalid statement in for body");
 					break;
-				case STATEMENT_PRESENT:
+				case STATEMENT_PARSE_RESULT_PRESENT:
 					array_append(&body_tokens,&forBodyStatement);
 					break;
 			}
@@ -660,11 +684,11 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 			enum STATEMENT_PARSE_RESULT res=Statement_parse(&bodyStatement,token_iter);
 			TokenIter_lastToken(token_iter,&token);
 			switch(res){
-				case STATEMENT_INVALID:
+				case STATEMENT_PARSE_RESULT_INVALID:
 					fatal("invalid statement in switch body");
 					stopParsingSwitchBody=true;
 					break;
-				case STATEMENT_PRESENT:
+				case STATEMENT_PARSE_RESULT_PRESENT:
 					array_append(&body,&bodyStatement);
 					break;
 			}
@@ -681,7 +705,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 		Symbol symbol={};
 		struct TokenIter preSymbolParseIter=*token_iter;
 		enum SYMBOL_PARSE_RESULT symbolParseResult=Symbol_parse(&symbol,token_iter);
-		if(symbolParseResult==STATEMENT_INVALID){
+		if(symbolParseResult==SYMBOL_INVALID){
 			break;
 		}
 		TokenIter_lastToken(token_iter,&token);
@@ -715,10 +739,10 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 							TokenIter_lastToken(token_iter,&token);
 
 							switch(res){
-								case STATEMENT_INVALID:
+								case STATEMENT_PARSE_RESULT_INVALID:
 									stopParsingFunctionBody=true;
 									break;
-								case STATEMENT_PRESENT:
+								case STATEMENT_PARSE_RESULT_PRESENT:
 									array_append(&statement.functionDef.bodyStatements,&functionBodyStatement);
 									break;
 							}
@@ -845,11 +869,11 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 		goto STATEMENT_PARSE_RET_SUCCESS;
 	}while(0);
 
-	return STATEMENT_INVALID;
+	return STATEMENT_PARSE_RESULT_INVALID;
 
 STATEMENT_PARSE_RET_SUCCESS:
 	*token_iter_in=*token_iter;
-	return STATEMENT_PRESENT;
+	return STATEMENT_PARSE_RESULT_PRESENT;
 }
 bool Statement_equal(Statement*a,Statement*b){
 	if(a->tag!=b->tag){

@@ -4,11 +4,14 @@ int main(int argc, const char**argv){
 	switch(argc){
 		default:
 			{
+				printf();
 				char*progname=*argv;
 				printf("progname is %s",progname);
+	/*
 				for(int ac=0;ac<argc;ac++){
 					printf("arg %d is %s",ac,argv[ac]);
 				}
+			*/
 			}
 			break;
 		case 0:
@@ -16,6 +19,7 @@ int main(int argc, const char**argv){
 		case 1:
 			{
 				char*progname=*argv;
+			/*
 				printf("progname is %s",progname);
 			}
 			break;
@@ -24,6 +28,7 @@ int main(int argc, const char**argv){
 				char*progname=*argv;
 				printf("progname is %s",progname);
 				printf("arg 1 is %s",argv[1]);
+			*/
 			}
 			break;
 	}

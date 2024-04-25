@@ -50,7 +50,7 @@ const char* Statementkind_asString(enum STATEMENT_KIND kind);
 
 typedef struct Statement Statement;
 
-char*Statement_asString(Statement*statement);
+char*Statement_asString(Statement*statement,int indentDepth);
 
 struct Statement{
 	enum STATEMENT_KIND tag;
@@ -148,9 +148,9 @@ struct Statement{
 
 enum STATEMENT_PARSE_RESULT{
 	/// @brief statement was parsed successfully
-	STATEMENT_PRESENT,
+	STATEMENT_PARSE_RESULT_PRESENT,
 	/// @brief statement was not parsed successfully (e.g. syntax error)
-	STATEMENT_INVALID,
+	STATEMENT_PARSE_RESULT_INVALID,
 };
 enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token_iter);
 bool Statement_equal(Statement*a,Statement*b);

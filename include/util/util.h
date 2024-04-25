@@ -35,3 +35,10 @@ typedef struct String{
 
 /// @brief allocates size bytes memory and copies bytes memory from src into it
 void* allocAndCopy(size_t size,const void*src);
+
+char* makeStringn(int len);
+char* makeString();
+/// @brief appends fmtstr to str (appends to the last character before the null terminator)
+void stringAppend(char*str,char*fmtstr,...);
+/// get indentation string of length n
+char*ind(int n);

@@ -114,7 +114,6 @@ if __name__=="__main__":
             "src/util/util.c",
 
             "src/parser/parser.c",
-            "src/parser/asString.c",
             "src/parser/statement.c",
             "src/parser/symbol.c",
             "src/parser/type.c",

@@ -308,6 +308,21 @@ SYMBOL_PARSE_RET_NONAME:
 SYMBOL_PARSE_RET_FAILURE:
 	return SYMBOL_INVALID;
 }
+
+const char* Symbolkind_asString(enum SYMBOLKIND kind){
+	switch(kind){
+		case SYMBOL_KIND_UNKNOWN:
+			return("SYMBOL_KIND_UNKNOWN");
+		case SYMBOL_KIND_DECLARATION:
+			return("SYMBOL_KIND_DECLARATION");
+			break;
+		case SYMBOL_KIND_REFERENCE:
+			return("SYMBOL_KIND_REFERENCE");
+		default:
+			fatal("unknown symbol kind %d",kind);
+	}
+}
+
 bool Symbol_equal(Symbol*a,Symbol*b){
 	if(a->kind!=b->kind){
 		println("kind mismatch when comparing symbols %d %d",a->kind,b->kind);

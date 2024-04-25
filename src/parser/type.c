@@ -60,45 +60,35 @@ char* Type_asString(Type* type){
 	Type* type_ref=type;
 	bool printing_done=false;
 
-	char*ret=malloc(1024);
-	memset(ret,0,1024);
-	char*ret_ptr=ret;
+	char*ret=makeString();
 	while(!printing_done){
 		if(type_ref->is_thread_local){
-			sprintf(ret_ptr,"thread_local ");
-			ret_ptr=ret+strlen(ret);
+			stringAppend(ret,"thread_local ");
 		}
 		if(type_ref->is_static){
-			sprintf(ret_ptr,"static ");
-			ret_ptr=ret+strlen(ret);
+			stringAppend(ret,"static ");
 		}
 		if(type_ref->is_const){
-			sprintf(ret_ptr,"const ");
-			ret_ptr=ret+strlen(ret);
+			stringAppend(ret,"const ");
 		}
 
 		switch(type_ref->kind){
 			case TYPE_KIND_REFERENCE:
 				if(type_ref->reference.is_enum){
-					sprintf(ret_ptr,"ref enum ");
-					ret_ptr=ret+strlen(ret);
+					stringAppend(ret,"ref enum ");
 				}
 				if(type_ref->reference.is_struct){
-					sprintf(ret_ptr,"ref struct ");
-					ret_ptr=ret+strlen(ret);
+					stringAppend(ret,"ref struct ");
 				}
 				if(type_ref->reference.is_union){
-					sprintf(ret_ptr,"ref union ");
-					ret_ptr=ret+strlen(ret);
+					stringAppend(ret,"ref union ");
 				}
-				sprintf(ret_ptr,"%.*s",type_ref->reference.name.len,type_ref->reference.name.p);
-				ret_ptr=ret+strlen(ret);
+				stringAppend(ret,"%.*s",type_ref->reference.name.len,type_ref->reference.name.p);
 
 				printing_done=true;
 				break;
 			case TYPE_KIND_POINTER:
-				sprintf(ret_ptr,"pointer to ");
-				ret_ptr=ret+strlen(ret);
+				stringAppend(ret,"pointer to ");
 
 				if(type_ref->pointer.base==type_ref)
 					fatal("pointer to self");
@@ -106,87 +96,75 @@ char* Type_asString(Type* type){
 				type_ref=type_ref->pointer.base;
 				break;
 			case TYPE_KIND_ARRAY:
-				sprintf(ret_ptr,"array ");
-				ret_ptr=ret+strlen(ret);
+				stringAppend(ret,"array ");
 				// print length
 				if(type_ref->array.len!=nullptr){
-					sprintf(ret_ptr,"[%s] ",Value_asString(type_ref->array.len));
-					ret_ptr=ret+strlen(ret);
+					stringAppend(ret,"[%s] ",Value_asString(type_ref->array.len));
 				}else{
-					sprintf(ret_ptr,"[] ");
-					ret_ptr=ret+strlen(ret);
+					stringAppend(ret,"[] ");
 				}
 				// print base type
-				sprintf(ret_ptr,"of type %s",Type_asString(type_ref->array.base));
+				stringAppend(ret,"of type %s",Type_asString(type_ref->array.base));
 
 				type_ref=type_ref->array.base;
 				break;
 			case TYPE_KIND_FUNCTION:
-				sprintf(ret_ptr,"function, return type is %s, with args (",Type_asString(type_ref->function.ret));
-				ret_ptr=ret+strlen(ret);
+				stringAppend(ret,"function, return type is %s, with args (",Type_asString(type_ref->function.ret));
 
 				for(int i=0;i<type_ref->function.args.len;i++){
 					Symbol* arg=array_get(&type_ref->function.args,i);
 					if(arg->name!=nullptr)
-						sprintf(ret_ptr,"argument #%d called %.*s is of type %s,",i,arg->name->len,arg->name->p,Type_asString(arg->type));
+						stringAppend(ret,"argument #%d called %.*s is of type %s,",i,arg->name->len,arg->name->p,Type_asString(arg->type));
 					else
-						sprintf(ret_ptr,"argument #%d is of type %s,",i,Type_asString(arg->type));
-					ret_ptr=ret+strlen(ret);
+						stringAppend(ret,"argument #%d is of type %s,",i,Type_asString(arg->type));
 				}
-				sprintf(ret_ptr,")");
-				ret_ptr=ret+strlen(ret);
+				stringAppend(ret,")");
 				printing_done=true;
 				break;
 			case TYPE_KIND_STRUCT:
 				if(type_ref->struct_.name==nullptr){
-					sprintf(ret_ptr,"struct");
+					stringAppend(ret,"struct");
 				}else{
-					sprintf(ret_ptr,"struct %.*s",type_ref->struct_.name->len,type_ref->struct_.name->p);
+					stringAppend(ret,"struct %.*s",type_ref->struct_.name->len,type_ref->struct_.name->p);
 				}
-				ret_ptr=ret+strlen(ret);
 
 				for(int i=0;i<type_ref->struct_.members.len;i++){
 					Symbol* member=array_get(&type_ref->struct_.members,i);
 					if(member->name==nullptr){
-						sprintf(ret_ptr,"\n  member of type %s",Type_asString(member->type));
+						stringAppend(ret,"\n  member of type %s",Type_asString(member->type));
 					}else{
-						sprintf(ret_ptr,"\n  member %.*s of type %s",member->name->len,member->name->p,Type_asString(member->type));
+						stringAppend(ret,"\n  member %.*s of type %s",member->name->len,member->name->p,Type_asString(member->type));
 					}
-					ret_ptr=ret+strlen(ret);
 				}
 
 				printing_done=true;
 				break;
 			case TYPE_KIND_UNION:
 				if(type_ref->union_.name==nullptr){
-					sprintf(ret_ptr,"union");
+					stringAppend(ret,"union");
 				}else{
-					sprintf(ret_ptr,"union %.*s",type_ref->union_.name->len,type_ref->union_.name->p);
+					stringAppend(ret,"union %.*s",type_ref->union_.name->len,type_ref->union_.name->p);
 				}
-				ret_ptr=ret+strlen(ret);
 				for(int i=0;i<type_ref->union_.members.len;i++){
 					Symbol* member=array_get(&type_ref->union_.members,i);
 					if(member->name==nullptr){
-						sprintf(ret_ptr,"\n  member of type %s",Type_asString(member->type));
+						stringAppend(ret,"\n  member of type %s",Type_asString(member->type));
 					}else{
-						sprintf(ret_ptr,"\n  member %.*s of type %s",member->name->len,member->name->p,Type_asString(member->type));
+						stringAppend(ret,"\n  member %.*s of type %s",member->name->len,member->name->p,Type_asString(member->type));
 					}
-					ret_ptr=ret+strlen(ret);
 				}
 
 				printing_done=true;
 				break;
 			case TYPE_KIND_ENUM:
 				if(type_ref->enum_.name==nullptr){
-					sprintf(ret_ptr,"enum");
+					stringAppend(ret,"enum");
 				}else{
-					sprintf(ret_ptr,"enum %.*s",type_ref->enum_.name->len,type_ref->enum_.name->p);
+					stringAppend(ret,"enum %.*s",type_ref->enum_.name->len,type_ref->enum_.name->p);
 				}
-				ret_ptr=ret+strlen(ret);
 				for(int i=0;i<type_ref->enum_.members.len;i++){
 					Value* member=array_get(&type_ref->enum_.members,i);
-					sprintf(ret_ptr,"\n  member %s",Value_asString(member));
-					ret_ptr=ret+strlen(ret);
+					stringAppend(ret,"\n  member %s",Value_asString(member));
 				}
 
 				printing_done=true;

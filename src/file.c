@@ -4,8 +4,13 @@
 #include<stdio.h>
 #include<string.h>
 
+#include<util/util.h>
+
 void File_read(const char*filepath,File*out){
 	FILE* file=fopen(filepath,"r");
+	if(!file){
+		fatal("could not open file %s",filepath);
+	}
 	fseek(file,0,SEEK_END);
 	int file_len=ftell(file);
 	fseek(file,0,SEEK_SET);

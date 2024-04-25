@@ -4,9 +4,10 @@
 
 
 void Module_print(Module*module){
+	printf("module:\n");
 	for(int i=0;i<module->statements.len;i++){
 		Statement*statement=array_get(&module->statements,i);
-		println("statement %d is : %s",i,Statement_asString(statement));
+		printf("%s\n",Statement_asString(statement,0));
 	}
 }
 
