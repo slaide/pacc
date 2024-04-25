@@ -207,7 +207,17 @@ SYMBOL_PARSE_HANDLE_NAME_TOKEN:
 
 				Symbol argument={};
 				auto symres=Symbol_parse(&argument,token_iter);
-				if(symres==SYMBOL_INVALID){
+				while(symres==SYMBOL_INVALID){
+					// check for varargs
+					if(Token_equalString(&token,"...")){
+						argument.type=allocAndCopy(sizeof(Type),&(Type){
+							.kind=TYPE_KIND_REFERENCE,
+							.reference={.name=(Token){.len=3,.p="...",}},
+						});
+						TokenIter_nextToken(token_iter,&token);
+
+						break;
+					}
 					goto SYMBOL_PARSE_RET_FAILURE;
 				}
 				TokenIter_lastToken(token_iter,&token);

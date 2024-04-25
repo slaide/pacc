@@ -278,73 +278,86 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 		}
 
 		// 4) multi-character tokens
-		if(token.len==1 && tokenizer->num_tokens>0 && tokenizer->tokens[tokenizer->num_tokens-1].len==1){
+
+		// check for vararg '...' token
+		if(token.len==1 && token.p[0]=='.' && (p+2)<end){
+			if(p[0]=='.' && p[1]=='.'){
+				token.len=3;
+				token.tag=TOKEN_TAG_KEYWORD;
+				p+=2;
+			}
+		}
+		// check for right/left shift assign
+		if(token.len==1 && tokenizer->num_tokens>0 && tokenizer->tokens[tokenizer->num_tokens-1].len==2){
 			Token*last_token=&tokenizer->tokens[tokenizer->num_tokens-1];
-			if(
-				// left shift
-				(last_token->p[0]=='<' && token.p[0]=='<')
-				||
-				// right shift
-				(last_token->p[0]=='>' && token.p[0]=='>')
-
-				||
-				// equality
-				(last_token->p[0]=='=' && token.p[0]=='=')
-				||
-				// inequality
-				(last_token->p[0]=='!' && token.p[0]=='=')
-
-				||
-				// less than or equal
-				(last_token->p[0]=='<' && token.p[0]=='=')
-				||
-				// greater than or equal
-				(last_token->p[0]=='>' && token.p[0]=='=')
-
-				||
-				// plus equal
-				(last_token->p[0]=='+' && token.p[0]=='=')
-				||
-				// minus equal
-				(last_token->p[0]=='-' && token.p[0]=='=')
-				||
-				// multiply equal
-				(last_token->p[0]=='*' && token.p[0]=='=')
-				||
-				// divide equal
-				(last_token->p[0]=='/' && token.p[0]=='=')
-				||
-				// plus equal
-				(last_token->p[0]=='%' && token.p[0]=='=')
-				||
-				// bitwise and equal
-				(last_token->p[0]=='&' && token.p[0]=='=')
-				||
-				// bitwise or equal
-				(last_token->p[0]=='|' && token.p[0]=='=')
-				||
-				// bitwise xor equal
-				(last_token->p[0]=='^' && token.p[0]=='=')
-
-				||
-				// logical and
-				(last_token->p[0]=='&' && token.p[0]=='&')
-				||
-				// logical or
-				(last_token->p[0]=='|' && token.p[0]=='|')
-				||
-				// increment
-				(last_token->p[0]=='+' && token.p[0]=='+')
-				||
-				// decrement
-				(last_token->p[0]=='-' && token.p[0]=='-')
-				||
-				// arrow
-				(last_token->p[0]=='-' && token.p[0]=='>')
-			){
-				last_token->len=2;
+			// check for right/left shift assign
+			if(last_token->p[0]=='<' && last_token->p[1]=='<' && token.p[0]=='='){
+				last_token->len=3;
 				last_token->tag=TOKEN_TAG_KEYWORD;
 
+				continue;
+			}
+			if(last_token->p[0]=='>' && last_token->p[1]=='>' && token.p[0]=='='){
+				last_token->len=3;
+				last_token->tag=TOKEN_TAG_KEYWORD;
+
+				continue;
+			}
+		}
+		if(token.len==1 && tokenizer->num_tokens>0 && tokenizer->tokens[tokenizer->num_tokens-1].len==1){
+			Token*last_token=&tokenizer->tokens[tokenizer->num_tokens-1];
+			static const char*const TWO_CHAR_TOKENS[]={
+				// add assign
+				"+=",
+				// sub assign
+				"-=",
+				// mult assign
+				"*=",
+				// div assign
+				"/=",
+				// mod assign
+				"%=",
+				// bitwise and assign
+				"&=",
+				// bitwise or assign
+				"|=",
+				// bitwise xor assign
+				"^=",
+
+				// equality
+				"==",
+				// inequality
+				"!=",
+				// less than or equal
+				"<=",
+				// greater than or equal
+				">=",
+				// logical and
+				"&&",
+				// logical or
+				"||",
+
+				// increment
+				"++",
+				// decrement
+				"--",
+
+				// arrow
+				"->",
+			};
+			const int NUM_TWO_CHAR_TOKENS=sizeof(TWO_CHAR_TOKENS)/sizeof(TWO_CHAR_TOKENS[0]);
+
+			bool matchFound=false;
+			for(int i=0;i<NUM_TWO_CHAR_TOKENS;i++){
+				if(last_token->p[0]==TWO_CHAR_TOKENS[i][0] && token.p[0]==TWO_CHAR_TOKENS[i][1]){
+					last_token->len=2;
+					last_token->tag=TOKEN_TAG_KEYWORD;
+
+					matchFound=true;
+					break;
+				}
+			}
+			if(matchFound){
 				continue;
 			}
 		}
