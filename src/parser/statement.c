@@ -12,7 +12,11 @@ char*Statement_asString(Statement*statement,int depth){
 		}
 		case STATEMENT_KIND_RETURN:{
 			stringAppend(ret,"%s",ind(depth*4));
-			stringAppend(ret,"return %s",Value_asString(statement->return_.retval));
+			if(statement->return_.retval==nullptr){
+				stringAppend(ret,"return\n");
+			}else{
+				stringAppend(ret,"return %s\n",Value_asString(statement->return_.retval));
+			}
 			break;
 		}
 		case STATEMENT_FUNCTION_DEFINITION:{
@@ -308,7 +312,6 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 		goto STATEMENT_PARSE_RET_SUCCESS;
 	}
 	if(Token_equalString(&token,"if")){
-		println("found if")
 		TokenIter_nextToken(token_iter,&token);
 		// check for (
 		if(!Token_equalString(&token,"(")){
@@ -350,7 +353,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 			Statement elseBody={};
 			res=Statement_parse(&elseBody,token_iter);
 			TokenIter_lastToken(token_iter,&token);
-			
+
 			if(res==STATEMENT_PARSE_RESULT_PRESENT){
 				out->if_.elseBody=allocAndCopy(sizeof(Statement),&elseBody);
 			}
