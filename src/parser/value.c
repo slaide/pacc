@@ -304,8 +304,26 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 			op=VALUE_OPERATOR_DIV;
 		}else if(Token_equalString(&token,"%")){
 			op=VALUE_OPERATOR_MODULO;
+
 		}else if(Token_equalString(&token,"=")){
 			op=VALUE_OPERATOR_ASSIGNMENT;
+		}else if(Token_equalString(&token,"+=")){
+			op=VALUE_OPERATOR_ADD_ASSIGN;
+		}else if(Token_equalString(&token,"-=")){
+			op=VALUE_OPERATOR_SUB_ASSIGN;
+		}else if(Token_equalString(&token,"*=")){
+			op=VALUE_OPERATOR_MULT_ASSIGN;
+		}else if(Token_equalString(&token,"/=")){
+			op=VALUE_OPERATOR_DIV_ASSIGN;
+		}else if(Token_equalString(&token,"%=")){
+			op=VALUE_OPERATOR_MODULO_ASSIGN;
+		}else if(Token_equalString(&token,"&=")){
+			op=VALUE_OPERATOR_BITWISE_AND_ASSIGN;
+		}else if(Token_equalString(&token,"|=")){
+			op=VALUE_OPERATOR_BITWISE_OR_ASSIGN;
+		}else if(Token_equalString(&token,"^=")){
+			op=VALUE_OPERATOR_BITWISE_XOR_ASSIGN;
+
 		}else if(Token_equalString(&token,"<")){
 			op=VALUE_OPERATOR_LESS_THAN;
 		}else if(Token_equalString(&token,"<=")){
@@ -314,6 +332,7 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 			op=VALUE_OPERATOR_GREATER_THAN_OR_EQUAL;
 		}else if(Token_equalString(&token,">")){
 			op=VALUE_OPERATOR_GREATER_THAN;
+
 		}else if(Token_equalString(&token,"&&")){
 			op=VALUE_OPERATOR_LOGICAL_AND;
 		}else if(Token_equalString(&token,"||")){
@@ -322,14 +341,17 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 			op=VALUE_OPERATOR_BITWISE_AND;
 		}else if(Token_equalString(&token,"|")){
 			op=VALUE_OPERATOR_BITWISE_OR;
+
 		}else if(Token_equalString(&token,"==")){
 			op=VALUE_OPERATOR_EQUAL;
 		}else if(Token_equalString(&token,"!=")){
 			op=VALUE_OPERATOR_NOT_EQUAL;
+
 		}else if(Token_equalString(&token,"++")){
 			op=VALUE_OPERATOR_POSTFIX_INCREMENT;
 		}else if(Token_equalString(&token,"--")){
 			op=VALUE_OPERATOR_POSTFIX_DECREMENT;
+
 		}else if(Token_equalString(&token,".")){
 			op=VALUE_OPERATOR_DOT;
 		}else if(Token_equalString(&token,"->")){
@@ -379,12 +401,24 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 			case VALUE_OPERATOR_MULT:
 			case VALUE_OPERATOR_DIV:
 			case VALUE_OPERATOR_MODULO:
+
 			case VALUE_OPERATOR_ASSIGNMENT:
+			case VALUE_OPERATOR_ADD_ASSIGN:
+			case VALUE_OPERATOR_SUB_ASSIGN:
+			case VALUE_OPERATOR_MULT_ASSIGN:
+			case VALUE_OPERATOR_DIV_ASSIGN:
+			case VALUE_OPERATOR_MODULO_ASSIGN:
+			case VALUE_OPERATOR_BITWISE_AND_ASSIGN:
+			case VALUE_OPERATOR_BITWISE_OR_ASSIGN:
+			case VALUE_OPERATOR_BITWISE_XOR_ASSIGN:
+
 			case VALUE_OPERATOR_LESS_THAN:
 			case VALUE_OPERATOR_GREATER_THAN:
-			case VALUE_OPERATOR_INDEX:
+
 			case VALUE_OPERATOR_LESS_THAN_OR_EQUAL:
 			case VALUE_OPERATOR_GREATER_THAN_OR_EQUAL:
+
+			case VALUE_OPERATOR_INDEX:
 
 			case VALUE_OPERATOR_LOGICAL_AND:
 			case VALUE_OPERATOR_LOGICAL_OR:
@@ -394,8 +428,10 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 
 			case VALUE_OPERATOR_NOT_EQUAL:
 			case VALUE_OPERATOR_EQUAL:
+
 				requiresSecondOperand=true;
 				break;
+
 			default:;
 		}
 
@@ -604,6 +640,38 @@ char*Value_asString(Value*value){
 				}
 				case VALUE_OPERATOR_DEREFERENCE:{
 					stringAppend(ret,"DEREFERENCE %s",Value_asString(value->op.left));
+					break;
+				}
+				case VALUE_OPERATOR_ADD_ASSIGN:{
+					stringAppend(ret,"left (%s) ADD_ASSIGN right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					break;
+				}
+				case VALUE_OPERATOR_SUB_ASSIGN:{
+					stringAppend(ret,"left (%s) SUB_ASSIGN right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					break;
+				}
+				case VALUE_OPERATOR_MULT_ASSIGN:{
+					stringAppend(ret,"left (%s) MULT_ASSIGN right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					break;
+				}
+				case VALUE_OPERATOR_DIV_ASSIGN:{
+					stringAppend(ret,"left (%s) DIV_ASSIGN right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					break;
+				}
+				case VALUE_OPERATOR_MODULO_ASSIGN:{
+					stringAppend(ret,"left (%s) MODULO_ASSIGN right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					break;
+				}
+				case VALUE_OPERATOR_BITWISE_AND_ASSIGN:{
+					stringAppend(ret,"left (%s) BITWISE_AND_ASSIGN right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					break;
+				}
+				case VALUE_OPERATOR_BITWISE_OR_ASSIGN:{
+					stringAppend(ret,"left (%s) BITWISE_OR_ASSIGN right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
+					break;
+				}
+				case VALUE_OPERATOR_BITWISE_XOR_ASSIGN:{
+					stringAppend(ret,"left (%s) BITWISE_XOR_ASSIGN right (%s)",Value_asString(value->op.left),Value_asString(value->op.right));
 					break;
 				}
 

@@ -286,18 +286,46 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 				||
 				// right shift
 				(last_token->p[0]=='>' && token.p[0]=='>')
+
 				||
 				// equality
 				(last_token->p[0]=='=' && token.p[0]=='=')
 				||
 				// inequality
 				(last_token->p[0]=='!' && token.p[0]=='=')
+
 				||
 				// less than or equal
 				(last_token->p[0]=='<' && token.p[0]=='=')
 				||
 				// greater than or equal
 				(last_token->p[0]=='>' && token.p[0]=='=')
+
+				||
+				// plus equal
+				(last_token->p[0]=='+' && token.p[0]=='=')
+				||
+				// minus equal
+				(last_token->p[0]=='-' && token.p[0]=='=')
+				||
+				// multiply equal
+				(last_token->p[0]=='*' && token.p[0]=='=')
+				||
+				// divide equal
+				(last_token->p[0]=='/' && token.p[0]=='=')
+				||
+				// plus equal
+				(last_token->p[0]=='%' && token.p[0]=='=')
+				||
+				// bitwise and equal
+				(last_token->p[0]=='&' && token.p[0]=='=')
+				||
+				// bitwise or equal
+				(last_token->p[0]=='|' && token.p[0]=='=')
+				||
+				// bitwise xor equal
+				(last_token->p[0]=='^' && token.p[0]=='=')
+
 				||
 				// logical and
 				(last_token->p[0]=='&' && token.p[0]=='&')
