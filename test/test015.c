@@ -1,9 +1,9 @@
 #include<stdlib.h>
 #include<string.h>
 struct Token{int len;char*p;};
+typedef struct Token Token;
 bool test1(){
 	Token;
-	struct Token;
 	struct Token token={.len=0,.p=0};
 	struct Token token2=(Token){.len=0,.p=0};
 	struct Token token3=(struct Token){.len=0,.p=0};
@@ -14,4 +14,4 @@ bool test1(){
 
 	return true;
 }
-// TESTFOR casting expression on struct initializer
+// TESTFOR casting expression on struct initializer, typedef

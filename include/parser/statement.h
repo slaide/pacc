@@ -39,6 +39,7 @@ enum STATEMENT_KIND{
 	STATEMENT_LABEL,
 	STATEMENT_KIND_WHILE,
 	STATEMENT_KIND_FOR,
+	STATEMENT_TYPEDEF,
 
 	STATEMENT_BLOCK,
 	
@@ -143,6 +144,10 @@ struct Statement{
 		struct{
 			Token* label;
 		}labelDefinition;
+
+		struct{
+			Symbol*symbol;
+		}typedef_;
 	};
 };
 

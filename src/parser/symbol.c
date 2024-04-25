@@ -8,10 +8,7 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Symbol*symbol,struct TokenIter*token_iter_
 
 	*symbol=(Symbol){};
 
-	Type type={};
-
-	// currently, nothing else is possible (rest is unimplemented)
-	//symbol->kind=SYMBOL_KIND_DECLARATION;
+	Type type={.kind=TYPE_KIND_UNKNOWN};
 
 	Token token;
 	TokenIter_lastToken(token_iter,&token);
@@ -90,10 +87,8 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Symbol*symbol,struct TokenIter*token_iter_
 					type.kind=TYPE_KIND_STRUCT;
 					type.struct_.name=possibleUnnamedTypeDefinition?nullptr:allocAndCopy(sizeof(Token),&nameToken);
 					type.struct_.members=structMembers;
-
-					goto SYMBOL_PARSE_RET_SUCCESS;
 				}
-				if(type_is_union){
+				else if(type_is_union){
 					array unionMembers={};
 					array_init(&unionMembers,sizeof(Symbol));
 
@@ -119,10 +114,8 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Symbol*symbol,struct TokenIter*token_iter_
 					type.kind=TYPE_KIND_UNION;
 					type.union_.name=possibleUnnamedTypeDefinition?nullptr:allocAndCopy(sizeof(Token),&nameToken);
 					type.union_.members=unionMembers;
-
-					goto SYMBOL_PARSE_RET_SUCCESS;
 				}
-				if(type_is_enum){
+				else if(type_is_enum){
 					array enumMembers={};
 					array_init(&enumMembers,sizeof(Value));
 
@@ -152,9 +145,8 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Symbol*symbol,struct TokenIter*token_iter_
 							.members=enumMembers,
 						},
 					};
-
-					goto SYMBOL_PARSE_RET_SUCCESS;
 				}
+				else fatal("");
 				
 				continue;
 			}else{
@@ -168,31 +160,21 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Symbol*symbol,struct TokenIter*token_iter_
 SYMBOL_PARSE_HANDLE_NAME_TOKEN:
 
 		if(Token_isValidIdentifier(&token)||possible_type_definition){
-			bool usedNameToken=false;
 			if(type.kind==TYPE_KIND_UNKNOWN){
 				type.kind=TYPE_KIND_REFERENCE;
 				type.reference.name=token;
-				usedNameToken=true;
 				TokenIter_nextToken(token_iter,&token);
 			}else if(possible_type_definition){
-				if(type_is_struct){
-					type.struct_.name=allocAndCopy(sizeof(Token),&nameToken);
-					type.reference.is_struct=true;
-				}
-				if(type_is_enum){
-					type.enum_.name=allocAndCopy(sizeof(Token),&nameToken);
-					type.reference.is_enum=true;
-				}
-				if(type_is_union){
-					type.union_.name=allocAndCopy(sizeof(Token),&nameToken);
-					type.reference.is_union=true;
-				}
-				usedNameToken=true;
+				type.reference.name=nameToken;
+				type.reference.is_struct=true;
+			}else if(symbol->name==nullptr){
+				symbol->name=allocAndCopy(sizeof(Token),&token);
+				TokenIter_nextToken(token_iter,&token);
+			}else{
+				goto SYMBOL_PARSE_RET_FAILURE;
 			}
 
-			if(usedNameToken){
-				continue;
-			}
+			continue;
 		}
 		// if struct/enum/union is not followed by { or a name, it is invalid, e.g. "struct;" is invalid
 		if(possible_type_definition) goto SYMBOL_PARSE_RET_FAILURE;
@@ -210,19 +192,10 @@ SYMBOL_PARSE_HANDLE_NAME_TOKEN:
 			continue;
 		}
 
-		if(symbol->name==nullptr){
-			// verify name of symbol is valid
-			if(!Token_isValidIdentifier(&token)){
-				goto SYMBOL_PARSE_RET_NONAME;
-			}
-			symbol->name=allocAndCopy(sizeof(Token),&token);
-			TokenIter_nextToken(token_iter,&token);
-
-			continue;
-		}
-
+		// function declaration: int a(); <- easy to parse
+		// function pointer: int (*b)(); <- tricky to parse
 		// check for function
-		if(Token_equalString(&token,"(")){
+		if(symbol->name!=nullptr && Token_equalString(&token,"(")){
 			TokenIter_nextToken(token_iter,&token);
 			
 			// parse function arguments
@@ -239,11 +212,15 @@ SYMBOL_PARSE_HANDLE_NAME_TOKEN:
 				}
 
 				Symbol argument={};
-				Symbol_parse(&argument,token_iter);
+				auto symres=Symbol_parse(&argument,token_iter);
+				if(symres==SYMBOL_INVALID){
+					goto SYMBOL_PARSE_RET_FAILURE;
+				}
 				TokenIter_lastToken(token_iter,&token);
 
 				array_append(&args,&argument);
 			}
+
 			type=(Type){
 				.kind=TYPE_KIND_FUNCTION,
 				.function={
@@ -289,6 +266,16 @@ SYMBOL_PARSE_HANDLE_NAME_TOKEN:
 		}
 
 		break;
+	}
+
+	if(type.kind==TYPE_KIND_UNKNOWN){
+		goto SYMBOL_PARSE_RET_FAILURE;
+	}
+
+	if(symbol->name==nullptr){
+		goto SYMBOL_PARSE_RET_NONAME;
+	}else{
+		goto SYMBOL_PARSE_RET_SUCCESS;
 	}
 
 SYMBOL_PARSE_RET_SUCCESS:

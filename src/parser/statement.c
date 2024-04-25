@@ -1,4 +1,3 @@
-#include "parser/symbol.h"
 #include<parser/parser.h>
 #include<util/util.h>
 #include<tokenizer.h>
@@ -183,6 +182,28 @@ char*Statement_asString(Statement*statement,int depth){
 			stringAppend(ret,"goto %s\n",Value_asString(statement->goto_.label));
 			break;
 		}
+		case STATEMENT_TYPEDEF:{
+			stringAppend(ret,"%s",ind(depth*4));
+			if(statement->typedef_.symbol==nullptr){
+				stringAppend(ret,"typedef");
+			}else{
+				if(statement->typedef_.symbol->name==nullptr){
+					stringAppend(ret,"typedef %s",Type_asString(statement->typedef_.symbol->type));
+				}else{
+					stringAppend(ret,"typedef %.*s : %s",statement->typedef_.symbol->name->len,statement->typedef_.symbol->name->p,Type_asString(statement->typedef_.symbol->type));
+				}
+			}
+			break;
+		}
+		case STATEMENT_FUNCTION_DECLARATION:{
+			stringAppend(ret,"%s",ind(depth*4));
+			if(statement->functionDecl.symbol.name)
+				stringAppend(ret,"declared function %.*s",statement->functionDecl.symbol.name->len,statement->functionDecl.symbol.name->p);
+			else
+				stringAppend(ret,"declared function");
+			stringAppend(ret," of type %s",Type_asString(statement->functionDecl.symbol.type));
+			break;
+		}
 		default:
 			fatal("unimplemented %s",Statementkind_asString(statement->tag));
 	}
@@ -248,7 +269,27 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 
 		*out=(Statement){.tag=STATEMENT_DEFAULT};
 		goto STATEMENT_PARSE_RET_SUCCESS;
-	
+	}
+	if(Token_equalString(&token,"typedef")){
+		TokenIter_nextToken(token_iter,&token);
+
+		Symbol typedefSymbol={};
+		enum SYMBOL_PARSE_RESULT res=Symbol_parse(&typedefSymbol,token_iter);
+		TokenIter_lastToken(token_iter,&token);
+
+		// it is legal to typedef nothing, or a type without a name, i.e. typedef; typedef int; typedef int a; are all legal
+		
+		*out=(Statement){.tag=STATEMENT_TYPEDEF,};
+		if(res!=SYMBOL_INVALID){
+			out->typedef_.symbol=allocAndCopy(sizeof(Symbol),&typedefSymbol);
+		}
+
+		if(!Token_equalString(&token,";")){
+			fatal("expected semicolon after typedef: line %d col %d but got instead %.*s",token.line,token.col,token.len,token.p);
+		}
+		TokenIter_nextToken(token_iter,&token);
+
+		goto STATEMENT_PARSE_RET_SUCCESS;
 	}
 	if(Token_equalString(&token,"case")){
 		TokenIter_nextToken(token_iter,&token);
@@ -974,6 +1015,8 @@ const char* Statementkind_asString(enum STATEMENT_KIND kind){
 			return("STATEMENT_BLOCK");
 		case STATEMENT_EMPTY:
 			return("STATEMENT_EMPTY");
+		case STATEMENT_TYPEDEF:
+			return("STATEMENT_TYPEDEF");
 
 		default: fatal("unknown statement kind %d",kind);
 	}
