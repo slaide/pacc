@@ -115,10 +115,8 @@ struct Statement{
 
 		struct{
 			Value* condition;
-			array body;
-
-			bool elseBodyPresent;
-			array elseBody;
+			Statement* body;
+			Statement* elseBody;
 		}if_;
 
 		struct{

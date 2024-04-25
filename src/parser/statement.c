@@ -102,20 +102,12 @@ char*Statement_asString(Statement*statement,int depth){
 		}
 		case STATEMENT_KIND_IF:{
 			stringAppend(ret,"%s",ind(depth*4));
-			stringAppend(ret,"if %s",Value_asString(statement->if_.condition));
-			for(int i=0;i<statement->if_.body.len;i++){
-				Statement*bodyStatement=array_get(&statement->if_.body,i);
-				stringAppend(ret,"\n%s",ind(depth*4));
-				stringAppend(ret,"%s",Statement_asString(bodyStatement,depth+1));
-			}
-			if(statement->if_.elseBodyPresent){
-				stringAppend(ret,"\n%s",ind(depth*4));
-				stringAppend(ret,"else");
-				for(int i=0;i<statement->if_.elseBody.len;i++){
-					Statement*bodyStatement=array_get(&statement->if_.elseBody,i);
-					stringAppend(ret,"\n%s",ind(depth*4));
-					stringAppend(ret,"%s",Statement_asString(bodyStatement,depth+1));
-				}
+			stringAppend(ret,"if %s\n",Value_asString(statement->if_.condition));
+			stringAppend(ret,"%s",Statement_asString(statement->if_.body,depth+1));
+
+			if(statement->if_.elseBody){
+				stringAppend(ret,"else\n");
+				stringAppend(ret,"%s",Statement_asString(statement->if_.elseBody,depth+1));
 			}
 			break;
 		}
@@ -316,6 +308,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 		goto STATEMENT_PARSE_RET_SUCCESS;
 	}
 	if(Token_equalString(&token,"if")){
+		println("found if")
 		TokenIter_nextToken(token_iter,&token);
 		// check for (
 		if(!Token_equalString(&token,"(")){
@@ -335,72 +328,33 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 		}
 		TokenIter_nextToken(token_iter,&token);
 
-		array ifBodyTokens;
-		array_init(&ifBodyTokens,sizeof(Statement));
-
-		bool singleStatementBody=!Token_equalString(&token,"{");
-		if(!singleStatementBody){
-			TokenIter_nextToken(token_iter,&token);
+		Statement ifBody={};
+		enum STATEMENT_PARSE_RESULT res=Statement_parse(&ifBody,token_iter);
+		TokenIter_lastToken(token_iter,&token);
+		if(res==STATEMENT_PARSE_RESULT_INVALID){
+			fatal("invalid statement in if body at line %d col %d %.*s",token.line,token.col,token.len,token.p);
 		}
-
-		do{
-			Statement ifBodyStatement={};
-			enum STATEMENT_PARSE_RESULT res=Statement_parse(&ifBodyStatement,token_iter);
-			TokenIter_lastToken(token_iter,&token);
-			switch(res){
-				case STATEMENT_PARSE_RESULT_INVALID:
-					fatal("invalid statement in if body at line %d col %d %.*s",token.line,token.col,token.len,token.p);
-					break;
-				default:
-					array_append(&ifBodyTokens,&ifBodyStatement);
-					break;
-			}
-		}while(!singleStatementBody && !Token_equalString(&token,"}"));
-		if(!singleStatementBody)
-			TokenIter_nextToken(token_iter,&token);
-
-		bool elseBodyPresent=false;
-		array elseBody={};
-		if(Token_equalString(&token, "else")){
-			TokenIter_nextToken(token_iter,&token);
-
-			array elseBodyTokens;
-			array_init(&elseBodyTokens,sizeof(Statement));
-
-			bool singleStatementElseBody=!Token_equalString(&token,"{");
-			if(!singleStatementElseBody){
-				TokenIter_nextToken(token_iter,&token);
-			}
-
-			do{
-				Statement elseBodyStatement={};
-				enum STATEMENT_PARSE_RESULT res=Statement_parse(&elseBodyStatement,token_iter);
-				TokenIter_lastToken(token_iter,&token);
-				switch(res){
-					case STATEMENT_PARSE_RESULT_INVALID:
-						fatal("invalid statement in else body");
-						break;
-					default:
-						array_append(&elseBodyTokens,&elseBodyStatement);
-						break;
-				}
-			}while(!singleStatementElseBody && !Token_equalString(&token,"}"));
-			if(!singleStatementElseBody)
-				TokenIter_nextToken(token_iter,&token);
-
-			elseBodyPresent=true;
-			elseBody=elseBodyTokens;
-		}
-
+		
 		*out=(Statement){
 			.tag=STATEMENT_KIND_IF,
 			.if_={
 				.condition=allocAndCopy(sizeof(Value),&condition),
-				.body=ifBodyTokens,
-				.elseBodyPresent=elseBodyPresent,
-				.elseBody=elseBody,
+				.body=allocAndCopy(sizeof(Statement),&ifBody),
+				.elseBody=nullptr,
 			}
 		};
+
+		if(Token_equalString(&token,"else")){
+			TokenIter_nextToken(token_iter,&token);
+
+			Statement elseBody={};
+			res=Statement_parse(&elseBody,token_iter);
+			TokenIter_lastToken(token_iter,&token);
+			
+			if(res==STATEMENT_PARSE_RESULT_PRESENT){
+				out->if_.elseBody=allocAndCopy(sizeof(Statement),&elseBody);
+			}
+		}
 
 		goto STATEMENT_PARSE_RET_SUCCESS;
 	}
