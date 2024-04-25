@@ -83,7 +83,6 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Symbol*symbol,struct TokenIter*token_iter_
 					}
 					TokenIter_nextToken(token_iter,&token);
 
-					symbol->name=nullptr;
 					type.kind=TYPE_KIND_STRUCT;
 					type.struct_.name=possibleUnnamedTypeDefinition?nullptr:allocAndCopy(sizeof(Token),&nameToken);
 					type.struct_.members=structMembers;
@@ -110,7 +109,6 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Symbol*symbol,struct TokenIter*token_iter_
 					}
 					TokenIter_nextToken(token_iter,&token);
 
-					symbol->name=nullptr;
 					type.kind=TYPE_KIND_UNION;
 					type.union_.name=possibleUnnamedTypeDefinition?nullptr:allocAndCopy(sizeof(Token),&nameToken);
 					type.union_.members=unionMembers;
@@ -137,14 +135,9 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Symbol*symbol,struct TokenIter*token_iter_
 					}
 					TokenIter_nextToken(token_iter,&token);
 
-					symbol->name=nullptr;
-					type=(Type){
-						.kind=TYPE_KIND_ENUM,
-						.enum_={
-							.name=possibleUnnamedTypeDefinition?nullptr:allocAndCopy(sizeof(Token),&nameToken),
-							.members=enumMembers,
-						},
-					};
+					type.kind=TYPE_KIND_ENUM;
+					type.enum_.name=possibleUnnamedTypeDefinition?nullptr:allocAndCopy(sizeof(Token),&nameToken);
+					type.enum_.members=enumMembers;
 				}
 				else fatal("");
 				
