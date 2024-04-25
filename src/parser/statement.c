@@ -6,17 +6,17 @@ char*Statement_asString(Statement*statement,int depth){
 	char*ret=makeStringn(16000);
 	switch(statement->tag){
 		case STATEMENT_EMPTY:{
-			stringAppend(ret,ind(depth*4));
+			stringAppend(ret,"%s",ind(depth*4));
 			stringAppend(ret,"empty statement\n");
 			break;
 		}
 		case STATEMENT_KIND_RETURN:{
-			stringAppend(ret,ind(depth*4));
+			stringAppend(ret,"%s",ind(depth*4));
 			stringAppend(ret,"return %s",Value_asString(statement->return_.retval));
 			break;
 		}
 		case STATEMENT_FUNCTION_DEFINITION:{
-			stringAppend(ret,ind(depth*4));
+			stringAppend(ret,"%s",ind(depth*4));
 			stringAppend(ret,"defined function %.*s",statement->functionDef.symbol.name->len,statement->functionDef.symbol.name->p);
 			stringAppend(ret," of type %s",Type_asString(statement->functionDef.symbol.type));
 			for(int i=0;i<statement->functionDef.bodyStatements.len;i++){
@@ -26,7 +26,7 @@ char*Statement_asString(Statement*statement,int depth){
 			break;
 		}
 		case STATEMENT_KIND_SYMBOL_DEFINITION:{
-			stringAppend(ret,ind(depth*4));
+			stringAppend(ret,"%s",ind(depth*4));
 			if(statement->symbolDef.symbol.name!=nullptr){
 				stringAppend(ret,"%.*s of type %s",statement->symbolDef.symbol.name->len,statement->symbolDef.symbol.name->p,Type_asString(statement->symbolDef.symbol.type));
 			}else{
@@ -39,22 +39,22 @@ char*Statement_asString(Statement*statement,int depth){
 			break;
 		}
 		case STATEMENT_KIND_FOR:{
-			stringAppend(ret,ind(depth*4));
+			stringAppend(ret,"%s",ind(depth*4));
 			stringAppend(ret,"for loop\n");
 
-			stringAppend(ret,ind((depth+1)*4));
+			stringAppend(ret,"%s",ind((depth+1)*4));
 			if(statement->forLoop.init!=nullptr)
 				stringAppend(ret,"init:\n%s",Statement_asString(statement->forLoop.init,depth+1));
 			else
 				stringAppend(ret,"init:\n%s","none");
 
-			stringAppend(ret,ind((depth+1)*4));
+			stringAppend(ret,"%s",ind((depth+1)*4));
 			if(statement->forLoop.condition!=nullptr)
 				stringAppend(ret,"condition:\n%s",Value_asString(statement->forLoop.condition));
 			else
 				stringAppend(ret,"condition:\n%s","none");
 
-			stringAppend(ret,ind((depth+1)*4));
+			stringAppend(ret,"%s",ind((depth+1)*4));
 			if(statement->forLoop.step!=nullptr)
 				stringAppend(ret,"step:\n%s",Value_asString(statement->forLoop.step));
 			else
@@ -62,7 +62,7 @@ char*Statement_asString(Statement*statement,int depth){
 
 			for(int i=0;i<statement->forLoop.body.len;i++){
 				Statement*bodyStatement=array_get(&statement->forLoop.body,i);
-				stringAppend(ret,Statement_asString(bodyStatement,depth+1));
+				stringAppend(ret,"%s",Statement_asString(bodyStatement,depth+1));
 			}
 
 			break;
@@ -72,12 +72,12 @@ char*Statement_asString(Statement*statement,int depth){
 			break;
 		}
 		case STATEMENT_PREP_INCLUDE:{
-			stringAppend(ret,ind(depth*4));
+			stringAppend(ret,"%s",ind(depth*4));
 			stringAppend(ret,"#include %.*s\n",statement->prep_include.path.len,statement->prep_include.path.p);
 			break;
 		}
 		case STATEMENT_PREP_DEFINE:{
-			stringAppend(ret,ind(depth*4));
+			stringAppend(ret,"%s",ind(depth*4));
 			stringAppend(ret,"#define %.*s",statement->prep_define.name.len,statement->prep_define.name.p);
 
 			if(statement->prep_define.args.len>0){
@@ -101,7 +101,7 @@ char*Statement_asString(Statement*statement,int depth){
 			break;
 		}
 		case STATEMENT_KIND_IF:{
-			stringAppend(ret,ind(depth*4));
+			stringAppend(ret,"%s",ind(depth*4));
 			stringAppend(ret,"if %s",Value_asString(statement->if_.condition));
 			for(int i=0;i<statement->if_.body.len;i++){
 				Statement*bodyStatement=array_get(&statement->if_.body,i);
