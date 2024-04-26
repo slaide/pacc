@@ -22,6 +22,7 @@ enum VALUE_KIND{
 	VALUE_KIND_STRUCT_INITIALIZER,
 	VALUE_KIND_PARENS_WRAPPED,
 	VALUE_KIND_CAST,
+
 	VALUE_KIND_TYPEREF,
 };
 const char* ValueKind_asString(enum VALUE_KIND kind);
@@ -146,8 +147,13 @@ struct Value{
 			Type*castTo;
 			Value*value;
 		}cast;
+
+		/// @brief VALUE_KIND_TYPEREF type reference
+		/// enables using a type as a value, e.g. for function-like macros, like sizeof
+		struct{
+			Type*type;
+		}typeref;
 	};
-	Type* type;
 };
 
 enum VALUE_PARSE_RESULT{

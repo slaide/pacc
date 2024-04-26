@@ -584,7 +584,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 		TokenIter_nextToken(token_iter,&token);
 
 		Value returnValue={};
-		*out=(Statement){.tag=STATEMENT_KIND_RETURN,.return_={}};
+		*out=(Statement){.tag=STATEMENT_KIND_RETURN};
 
 		enum VALUE_PARSE_RESULT res=Value_parse(&returnValue,token_iter);
 		TokenIter_lastToken(token_iter,&token);
@@ -595,12 +595,13 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 				out->return_.retval=allocAndCopy(sizeof(Value),&returnValue);
 				break;
 		}
-		if(Token_equalString(&token,";")){
-			TokenIter_nextToken(token_iter,&token);
-
-			goto STATEMENT_PARSE_RET_SUCCESS;
+		if(!Token_equalString(&token,";")){
+			println("value missing? %d",res)
+			fatal("missing semicolon after return statement at line %d col %d %.*s",token.line,token.col,token.len,token.p);
 		}
-		fatal("missing semicolon after return statement at line %d col %d %.*s",token.line,token.col,token.len,token.p);
+		TokenIter_nextToken(token_iter,&token);
+
+		goto STATEMENT_PARSE_RET_SUCCESS;
 	}
 	if(Token_equalString(&token,"break")){
 		TokenIter_nextToken(token_iter,&token);

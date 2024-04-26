@@ -14,7 +14,8 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 	Token nameToken=token;
 
 	switch(token.tag){
-		case TOKEN_TAG_LITERAL_CHAR:{
+		case TOKEN_TAG_LITERAL_CHAR:
+		{
 			Token literalValueToken=token;
 			TokenIter_nextToken(token_iter,&token);
 
@@ -278,14 +279,35 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 				// encountered unexpected keyword
 				if(value->kind!=VALUE_KIND_UNKNOWN){
 					// if value kind is already set, return valid value
-					return VALUE_PRESENT;
+					goto VALUE_PARSE_RET_SUCCESS;
 				}
-				return VALUE_INVALID;
+
+				// try parsing a type, i.e. a symbol without a name, as type reference value
+				{
+					Symbol typeSymbol={};
+					enum SYMBOL_PARSE_RESULT res=Symbol_parse(&typeSymbol,token_iter);
+					TokenIter_lastToken(token_iter,&token);
+					// only if symbol has no name (i.e. just type) and is not a reference (i.e. not just a token that might be a value)
+					if(res==SYMBOL_WITHOUT_NAME){
+						if(typeSymbol.type->kind==TYPE_KIND_REFERENCE){
+							*value=(Value){
+								.kind=VALUE_KIND_TYPEREF,
+								.typeref.type=typeSymbol.type,
+							};
+							// cannot operate on this type, so return instead of break
+							goto VALUE_PARSE_RET_SUCCESS;
+						}
+					}
+					// on SYMBOL_PRESENT the iterator is in an invalid state (has iterated past the symbol, even though the symbol is discarded)
+					// this function fails in this case though, so we discard the invalid iterator anyway
+				}
+				
+				goto VALUE_PARSE_RET_FAILURE;
 			}
 		}
 
 		default:
-			return VALUE_INVALID;
+			goto VALUE_PARSE_RET_FAILURE;
 	}
 
 	while(1){
@@ -484,7 +506,7 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 					TokenIter_lastToken(token_iter,&token);
 					switch(res){
 						case VALUE_INVALID:
-							fatal("invalid value in function call, got instead %.*s",token.len,token.p);
+							fatal("invalid value in function call, got instead %.*s at %d:%d",token.len,token.p,token.line,token.col);
 							break;
 						case VALUE_PRESENT:
 							array_append(&values,&arg);
@@ -540,6 +562,10 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 VALUE_PARSE_RET_SUCCESS:
 	*token_iter_in=*token_iter;
 	return VALUE_PRESENT;
+
+VALUE_PARSE_RET_FAILURE:
+	return VALUE_INVALID;
+
 }
 char*Value_asString(Value*value){
 	char*ret=makeString();
@@ -725,6 +751,10 @@ char*Value_asString(Value*value){
 				}
 				stringAppend(ret," = %s , ",Value_asString(field->value));
 			}
+			break;
+		}
+		case VALUE_KIND_TYPEREF:{
+			stringAppend(ret,"type %s",Type_asString(value->typeref.type));
 			break;
 		}
 		default:
