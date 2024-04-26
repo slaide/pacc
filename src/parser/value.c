@@ -386,6 +386,7 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 			opTerminator="]";
 		}
 
+		// else block for nested if above is this block, which catches some
 		if(op==VALUE_OPERATOR_UNKNOWN && value->kind!=VALUE_KIND_UNKNOWN){
 			bool gotOperator=false;
 			// check if next token is numeric, where an operator may have been interpreted as a unary operator or a sign

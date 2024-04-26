@@ -596,7 +596,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 				break;
 		}
 		if(!Token_equalString(&token,";")){
-			println("value missing? %d",res)
+			println("value missing? %d",res);
 			fatal("missing semicolon after return statement at line %d col %d %.*s",token.line,token.col,token.len,token.p);
 		}
 		TokenIter_nextToken(token_iter,&token);
@@ -758,9 +758,9 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 				// check for value [expression]
 				if(symbolParseResult==SYMBOL_WITHOUT_NAME){
 					Value value={};
+					// discard iterator result from symbol parse attempt
 					struct TokenIter valueParseIter=preSymbolParseIter;
 					enum VALUE_PARSE_RESULT res=Value_parse(&value,&valueParseIter);
-					TokenIter_lastToken(token_iter,&token);
 
 					bool foundValue=false;
 					switch(res){
@@ -770,12 +770,11 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 							*token_iter=valueParseIter;
 							foundValue=true;
 							break;
-						default:fatal("unreachable");
 					}
+					// note the iterator writeback after value parsing within the switch statement above!
+					TokenIter_lastToken(token_iter,&token);
 
 					if(foundValue){
-						// check for termination with semicolon
-						TokenIter_lastToken(token_iter,&token);
 						// check for label definition
 						if(Token_equalString(&token,":") && value.kind==VALUE_KIND_SYMBOL_REFERENCE){
 							TokenIter_nextToken(token_iter,&token);
@@ -787,8 +786,10 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 							};
 							goto STATEMENT_PARSE_RET_SUCCESS;
 						}
+
+						// check for termination with semicolon
 						if(!Token_equalString(&token,";")){
-							fatal("expected semicolon after statement: line %d col %d %.*s",token.line,token.col,token.len,token.p);
+							fatal("expected semicolon but got instead: line %d col %d %.*s",token.line,token.col,token.len,token.p);
 						}
 						TokenIter_nextToken(token_iter,&token);
 						
