@@ -201,11 +201,12 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 
 			// include all characters until next quotation mark
 			// note escaped quotation mark though (which is part of the string, does not terminate it)
-			while(p<end){
-				if(*p=='"'){
-					if(*(p-1)!='\\'){
-						break;
-					}
+			while(p<end && *p!='"'){
+				if(*p=='\\'){
+					// TODO this is not a complete list of escape sequences
+					// i.e. octals, hexadecimal and unicode are missing
+					p+=2;
+					continue;
 				}
 				p++;
 			}
