@@ -23,6 +23,8 @@ enum VALUE_KIND{
 	VALUE_KIND_PARENS_WRAPPED,
 	VALUE_KIND_CAST,
 
+	VALUE_KIND_CONDITIONAL,
+
 	VALUE_KIND_TYPEREF,
 };
 const char* ValueKind_asString(enum VALUE_KIND kind);
@@ -72,6 +74,9 @@ enum VALUE_OPERATOR{
 	VALUE_OPERATOR_DOT,
 	VALUE_OPERATOR_ARROW,
 	VALUE_OPERATOR_DEREFERENCE,
+
+	/// the only ternary operator (3 operands)
+	VALUE_OPERATOR_CONDITIONAL,
 };
 
 char*Value_asString(Value*value);
@@ -153,6 +158,14 @@ struct Value{
 		struct{
 			Type*type;
 		}typeref;
+
+		/// @brief VALUE_KIND_CONDITIONAL conditional operator
+		/// e.g. a?b:c
+		struct{
+			Value*condition;
+			Value*onTrue;
+			Value*onFalse;
+		}conditional;
 	};
 };
 

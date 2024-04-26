@@ -117,4 +117,5 @@ static const char*KEYWORD_CURLY_BRACES_CLOSE="}";
 static const char*KEYWORD_COLON=":";
 static const char*KEYWORD_SEMICOLON=";";
 static const char*KEYWORD_COMMA=",";
+static const char*KEYWORD_DOT=".";
 static const char*KEYWORD_AMPERSAND="&";

@@ -187,7 +187,7 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 				array structFields;
 				array_init(&structFields,sizeof(struct StructFieldInitializer));
 				while(!TokenIter_isEmpty(token_iter)){
-					if (Token_equalString(&token, "}")){
+					if (Token_equalString(&token, KEYWORD_CURLY_BRACES_CLOSE)){
 						break;
 					}
 
@@ -195,13 +195,13 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 					array_init(&field.fieldNameSegments,sizeof(Token));
 
 					// if next token is dot, parse field name followed by assignment symbol
-					while(Token_equalString(&token,".")){
+					while(Token_equalString(&token,KEYWORD_DOT)){
 						TokenIter_nextToken(token_iter,&token);
 						array_append(&field.fieldNameSegments,&token);
 						TokenIter_nextToken(token_iter,&token);
 					}
 					if(field.fieldNameSegments.len>0){
-						if(!Token_equalString(&token,"=")){
+						if(!Token_equalString(&token,KEYWORD_EQUAL)){
 							fatal("expected = after field name at line %d col %d but got %.*s",token.line,token.col,token.len,token.p);
 						}
 						TokenIter_nextToken(token_iter,&token);
@@ -218,7 +218,7 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 					array_append(&structFields,&field);
 
 					// check for comma
-					if(Token_equalString(&token,",")){
+					if(Token_equalString(&token,KEYWORD_COMMA)){
 						TokenIter_nextToken(token_iter,&token);
 						continue;
 					}
@@ -226,8 +226,8 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 					break;
 				}
 
-				if (!Token_equalString(&token, "}")){
-					fatal("expected } after struct initializer at line %d col %d",token.line,token.col);
+				if (!Token_equalString(&token, KEYWORD_CURLY_BRACES_CLOSE)){
+					fatal("expected %s after struct initializer at line %d col %d",KEYWORD_CURLY_BRACES_CLOSE,token.line,token.col);
 				}
 				TokenIter_nextToken(token_iter, &token);
 
@@ -245,7 +245,7 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 				Value innerValue={};
 				enum VALUE_PARSE_RESULT res=Value_parse(&innerValue,token_iter);
 				if(res==VALUE_INVALID){
-					fatal("invalid value after !");
+					fatal("invalid value after %s",KEYWORD_BANG);
 				}
 
 				*value=(Value){
@@ -384,6 +384,8 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 		}else if(Token_equalString(&token,"[")){
 			op=VALUE_OPERATOR_INDEX;
 			opTerminator="]";
+		}else if(Token_equalString(&token,"?")){
+			op=VALUE_OPERATOR_CONDITIONAL;
 		}
 
 		// else block for nested if above is this block, which catches some
@@ -461,6 +463,36 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 		switch(op){
 			case VALUE_OPERATOR_UNKNOWN:
 				fatal("error lead to unknown operator, with next token %.*s",token.len,token.p);
+
+			case VALUE_OPERATOR_CONDITIONAL:{
+				Value trueValue={};
+				enum VALUE_PARSE_RESULT resTrue=Value_parse(&trueValue,token_iter);
+				if(resTrue==VALUE_INVALID){
+					fatal("invalid onTrue value in conditional");
+				}
+				TokenIter_lastToken(token_iter,&token);
+				if(!Token_equalString(&token,":")){
+					fatal("expected : after onTrue value in conditional");
+				}
+				TokenIter_nextToken(token_iter,&token);
+
+				Value falseValue={};
+				enum VALUE_PARSE_RESULT resFalse=Value_parse(&falseValue,token_iter);
+				if(resFalse==VALUE_INVALID){
+					fatal("invalid onFalse value in conditional");
+				}
+
+				*value=(Value){
+					.kind=VALUE_KIND_CONDITIONAL,
+					.conditional={
+						.condition=allocAndCopy(sizeof(Value),value),
+						.onTrue=allocAndCopy(sizeof(Value),&trueValue),
+						.onFalse=allocAndCopy(sizeof(Value),&falseValue),
+					}
+				};
+
+				continue;
+			}
 			case VALUE_OPERATOR_DOT:{
 				// get member name via next token
 				Token memberToken=token;
@@ -758,8 +790,12 @@ char*Value_asString(Value*value){
 			stringAppend(ret,"type %s",Type_asString(value->typeref.type));
 			break;
 		}
+		case VALUE_KIND_CONDITIONAL:{
+			stringAppend(ret,"CONDITIONAL ( %s ) ? ( %s ) : ( %s )",Value_asString(value->conditional.condition),Value_asString(value->conditional.onTrue),Value_asString(value->conditional.onFalse));
+			break;
+		}
 		default:
-			fatal("unimplemented %d",value->kind);
+			fatal("unimplemented %s",ValueKind_asString(value->kind));
 	}
 	return ret;
 }
@@ -767,11 +803,15 @@ char*Value_asString(Value*value){
 const char* ValueKind_asString(enum VALUE_KIND kind){
 	switch(kind){
 		case VALUE_KIND_STATIC_VALUE:
-			return("VALUE_KIND_STATIC_VALUE");
+			return "VALUE_KIND_STATIC_VALUE";
 		case VALUE_KIND_OPERATOR:
-			return("VALUE_KIND_STATIC_VALUE");
+			return "VALUE_KIND_STATIC_VALUE";
 		case VALUE_KIND_SYMBOL_REFERENCE:
-			return("VALUE_KIND_STATIC_VALUE");
+			return "VALUE_KIND_STATIC_VALUE";
+		case VALUE_KIND_TYPEREF:
+			return "VALUE_KIND_STATIC_VALUE";
+		case VALUE_KIND_CONDITIONAL:
+			return "VALUE_KIND_STATIC_VALUE";
 		default:
 			fatal("unknown value kind %d",kind);
 	}
