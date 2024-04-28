@@ -6,7 +6,7 @@ import typing as tp
 from pathlib import Path
 import os
 # ensure project root directory
-print(Path(__file__).parent.parent)
+os.chdir(Path(__file__).parent.parent)
 
 @dataclass
 class Test:
