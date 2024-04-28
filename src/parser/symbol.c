@@ -1,3 +1,4 @@
+#include "parser/symbol.h"
 #include<parser/parser.h>
 #include<util/util.h>
 #include<tokenizer.h>
@@ -206,7 +207,7 @@ SYMBOL_PARSE_HANDLE_NAME_TOKEN:
 				}
 
 				Symbol argument={};
-				auto symres=Symbol_parse(&argument,token_iter);
+				enum SYMBOL_PARSE_RESULT symres=Symbol_parse(&argument,token_iter);
 				while(symres==SYMBOL_INVALID){
 					// check for varargs
 					if(Token_equalString(&token,"...")){
