@@ -6,4 +6,3 @@ int main(){
     int r=(int)a;
     return r;
 }
-// TESTFOR float literals and casting operation

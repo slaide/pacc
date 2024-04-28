@@ -9,5 +9,3 @@ char* Person_asString(struct Person* person){
     sprintf(ret,"%s %s is %d years old ",(person->age>=18)?"Adult":"Child",person->name,person->age);
     return ret;
 }
-
-// TESTFOR conditional (ternary) operator

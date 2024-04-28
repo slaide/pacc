@@ -14,4 +14,3 @@ bool test1(){
 
 	return true;
 }
-// TESTFOR casting expression on struct initializer, typedef

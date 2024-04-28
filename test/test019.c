@@ -7,5 +7,3 @@ int main(int argc, const char**argv){
 	printf("%s",argv[argc]);
 	return 0;
 }
-
-// TESTFOR if statement with single statement in body, nested logical operators

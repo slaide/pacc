@@ -6,5 +6,3 @@ int main(){
 
     return 0;
 }
-
-// TESTFOR empty if and while blocks

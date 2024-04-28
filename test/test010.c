@@ -9,5 +9,3 @@ void Module_print(Module*module){
 		println("statement %d is : %s",i,Statement_asString(statement));
 	}
 }
-
-// TESTFOR include directive with quotation marks and angle brackets, function definition, for loop, arrow operator, dot operator

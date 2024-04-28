@@ -13,4 +13,3 @@ int main(void){
     return 0;
 }
 static const int const static thread_local c;
-// TESTFOR unnamed function arguments, const type qualifiers, static and thread_local storage class specifier

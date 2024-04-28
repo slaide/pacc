@@ -17,5 +17,3 @@ int main(){
 
     return 0;
 }
-
-// TESTFOR break and continue in loops, modulo operator

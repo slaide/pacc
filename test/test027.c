@@ -36,5 +36,3 @@ struct Test{
     };
     int;
 };
-
-// TESTFOR unnamed symbol declarations, type declarations, type definitions

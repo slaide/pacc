@@ -181,24 +181,46 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 
 				break;
 			}else if(token.p==KEYWORD_CURLY_BRACES_OPEN){
-				// parse struct initializer
+				// parse struct/array initializer
 				TokenIter_nextToken(token_iter, &token);
 
-				array structFields;
-				array_init(&structFields,sizeof(struct StructFieldInitializer));
+				array fields;
+				array_init(&fields,sizeof(struct FieldInitializer));
 				while(!TokenIter_isEmpty(token_iter)){
 					if (Token_equalString(&token, KEYWORD_CURLY_BRACES_CLOSE)){
 						break;
 					}
 
-					struct StructFieldInitializer field={};
+					struct FieldInitializer field={};
 					array_init(&field.fieldNameSegments,sizeof(Token));
 
 					// if next token is dot, parse field name followed by assignment symbol
-					while(Token_equalString(&token,KEYWORD_DOT)){
-						TokenIter_nextToken(token_iter,&token);
-						array_append(&field.fieldNameSegments,&token);
-						TokenIter_nextToken(token_iter,&token);
+					while(1){
+						if(Token_equalString(&token,KEYWORD_DOT)){
+							TokenIter_nextToken(token_iter,&token);
+							array_append(&field.fieldNameSegments,allocAndCopy(sizeof(struct FieldInitializerSegment),&(struct FieldInitializerSegment){
+								.kind=FIELD_INITIALIZER_SEGMENT_FIELD,
+								.field=allocAndCopy(sizeof(Token),&token),
+							}));
+							TokenIter_nextToken(token_iter,&token);
+						}else if(Token_equalString(&token,KEYWORD_SQUARE_BRACKETS_OPEN)){
+							TokenIter_nextToken(token_iter,&token);
+							// check that token is integer literal
+							if(token.tag!=TOKEN_TAG_LITERAL_INTEGER){
+								fatal("expected integer literal after [ in field name at line %d col %d",token.line,token.col);
+							}
+							array_append(&field.fieldNameSegments,allocAndCopy(sizeof(struct FieldInitializerSegment),&(struct FieldInitializerSegment){
+								.kind=FIELD_INITIALIZER_SEGMENT_INDEX,
+								.index=allocAndCopy(sizeof(Token),&token),
+							}));
+							TokenIter_nextToken(token_iter,&token);
+							if(!Token_equalString(&token,KEYWORD_SQUARE_BRACKETS_CLOSE)){
+								fatal("expected ] after [ in field name at line %d col %d",token.line,token.col);
+							}
+							TokenIter_nextToken(token_iter,&token);
+						}else{
+							break;
+						}
 					}
 					if(field.fieldNameSegments.len>0){
 						if(!Token_equalString(&token,KEYWORD_EQUAL)){
@@ -215,7 +237,7 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 					}
 					field.value=allocAndCopy(sizeof(Value),&fieldValue);
 
-					array_append(&structFields,&field);
+					array_append(&fields,&field);
 
 					// check for comma
 					if(Token_equalString(&token,KEYWORD_COMMA)){
@@ -234,7 +256,7 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 				*value=(Value){
 					.kind=VALUE_KIND_STRUCT_INITIALIZER,
 					.struct_initializer={
-						.structFields=structFields,
+						.structFields=fields,
 					}
 				};
 
@@ -776,11 +798,15 @@ char*Value_asString(Value*value){
 		case VALUE_KIND_STRUCT_INITIALIZER:{
 			stringAppend(ret,"init struct with fields: ");
 			for(int i=0;i<value->struct_initializer.structFields.len;i++){
-				struct StructFieldInitializer*field=array_get(&value->struct_initializer.structFields,i);
-				stringAppend(ret,"field %d ",i);
+				struct FieldInitializer*field=array_get(&value->struct_initializer.structFields,i);
+				stringAppend(ret,"field ");
+
 				for(int j=0;j<field->fieldNameSegments.len;j++){
-					Token*segment=array_get(&field->fieldNameSegments,j);
-					stringAppend(ret,".%.*s",segment->len,segment->p);
+					struct FieldInitializerSegment*segment=array_get(&field->fieldNameSegments,j);
+					if(segment->kind==FIELD_INITIALIZER_SEGMENT_INDEX)
+						stringAppend(ret,"[%.*s]",segment->index->len,segment->index->p);
+					else if(segment->kind==FIELD_INITIALIZER_SEGMENT_FIELD)
+						stringAppend(ret,".%.*s",segment->field->len,segment->field->p);
 				}
 				stringAppend(ret," = %s , ",Value_asString(field->value));
 			}

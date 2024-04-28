@@ -81,8 +81,20 @@ enum VALUE_OPERATOR{
 
 char*Value_asString(Value*value);
 
-struct StructFieldInitializer{
-	/// @brief field name tokens
+enum FieldInitializerSegmentKind{
+	FIELD_INITIALIZER_SEGMENT_UNKNOWN,
+	FIELD_INITIALIZER_SEGMENT_FIELD,
+	FIELD_INITIALIZER_SEGMENT_INDEX,
+};
+struct FieldInitializerSegment{
+	enum FieldInitializerSegmentKind kind;
+	union{
+		Token*field;
+		Token*index;
+	};
+};
+struct FieldInitializer{
+	/// @brief field name segments, of type FieldInitializerSegment, used for array and struct initializers
 	///
 	/// may be nested
 	///
@@ -90,6 +102,7 @@ struct StructFieldInitializer{
 	/// 1) {field1value}
 	/// 2) {.field=field1value}
 	/// 3) (.field.subfield.innervalue=field1value}
+	/// 4) [1]=field1value
 	array fieldNameSegments;
 	Value*value;
 };

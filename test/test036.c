@@ -17,4 +17,3 @@ int funcWithVarargArguments(int a,char*b,...){
     }
     return 0;
 }
-// TESTFOR vararg function arguments

@@ -22,5 +22,3 @@ int main(int argc, const char**argv){
 	
 	return 0;
 }
-
-// TESTFOR do while loop, multiple versions of a for loop

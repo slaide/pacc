@@ -237,7 +237,7 @@ SYMBOL_PARSE_HANDLE_NAME_TOKEN:
 			break;
 		}
 
-		if(type.kind!=TYPE_KIND_UNKNOWN && symbol->name!=nullptr && Token_equalString(&token,"[")){
+		if(type.kind!=TYPE_KIND_UNKNOWN && Token_equalString(&token,"[")){
 			TokenIter_nextToken(token_iter,&token);
 
 			// test for static

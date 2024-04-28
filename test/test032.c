@@ -32,5 +32,3 @@ void File_fromString(const char*filepath,const char*str,File*out){
 		.contents_len=strlen(str),
 	};
 }
-
-// TESTFOR dereference operator at start of statement

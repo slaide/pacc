@@ -18,5 +18,3 @@ typedef struct{
     int age;
     char*name;
 }OtherPerson;
-
-// TESTFOR typedef

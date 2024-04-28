@@ -7,4 +7,3 @@ int main(){
     int d=sizeof(peter);
     return 0;
 }
-// TESTFOR type as value

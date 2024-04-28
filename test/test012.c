@@ -1,27 +1,50 @@
-#include "parser/statement.h"
-#include <util/util.h>
-#include <parser/parser.h>
-#include<util/ansi_esc_codes.h>
+#include<stdio.h>
+#include<stdlib.h>
+#include<string.h>
 
-
-void Module_print(Module*module){
-	for(int i=0;i<module->statements.len;i++){
-		Statement*statement=array_get(&module->statements,i);
-		println("statement %d is : %s",i,Statement_asString(statement));
+struct Person{
+	int age;
+	char*name;
+	int num_children;
+	struct Person*children;
+};
+void Person_print(struct Person*person){
+	printf("Person(%s,%d)\n",person->name,person->age);
+	for(int i=0;i<person->num_children;i++){
+		printf("%ss child %d: ",person->name,i);
+		Person_print(&person->children[i]);
 	}
 }
 
+void*allocAndCopy(int size,void*src){
+	char*dest=malloc(size);
+	memcpy(dest,src,size);
+	return dest;
+}
+
 bool test1(){
-	Type* intType=allocAndCopy(sizeof(Type),&(Type){
-		.kind=TYPE_KIND_REFERENCE,
-		.reference=(Token){.len=3,.p="int",},
+	struct Person* peter=allocAndCopy(sizeof(struct Person),&(struct Person){
+		.name="Peter",
+		.age=2,
+		.num_children=2,
+		.children=allocAndCopy(2*sizeof(struct Person),&(struct Person[2]){
+			[0]=(struct Person){
+				.name="Paul",
+				.age=3,
+				.num_children=0,
+				.children=nullptr,
+			},
+			[1]=(struct Person){
+				.age=4,
+				.num_children=0,
+				.children=nullptr,
+			},
+			[1].name="Mary",
+		}),
 	});
 
-	File testFile;
-	File_fromString("testfile.c","int main(){}",&testFile);
+	if(peter->num_children!=2)
+		return false;
 
-	array_append(&expected_module.statements,&statements[0]);
-
-	Module_print(&expected_module);
-	return Module_equal(&module,&expected_module);
+	return false;
 }
