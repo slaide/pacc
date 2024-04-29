@@ -5,8 +5,20 @@ import subprocess as sp
 import typing as tp
 from pathlib import Path
 import os
+from tqdm import tqdm
 # ensure project root directory
 os.chdir(Path(__file__).parent.parent)
+
+BOLD="\033[1m"
+RESET="\033[0m"
+RED="\033[31m"
+GREEN="\033[32m"
+
+from enum import Enum
+class TestResult(str,Enum):
+    SUCCESS="SUCCESS"
+    FAILURE="FAILURE"
+    TIMEOUT="TIMEOUT"
 
 @dataclass
 class Test:
@@ -15,18 +27,41 @@ class Test:
     goal: tp.Optional[str] = None
     should_fail: bool = False
 
-    def run(self):
-        print(f"\033[1mRunning test: '{self.file}'\033[0m")
+    result:tp.Optional[TestResult]=None
+
+    def run(self,print_info:bool=True,timeout:float=0.5):
+        if print_info:
+            print(f"{BOLD}Running test: '{self.file}'{RESET}")
+
         command=f"bin/main {self.file}"
 
         # exec command
-        result = sp.run(command, shell=True)
-        if result.returncode == 0:
-            print(f"\033[1;32mSuccess: '{command}'\033[0m")
+        try:
+            result = sp.run(command, shell=True, stdout=sp.PIPE, timeout=timeout)
+        except sp.TimeoutExpired:
+            print(f"{BOLD}{RED}Error: test '{self.file}' timed out{RESET}")
+            self.result=TestResult.TIMEOUT
+            return
+
+        did_fail=result.returncode!=0
+
+        if (not did_fail and not self.should_fail) or (did_fail and self.should_fail):
+            if print_info:
+                print(f"{BOLD}{GREEN}Success: '{self.file}'{RESET}")
+
+            self.result=TestResult.SUCCESS
+            return
         else:
-            print(f"\033[1;31mError: '{command}' failed with exit code {result.returncode}\033[0m")
+            print(f"{BOLD}{RED}Error: test '{self.file}' failed{RESET}")
+            print(f"Goal: {self.goal}")
+            if self.should_fail:
+                print(f"Expected to fail, but succeeded")
+            else:
+                print(f"Expected to succeed, but failed with code {result.returncode}")
+
+        print("stdout:\n",result.stdout.decode("utf-8"))
             
-            exit(result.returncode)
+        self.result=TestResult.FAILURE
 
 tests=[
     Test(file="test/test001.c", goal="basic function definition"),
@@ -74,5 +109,24 @@ tests=[
 ]
 
 # run all tests
-for test in tests:
-    test.run()
+results={res:0 for res in TestResult}
+for test in tqdm(tests):
+    test.run(print_info=False,timeout=0.5)
+    assert test.result is not None
+    results[test.result]+=1
+
+num_total=len(tests)
+
+num_succeeded=results[TestResult.SUCCESS]
+num_failed=results[TestResult.FAILURE]
+num_timed_out=results[TestResult.TIMEOUT]
+
+perc_success=num_succeeded/num_total*100
+perc_failed=num_failed/num_total*100
+perc_timed_out=num_timed_out/num_total*100
+
+print(f"{BOLD}Results:{RESET}")
+print(f"Total: {num_total}")
+print(f"Succeeded: {num_succeeded} ({perc_success:.2f} %)")
+print(f"Failed: {num_failed} ({perc_failed:.2f} %)")
+print(f"Timed out: {num_timed_out} ({perc_timed_out:.2f} %)")
