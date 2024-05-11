@@ -376,19 +376,16 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 
 			int offset=token.num_info.hasLeadingSign;
 
-			// check for prefix (0x, 0b, 0o)
-			if(numericToken->p[offset]==0){
-				if(numericToken->p[offset+1]=='x' || numericToken->p[offset+1]=='X'){
-					token.num_info.hasPrefix=true;
+			// check for prefix (0x for hex, 0b for binary, 0 for octal)
+			if(numericToken->p[offset]=='0'){
+				offset+=1;
+				if(numericToken->p[offset]=='x' || numericToken->p[offset]=='X'){
+					offset+=1;
+				}else if(numericToken->p[offset]=='b' || numericToken->p[offset]=='B'){
+					offset+=1;
 				}
-				if(numericToken->p[offset+1]=='b' || numericToken->p[offset+1]=='B'){
 					token.num_info.hasPrefix=true;
-				}
-				if(numericToken->p[offset+1]=='o' || numericToken->p[offset+1]=='O'){
-					token.num_info.hasPrefix=true;
-				}
 			}
-			offset+=token.num_info.hasPrefix;
 
 			// check for leading digit[s]
 			while(numericToken->p[offset]>='0' && numericToken->p[offset]<='9'){
