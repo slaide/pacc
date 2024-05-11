@@ -3,6 +3,7 @@
 import argparse, platform
 from dataclasses import dataclass
 from pathlib import Path
+from enum import Enum
 
 from libbuild import Command, InputVariant, OutputVariant
 
@@ -23,25 +24,32 @@ arg_parser.add_argument(
     help="target to build",
     nargs="?")
 
-build_platforms=dict(
-    linux_amd64=None,
-    macOS_arm64=None,
-)
-if platform.system()=="Linux":
-    assert platform.machine()=="x86_64", f"unsupported architecture {platform.machine()}"
-    default_build_platform="linux_amd64"
-elif platform.system()=="Darwin":
-    assert platform.machine()=="arm64", f"unsupported architecture {platform.machine()}"
-    default_build_platform="macOS_arm64"
+class BuildPlatform(str,Enum):
+    LINUX_AMD64="linux_amd64"
+    LINUX_ARM64="linux_arm64"
+    MACOS_ARM64="macos_arm64"
+
+if platform.system()=="Linux" and platform.machine()=="x86_64":
+    default_build_platform=BuildPlatform.LINUX_AMD64
+if platform.system()=="Linux" and platform.machine()=="aarch64":
+    default_build_platform=BuildPlatform.LINUX_ARM64
+elif platform.system()=="Darwin" and platform.machine()=="arm64":
+    default_build_platform=BuildPlatform.MACOS_ARM64
 else:
     raise RuntimeError(f"unsupported platform: os = {platform.system()} , arch = {platform.machine()}")
 
 arg_parser.add_argument(
     "-p","--platform",
-    choices=build_platforms.keys(),
-    default=default_build_platform,
+    choices=[b.value for b in BuildPlatform],
+    default=default_build_platform.value,
     help="os/arch platform to build for",
     nargs="?")
+
+arg_parser.add_argument(
+    "--cc",
+    default="clang",
+    help="c compiler path"
+)
 
 @dataclass
 class BuildModeFlags:
@@ -68,7 +76,7 @@ assert len(unknown_args)==0, f"unknown arguments passed: {unknown_args}"
 
 flags=build_mode_flags[cli_args.mode]
 
-compiler:str="clang"
+compiler:str=cli_args.cc
 warn_flags=" ".join([f" -W{wf} " for wf in [
     "all",
     "pedantic",
