@@ -259,6 +259,12 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 					bool reached_end=false;
 					bool found_terminator=false;
 					while(!(reached_end||found_terminator)){
+						if(*p=='\n'){
+							line++;
+							col=1;
+						}else{
+							col++;
+						}
 						p++;
 						if(*p=='*' && *(p+1)=='/'){
 							found_terminator=true;
