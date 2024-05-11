@@ -122,7 +122,7 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 	// parse token one at a time
 	while(1){
 		Token token={
-			.filename=nullptr,
+			.filename=file->filepath,
 			.line=line,
 			.col=col,
 			.p=p,
