@@ -3,8 +3,7 @@
 #include<stdint.h>
 #include<file.h>
 
-typedef struct Token{
-	enum{
+enum TOKEN_TAG{
 		TOKEN_TAG_UNDEFINED=0,
 		TOKEN_TAG_COMMENT=1,
 		TOKEN_TAG_KEYWORD=2,
@@ -17,7 +16,9 @@ typedef struct Token{
 		TOKEN_TAG_LITERAL_STRING=0x13,
 
         TOKEN_TAG_PREP_INCLUDE_ARGUMENT=0x20,
-	}tag;
+};
+typedef struct Token{
+	enum TOKEN_TAG tag;
 	const char* filename;
 	int line;
 	int col;
