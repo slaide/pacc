@@ -4,18 +4,18 @@
 #include<file.h>
 
 enum TOKEN_TAG{
-		TOKEN_TAG_UNDEFINED=0,
-		TOKEN_TAG_COMMENT=1,
-		TOKEN_TAG_KEYWORD=2,
-		
-		TOKEN_TAG_SYMBOL=3,
+	TOKEN_TAG_UNDEFINED=0,
+	TOKEN_TAG_COMMENT=1,
+	TOKEN_TAG_KEYWORD=2,
+	
+	TOKEN_TAG_SYMBOL=3,
 
-		TOKEN_TAG_LITERAL_INTEGER=0x10,
-		TOKEN_TAG_LITERAL_FLOAT=0x11,
-		TOKEN_TAG_LITERAL_CHAR=0x12,
-		TOKEN_TAG_LITERAL_STRING=0x13,
+	TOKEN_TAG_LITERAL_INTEGER=0x10,
+	TOKEN_TAG_LITERAL_FLOAT=0x11,
+	TOKEN_TAG_LITERAL_CHAR=0x12,
+	TOKEN_TAG_LITERAL_STRING=0x13,
 
-        TOKEN_TAG_PREP_INCLUDE_ARGUMENT=0x20,
+	TOKEN_TAG_PREP_INCLUDE_ARGUMENT=0x20,
 };
 typedef struct Token{
 	enum TOKEN_TAG tag;
@@ -38,6 +38,11 @@ typedef struct Token{
 		bool hasSuffix;
 	}num_info;
 }Token;
+
+/* return token location as null-terminated string */
+char*Token_loc(Token*token);
+/* return token (incl. location) as null-terminated string */
+char*Token_print(Token*token);
 
 // check of two tokens point to strings with the same content
 bool Token_equalToken(Token*,Token*);

@@ -590,3 +590,19 @@ int TokenIter_lastToken(struct TokenIter*iter,Token*out){
 bool TokenIter_isEmpty(struct TokenIter*iter){
 	return iter->next_token_index>=iter->tokenizer->num_tokens;
 }
+
+char*Token_print(Token*token){
+	const char*t_loc=Token_loc(token);
+	char*ret=calloc(1,strlen(t_loc)+token->len+3);
+	sprintf(ret,"%s: %.*s",t_loc,token->len,token->p);
+	return ret;
+}
+char*Token_loc(Token*token){
+	char* filename="<anon file>";
+	if(token->filename!=nullptr){
+		filename=token->filename;
+	}
+	char*ret=calloc(1,strlen(filename)+token->len+3);
+	snprintf(ret,256,"%s:%d:%d",filename,token->line,token->col);
+	return ret;
+}
