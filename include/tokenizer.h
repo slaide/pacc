@@ -34,6 +34,7 @@ typedef struct Token{
 		bool hasExponent;
 		bool hasExponentSign;
 		bool hasExponentDigits;
+		bool hasSuffix;
 	}num_info;
 }Token;
 

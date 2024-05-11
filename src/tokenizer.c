@@ -432,6 +432,28 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 				offset++;
 			}
 
+			// check for suffix, in 4 parts
+			// 1) f or F for float
+			if(numericToken->p[offset]=='f' || numericToken->p[offset]=='F'){
+				token.num_info.hasSuffix=true;
+				offset++;
+			}
+			// 2) u or U for unsigned
+			if(numericToken->p[offset]=='u' || numericToken->p[offset]=='U'){
+				token.num_info.hasSuffix=true;
+				offset++;
+			}
+			// 3) l or L for long
+			if(numericToken->p[offset]=='l' || numericToken->p[offset]=='L'){
+				token.num_info.hasSuffix=true;
+				offset++;
+			}
+			// 4) ll or LL for long long (i.e. check for l/L again)
+			if(numericToken->p[offset]=='l' || numericToken->p[offset]=='L'){
+				token.num_info.hasSuffix=true;
+				offset++;
+			}
+
 			// check if all characters in token have been processed (if not, this is not a valid number)
 			if(offset<numericToken->len)
 				break;
