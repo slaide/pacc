@@ -81,7 +81,6 @@ struct Preprocessor{
 	/* protect against double include with pragma once, the results of which are saved here, i.e. element is char* */
 	array already_included_files;
 
-	struct Tokenizer *tokenizer_in;
 	/* iterator over tokenizer_in */
 	struct TokenIter token_iter;
 
@@ -91,10 +90,13 @@ struct Preprocessor{
 	/* stack of preprocessor directives, e.g. for nested ifs */
 	struct PreprocessorStack stack;
 };
-void Preprocessor_init(struct Preprocessor*preprocessor,struct Tokenizer *tokenizer);
+void Preprocessor_init(struct Preprocessor*preprocessor);
 
 int Preprocessor_evalExpression(struct Preprocessor *preprocessor,struct PreprocessorExpression*expr);
 
+/* process an include statement */
 void Preprocessor_processInclude(struct Preprocessor*preprocessor);
+/* process a define statements */
 void Preprocessor_processDefine(struct Preprocessor*preprocessor);
-void Preprocessor_run(struct Preprocessor *preprocessor);
+/* run preprocessor on a stream of tokens */
+void Preprocessor_consume(struct Preprocessor *preprocessor, struct TokenIter *token_iter);

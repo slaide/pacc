@@ -1,17 +1,17 @@
-#include "tokenizer.h"
+#include <libgen.h>
+#include <string.h>
 #include <unistd.h> // access
 
 #include<util/util.h>
 
 #include<preprocessor/preprocessor.h>
 
-void Preprocessor_init(struct Preprocessor*preprocessor,struct Tokenizer *tokenizer){
+void Preprocessor_init(struct Preprocessor*preprocessor){
+	*preprocessor=(struct Preprocessor){};
+
 	array_init(&preprocessor->include_paths,sizeof(char*));
 	array_init(&preprocessor->defines,sizeof(struct PreprocessorDefine));
-	array_init(&preprocessor->already_included_files,sizeof(char*));
-
-	preprocessor->tokenizer_in=tokenizer;
-	TokenIter_init(&preprocessor->token_iter,preprocessor->tokenizer_in,(struct TokenIterConfig){.skip_comments=true,});
+	array_init(&preprocessor->already_included_files,sizeof(char*));	
 
 	array_init(&preprocessor->stack.items,sizeof(struct PreprocessorStackItem));
 
@@ -55,19 +55,35 @@ void Preprocessor_processInclude(struct Preprocessor*preprocessor){
 	Token token;
 
 	// read include argument
-	TokenIter_nextToken(&preprocessor->token_iter,&token);
+	int ntr=TokenIter_lastToken(&preprocessor->token_iter,&token);
+	if(!ntr) fatal("");
 	if(token.tag!=TOKEN_TAG_PREP_INCLUDE_ARGUMENT && token.tag!=TOKEN_TAG_LITERAL_STRING){
 		fatal("expected include argument after #include directive but got instead %.*s",token.len,token.p);
 	}
 
+	bool local_include_path=token.p[0]=='"';
+
 	char* include_path=calloc(token.len-1,1);
 	sprintf(include_path,"%.*s",token.len-2,token.p+1);
-	println("include path: %s",include_path);
+	println("%s include path: %s",local_include_path?"local":"global",include_path);
+
+	ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+	// we just consume the token, we don't use it in the rest of the function body
+	discard ntr;
 
 	// go through each entry in include paths and check if file exists there
 	char* include_file_path=nullptr;
-	for(int i=0;i<preprocessor->include_paths.len;i++){
-		char* include_dir=*(char**)array_get(&preprocessor->include_paths,i);
+	for(int i=0-((int)local_include_path);i<preprocessor->include_paths.len;i++){
+		char* include_dir=nullptr;
+		if(i==-1){
+			int tok_filename_len=strlen(preprocessor->token_iter.tokenizer->token_src);
+			char*tok_filename=calloc(tok_filename_len,1);
+			strncpy(tok_filename, preprocessor->token_iter.tokenizer->token_src, tok_filename_len);
+			include_dir=dirname(tok_filename);
+			println("testing local include dir: %s, from %s",include_dir,preprocessor->token_iter.tokenizer->token_src);
+		}else{
+			include_dir=*(char**)array_get(&preprocessor->include_paths,i);
+		}
 
 		include_file_path=calloc(strlen(include_dir)+strlen(include_path)+20,1);
 		sprintf(include_file_path,"%s/%s",include_dir,include_path);
@@ -96,7 +112,6 @@ void Preprocessor_processInclude(struct Preprocessor*preprocessor){
 		}
 	}
 	if(file_already_included){
-		TokenIter_nextToken(&preprocessor->token_iter,&token);
 		return;
 	}
 
@@ -106,22 +121,17 @@ void Preprocessor_processInclude(struct Preprocessor*preprocessor){
 	// tokenize include file
 	Tokenizer include_tokenizer;
 	Tokenizer_init(&include_tokenizer,&include_file);
-	// preprocess include file
-	Preprocessor_run(preprocessor);
-	
-	// append tokens to current token list
-	for(int i=0;i<include_tokenizer.num_tokens;i++){
-		//array_append(&tokens,&include_tokenizer.tokens[i]);
-	}
+	struct TokenIter include_token_iter;
+	TokenIter_init(&include_token_iter,&include_tokenizer,(struct TokenIterConfig){.skip_comments=true});
 
-	TokenIter_nextToken(&preprocessor->token_iter,&token);
+	Preprocessor_consume(preprocessor,&include_token_iter);
 }
 void Preprocessor_processDefine(struct Preprocessor*preprocessor){
 	Token token;
 
 	// read define argument
-	TokenIter_lastToken(&preprocessor->token_iter,&token);
-	println("next token %s",Token_print(&token));
+	int ntr=TokenIter_lastToken(&preprocessor->token_iter,&token);
+	if(!ntr) fatal("");
 	if(token.tag!=TOKEN_TAG_SYMBOL){
 		fatal("expected symbol after #define directive but got instead %s",Token_print(&token));
 	}
@@ -132,14 +142,9 @@ void Preprocessor_processDefine(struct Preprocessor*preprocessor){
 	int define_line_num=token.line;
 	array define_value={};
 	array_init(&define_value,sizeof(Token));
-	TokenIter_nextToken(&preprocessor->token_iter,&token);
-	while(token.line==define_line_num){
-		println("define %.*s as %s",define_name.len,define_name.p,define_value);
-
+	while(TokenIter_nextToken(&preprocessor->token_iter,&token) && token.line==define_line_num){
 		// append token to define value
 		array_append(&define_value,&token);
-
-		TokenIter_nextToken(&preprocessor->token_iter,&token);
 	}
 
 	array_append(
@@ -168,30 +173,45 @@ void PreprocessorExpression_parse(
 	}
 	return;
 }
-void Preprocessor_run(struct Preprocessor *preprocessor){
+void Preprocessor_consume(struct Preprocessor *preprocessor, struct TokenIter *token_iter){
+	struct TokenIter old_token_iter=preprocessor->token_iter;
+	preprocessor->token_iter=*token_iter;
+	
+	println("running preprocessor on file %s",preprocessor->token_iter.tokenizer->token_src);
+
+	/* last attempt to fetch a token was successfull? */
+	int ntr=1;
 	Token token;
-	println("running preprocessor");
-	TokenIter_nextToken(&preprocessor->token_iter,&token);
-	while(1){
+
+	ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+	if(!ntr) fatal("");
+	while(ntr){
 		// check for preprocessor directives
 		if(token.len==1 && token.p[0]=='#'){
-			TokenIter_nextToken(&preprocessor->token_iter,&token);
+			ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+			if(!ntr) fatal("");
 
 			println("token %s",Token_print(&token));
 
 			if(Token_equalString(&token,"include")){
+				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+				if(!ntr) fatal("no token after #include");
+
 				Preprocessor_processInclude(preprocessor);
-				TokenIter_lastToken(&preprocessor->token_iter,&token);
+				ntr=TokenIter_lastToken(&preprocessor->token_iter,&token);
+
 				continue;
 			}else if(Token_equalString(&token,"define")){
-				TokenIter_nextToken(&preprocessor->token_iter,&token);
+				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+				if(!ntr) fatal("no token after #define");
 
 				Preprocessor_processDefine(preprocessor);
-				TokenIter_lastToken(&preprocessor->token_iter,&token);
+				ntr=TokenIter_lastToken(&preprocessor->token_iter,&token);
 
 				continue;
 			}else if(Token_equalString(&token,"undef")){
-				TokenIter_nextToken(&preprocessor->token_iter,&token);
+				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+				if(!ntr) fatal("no token after #undef");
 				if(token.tag!=TOKEN_TAG_SYMBOL){
 					fatal("expected symbol after #undef directive but got instead %s",Token_print(&token));
 				}
@@ -199,7 +219,7 @@ void Preprocessor_run(struct Preprocessor *preprocessor){
 				char* define_name=calloc(token.len+1,1);
 				sprintf(define_name,"%.*s",token.len,token.p);
 
-				TokenIter_nextToken(&preprocessor->token_iter,&token);
+				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
 
 				// remove define from list of defines
 				for(int i=0;i<preprocessor->defines.len;i+=2){
@@ -215,13 +235,15 @@ void Preprocessor_run(struct Preprocessor *preprocessor){
 
 				continue;
 			}else if(Token_equalString(&token, "pragma")){
-				TokenIter_nextToken(&preprocessor->token_iter,&token);
+				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+				if(!ntr) fatal("no token after #pragma");
 				if(Token_equalString(&token,"once")){
 					// read include argument
-					TokenIter_nextToken(&preprocessor->token_iter,&token);
+					ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
 
 					// add file to list of already included files
-					char* include_path_copy=allocAndCopy(strlen(preprocessor->tokenizer_in->tokens[0].filename)+1,preprocessor->tokenizer_in->tokens[0].filename);
+					const char*include_path=preprocessor->token_iter.tokenizer->token_src;
+					char* include_path_copy=allocAndCopy(strlen(include_path)+1,include_path);
 					array_append(&preprocessor->already_included_files,&include_path_copy);
 
 					continue;
@@ -229,7 +251,8 @@ void Preprocessor_run(struct Preprocessor *preprocessor){
 				println("unknown pragma %s",Token_print(&token));
 				int line_num=token.line;
 				while(!TokenIter_isEmpty(&preprocessor->token_iter)){
-					TokenIter_nextToken(&preprocessor->token_iter,&token);
+					ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+					if(!ntr) fatal("");
 					if(token.line!=line_num){
 						break;
 					}
@@ -237,7 +260,8 @@ void Preprocessor_run(struct Preprocessor *preprocessor){
 				fatal("unknown pragma");
 			}else if(Token_equalString(&token, "ifndef")){
 				// read define argument
-				TokenIter_nextToken(&preprocessor->token_iter,&token);
+				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+				if(!ntr) fatal("no token after #ifndef");
 				if(token.tag!=TOKEN_TAG_SYMBOL){
 					fatal("expected symbol after #ifndef directive but got instead %s",Token_print(&token));
 				}
@@ -260,18 +284,22 @@ void Preprocessor_run(struct Preprocessor *preprocessor){
 					// skip over tokens until #endif or #else or #elif
 					bool stop=false;
 					while(!TokenIter_isEmpty(&preprocessor->token_iter) && !stop){
-						TokenIter_nextToken(&preprocessor->token_iter,&token);
+						ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+						if(!ntr) fatal("");
 						if(token.len==1 && token.p[0]=='#'){
-							TokenIter_nextToken(&preprocessor->token_iter,&token);
+							ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+							if(!ntr) fatal("");
 							if(Token_equalString(&token,"endif")){
 								stop=true;
 								break;
 							}else if(Token_equalString(&token,"else") || Token_equalString(&token,"elif")){
 								// skip over tokens until #endif
 								while(!TokenIter_isEmpty(&preprocessor->token_iter) && !stop){
-									TokenIter_nextToken(&preprocessor->token_iter,&token);
+									ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+									if(!ntr) fatal("");
 									if(token.len==1 && token.p[0]=='#'){
-										TokenIter_nextToken(&preprocessor->token_iter,&token);
+										ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+										if(!ntr) fatal("");
 										if(Token_equalString(&token,"endif")){
 											stop=true;
 											break;
@@ -288,7 +316,8 @@ void Preprocessor_run(struct Preprocessor *preprocessor){
 				continue;
 			}else if(Token_equalString(&token, "if")){
 				// get next token
-				TokenIter_nextToken(&preprocessor->token_iter,&token);
+				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+				if(!ntr) fatal("");
 
 				// parse preprocessor expression
 				// can use: <symbol>, <symbol>(args), defined, !, &&, ||, ==, !=, <=, >=, <, >, +, -, *, /, %, (, )
@@ -301,11 +330,13 @@ void Preprocessor_run(struct Preprocessor *preprocessor){
 						break;
 					}
 					array_append(&if_expr_tokens,&token);
-					TokenIter_nextToken(&preprocessor->token_iter,&token);
+					ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+					if(!ntr) fatal("");
 
 					// if token is \, adjust line_num, fetch next token and continue
 					if(Token_equalString(&token,"\\")){
-						TokenIter_nextToken(&preprocessor->token_iter,&token);
+						ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+						if(!ntr) fatal("");
 						line_num=token.line;
 					}
 				}
@@ -326,7 +357,8 @@ void Preprocessor_run(struct Preprocessor *preprocessor){
 
 				continue;
 			}else if(Token_equalString(&token,"elif")){
-				TokenIter_nextToken(&preprocessor->token_iter,&token);
+				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+				if(!ntr) fatal("");
 				// check last stack item, which is either if or elif
 				// check its value
 				// 1) if if statement, and that value is true, set flag that that had triggered
@@ -365,11 +397,13 @@ void Preprocessor_run(struct Preprocessor *preprocessor){
 							break;
 						}
 						array_append(&if_expr_tokens,&token);
-						TokenIter_nextToken(&preprocessor->token_iter,&token);
+						ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+						if(!ntr) fatal("");
 
 						// if token is \, adjust line_num, fetch next token and continue
 						if(Token_equalString(&token,"\\")){
-							TokenIter_nextToken(&preprocessor->token_iter,&token);
+							ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+							if(!ntr) fatal("");
 							line_num=token.line;
 						}
 					}
@@ -394,7 +428,8 @@ void Preprocessor_run(struct Preprocessor *preprocessor){
 				}
 				continue;
 			}else if(Token_equalString(&token,"endif")){
-				TokenIter_nextToken(&preprocessor->token_iter,&token);
+				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+				if(!ntr) fatal("");
 
 				// pop stack
 				int num_items_to_pop=0;
@@ -411,7 +446,8 @@ void Preprocessor_run(struct Preprocessor *preprocessor){
 				continue;
 			}else if(Token_equalString(&token,"ifdef")){
 				// read define argument
-				TokenIter_nextToken(&preprocessor->token_iter,&token);
+				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+				if(!ntr) fatal("");
 				if(token.tag!=TOKEN_TAG_SYMBOL){
 					fatal("expected symbol after #ifdef directive but got instead %s",Token_print(&token));
 				}
@@ -419,7 +455,8 @@ void Preprocessor_run(struct Preprocessor *preprocessor){
 				char* define_name=calloc(token.len+1,1);
 				sprintf(define_name,"%.*s",token.len,token.p);
 
-				TokenIter_nextToken(&preprocessor->token_iter,&token);
+				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+				if(!ntr) fatal("");
 
 				// check if define is already defined
 				struct PreprocessorExpression expr={
@@ -511,9 +548,12 @@ void Preprocessor_run(struct Preprocessor *preprocessor){
 		if(TokenIter_isEmpty(&preprocessor->token_iter))
 			break;
 
-		TokenIter_nextToken(&preprocessor->token_iter,&token);
+		ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+		if(!ntr) fatal("");
 	}
 
-	// print preprocessed tokens
-	
+	// restore old token iter
+	preprocessor->token_iter=old_token_iter;
+
+	return;	
 }

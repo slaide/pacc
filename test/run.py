@@ -27,13 +27,15 @@ class Test:
     goal: tp.Optional[str] = None
     should_fail: bool = False
 
+    flags:tp.Optional[str]=None
+
     result:tp.Optional[TestResult]=None
 
     def run(self,print_info:bool=True,timeout:float=0.5):
         if print_info:
             print(f"{BOLD}Running test: '{self.file}'{RESET}")
 
-        command=f"bin/main {self.file}"
+        command=f"bin/main {self.flags or ''} {self.file}"
 
         # exec command
         try:
@@ -106,6 +108,16 @@ tests=[
     Test(file="test/test037.c", goal="type as value"),
     Test(file="test/test038.c", goal="escape sequence"),
     Test(file="test/test039.c", goal="conditional (ternary) operator"),
+
+    Test(file="test/test040.c", goal="preprocessor if directive", flags="-p"),
+    Test(file="test/test041.c", goal="preprocessor if/else directive", flags="-p"),
+    Test(file="test/test042.c", goal="preprocessor nested if directive", flags="-p"),
+    Test(file="test/test043.c", goal="preprocessor elif directive", flags="-p"),
+    Test(file="test/test044.c", goal="preprocessor ifdef directive, evaluating to true", flags="-p"),
+    Test(file="test/test045.c", goal="preprocessor ifdef directive, evaluating to false", flags="-p"),
+    Test(file="test/test046.c", goal="preprocessor undef directive", flags="-p"),
+    Test(file="test/test047.c", goal="preprocessor include directive", flags="-p"),
+    Test(file="test/test048.c", goal="preprocessor pragma once directive", flags="-p"),
 ]
 
 # run all tests

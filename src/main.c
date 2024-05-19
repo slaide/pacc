@@ -136,9 +136,32 @@ int main(int argc, const char**argv){
 		fatal("no input file given. aborting.");
 	}
 
+	char*input_filename=nullptr;
+	bool run_preprocessor=false;
+
+	for(int i=1;i<argc;i++){
+		if(
+			!run_preprocessor
+			&& (
+				strcmp(argv[i],"--preprocessor")==0
+				|| strcmp(argv[i],"-p")==0
+			)
+		){
+			run_preprocessor=true;
+			continue;
+		}
+
+		if(input_filename==nullptr){
+			input_filename=(char*)argv[i];
+			continue;
+		}
+
+		fatal("unused input argument: %s",argv[i]);
+	}
+
 	// read file into memory
 	File code_file={};
-	File_read(argv[1],&code_file);
+	File_read(input_filename,&code_file);
 
 	// tokenize file (even preprocessor requires some tokenization, because of string literals)
 	Tokenizer tokenizer={};
@@ -149,7 +172,7 @@ int main(int argc, const char**argv){
 		println("token %d: %s",i,Token_print(&token));
 	}
 
-	print("tokens from file %s:\n",argv[1]);
+	print("tokens from file %s:\n",input_filename);
 	highlight_token_kind=TOKEN_TAG_SYMBOL;
 	Tokenizer_print(&tokenizer);
 
@@ -163,18 +186,20 @@ int main(int argc, const char**argv){
 	};
 
 	// run preprocessor
+	if(run_preprocessor){
 	struct Preprocessor preprocessor={};
-	Preprocessor_init(&preprocessor,&tokenizer);
+		Preprocessor_init(&preprocessor);
 
 	for(int i=0;i<sizeof(include_paths)/sizeof(char*);i++){
 		array_append(&preprocessor.include_paths,&include_paths[i]);
 	}
 
-	println("running preprocessor");
-	Preprocessor_run(&preprocessor);
-	println("running preprocessor done");
+		struct TokenIter token_iter;
+		TokenIter_init(&token_iter,&tokenizer,(struct TokenIterConfig){.skip_comments=true,});
 
-	print("tokens from file %s:\n",argv[1]);
+		Preprocessor_consume(&preprocessor,&token_iter);
+
+		print("tokens from file %s, after running preprocessor:\n",input_filename);
 	highlight_token_kind=TOKEN_TAG_SYMBOL;
 	Tokenizer preprocessed_tokenizer={
 		.token_src=tokenizer.token_src,
@@ -182,6 +207,7 @@ int main(int argc, const char**argv){
 		.num_tokens=preprocessor.tokens_out.len,
 	};
 	Tokenizer_print(&preprocessed_tokenizer);
+	}
 
 	if(0){
 		// parse tokens into AST

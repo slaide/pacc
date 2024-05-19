@@ -578,9 +578,14 @@ void TokenIter_init(
     token_iter->next_token_index=0;
 }
 int TokenIter_nextToken(struct TokenIter*iter,Token*out){
-    if(iter->next_token_index>=iter->tokenizer->num_tokens){
-        return false;
+	// if we have exhausted all tokens, there is no next token to fetch
+	// increase index nevertheless to indicate that we have attempted to fetch a token past the end
+    if(iter->next_token_index==iter->tokenizer->num_tokens){
+		iter->next_token_index++;
     }
+	if(iter->next_token_index>iter->tokenizer->num_tokens){
+		return false;
+	}
 
     *out=iter->tokenizer->tokens[iter->next_token_index++];
 
@@ -590,9 +595,15 @@ int TokenIter_nextToken(struct TokenIter*iter,Token*out){
     return true;
 }
 int TokenIter_lastToken(struct TokenIter*iter,Token*out){
+	// if we are still pointing at the first token (i.e. no tokens have been returned yet)
+	// there is no last/previous token
 	if(iter->next_token_index<=0){
 		return false;
 	}
+	// if we have exhausted all tokens, there is no last token to fetch
+    if(iter->next_token_index>iter->tokenizer->num_tokens){
+        return false;
+    }
 	
 	*out=iter->tokenizer->tokens[iter->next_token_index-1];
 
