@@ -1,7 +1,10 @@
+#include <tokenizer.h>
+#include <util/array.h>
 #include <util/util.h>
 #include <parser/parser.h>
-#include<util/ansi_esc_codes.h>
+#include <util/ansi_esc_codes.h>
 
+#include<preprocessor/preprocessor.h>
 
 void Module_print(Module*module){
 	printf("module:\n");
@@ -133,12 +136,55 @@ int main(int argc, const char**argv){
 		fatal("no input file given. aborting.");
 	}
 
+	// read file into memory
 	File code_file={};
 	File_read(argv[1],&code_file);
 
+	// tokenize file (even preprocessor requires some tokenization, because of string literals)
 	Tokenizer tokenizer={};
 	Tokenizer_init(&tokenizer,&code_file);
 
+	for(int i=0;i<tokenizer.num_tokens;i++){
+		Token token=tokenizer.tokens[i];
+		println("token %d: %s",i,Token_print(&token));
+	}
+
+	print("tokens from file %s:\n",argv[1]);
+	highlight_token_kind=TOKEN_TAG_SYMBOL;
+	Tokenizer_print(&tokenizer);
+
+	char*include_paths[]={
+		".",
+		"./include",
+		"/usr/lib/llvm-16/lib/clang/16/include",
+		"/usr/local/include",
+		"/usr/include/aarch64-linux-gnu",
+		"/usr/include",
+	};
+
+	// run preprocessor
+	struct Preprocessor preprocessor={};
+	Preprocessor_init(&preprocessor,&tokenizer);
+
+	for(int i=0;i<sizeof(include_paths)/sizeof(char*);i++){
+		array_append(&preprocessor.include_paths,&include_paths[i]);
+	}
+
+	println("running preprocessor");
+	Preprocessor_run(&preprocessor);
+	println("running preprocessor done");
+
+	print("tokens from file %s:\n",argv[1]);
+	highlight_token_kind=TOKEN_TAG_SYMBOL;
+	Tokenizer preprocessed_tokenizer={
+		.token_src=tokenizer.token_src,
+		.tokens=preprocessor.tokens_out.data,
+		.num_tokens=preprocessor.tokens_out.len,
+	};
+	Tokenizer_print(&preprocessed_tokenizer);
+
+	if(0){
+		// parse tokens into AST
 	struct TokenIter token_iter;
 	TokenIter_init(&token_iter,&tokenizer,(struct TokenIterConfig){.skip_comments=true,});
 
@@ -152,6 +198,8 @@ int main(int argc, const char**argv){
 		TokenIter_lastToken(&token_iter,&next_token);
 		fatal("unexpected tokens at end of file at line %d col %d: %.*s",next_token.line,next_token.col,next_token.len,next_token.p);
 	}
+	}
+
 	
 	return 0;
 }

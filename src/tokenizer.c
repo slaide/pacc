@@ -1,6 +1,7 @@
 #include<tokenizer.h>
 
 #include<util/util.h>
+#include<util/ansi_esc_codes.h>
 
 #include<stdlib.h>
 #include<string.h>
@@ -105,7 +106,8 @@ bool char_is_token(char c){
 	return false;
 }
 
-
+/* tab character width in terms of spaces */
+#define TAB_WIDTH 1
 int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 	*tokenizer=(Tokenizer){
 		.token_src=file->filepath,
@@ -156,6 +158,15 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 				// breaking whitespace
 				case '\r':
 				case '\t':
+					if(token.p==p){
+						col+=TAB_WIDTH;
+						p++;
+						token.col=col;
+						token.p=p;
+						continue;
+					}
+					goto token_end;
+					break;
 				case ' ':
 					if(token.p==p){
 						col++;
@@ -390,7 +401,7 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 				}else if(numericToken->p[offset]=='b' || numericToken->p[offset]=='B'){
 					offset+=1;
 				}
-					token.num_info.hasPrefix=true;
+				token.num_info.hasPrefix=true;
 			}
 
 			// check for leading digit[s]
@@ -593,8 +604,9 @@ bool TokenIter_isEmpty(struct TokenIter*iter){
 
 char*Token_print(Token*token){
 	const char*t_loc=Token_loc(token);
-	char*ret=calloc(1,strlen(t_loc)+token->len+3);
-	sprintf(ret,"%s: %.*s",t_loc,token->len,token->p);
+	int ret_len=strlen(t_loc)+token->len+16/*16 should be enough for the '(tag x)' stuff*/;
+	char*ret=calloc(1,ret_len);
+	sprintf(ret,"%s: %.*s (tag %d)",t_loc,token->len,token->p,token->tag);
 	return ret;
 }
 char*Token_loc(Token*token){
@@ -605,4 +617,32 @@ char*Token_loc(Token*token){
 	char*ret=calloc(1,strlen(filename)+token->len+3);
 	snprintf(ret,256,"%s:%d:%d",filename,token->line,token->col);
 	return ret;
+}
+void Tokenizer_print(Tokenizer*tokenizer){
+	Token token;
+	int last_line=0;
+	int last_col=0;
+
+	struct TokenIter token_iter={};
+	TokenIter_init(&token_iter, tokenizer, (struct TokenIterConfig){});
+	while(!TokenIter_isEmpty(&token_iter)){
+		TokenIter_nextToken(&token_iter,&token);
+		for(;(last_line<token.line);last_line++){
+			printf("\nline %*d: ",6,last_line);
+			last_col=0;
+		}
+		if(token.col>last_col){
+			printf("%*s",token.col-last_col,"");
+		}
+		last_col=token.col+token.len;
+		if(token.tag==highlight_token_kind){
+			printf(TEXT_COLOR_YELLOW);
+		}
+		
+		printf("%.*s",token.len,token.p);
+		if(token.tag==highlight_token_kind){
+			printf(TEXT_COLOR_RESET);
+		}
+	}
+	printf("\n");
 }

@@ -1,6 +1,7 @@
 #pragma once
 
-#include<stdio.h>
+#include<stdio.h> // fprintf
+#include<stdlib.h> // exit
 
 #define discard (void)
 
@@ -34,7 +35,7 @@ typedef struct String{
 }String;
 
 /// @brief allocates size bytes memory and copies bytes memory from src into it
-void* allocAndCopy(size_t size,const void*src);
+void* allocAndCopy(size_t size,void*src);
 
 char* makeStringn(int len);
 char* makeString();

@@ -128,6 +128,8 @@ if __name__=="__main__":
             "src/parser/value.c",
             "src/parser/module.c",
 
+            "src/preprocessor/preprocessor.c",
+
             "src/file.c",
             "src/tokenizer.c",
             "src/main.c",

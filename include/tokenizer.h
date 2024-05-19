@@ -126,3 +126,7 @@ static const char*KEYWORD_SEMICOLON=";";
 static const char*KEYWORD_COMMA=",";
 static const char*KEYWORD_DOT=".";
 static const char*KEYWORD_AMPERSAND="&";
+
+static int highlight_token_kind=-1;
+/// print tokenizer contents with appropriate spacing, and line number at start of each line
+void Tokenizer_print(Tokenizer*tokenizer);
