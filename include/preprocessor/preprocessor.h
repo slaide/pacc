@@ -68,10 +68,15 @@ struct PreprocessorStackItem{
 		}else_if;
 	};
 };
+struct PreprocessorDefine{
+	Token name;
+	array tokens;
+};
 struct Preprocessor{
 	/* include paths, type char* */
 	array include_paths;
-	/* definitions */
+	
+	/* definitions, element type is struct PreprocessorDefine */
 	array defines;
 	/* protect against double include with pragma once, the results of which are saved here, i.e. element is char* */
 	array already_included_files;

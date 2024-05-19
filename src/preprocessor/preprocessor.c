@@ -7,7 +7,7 @@
 
 void Preprocessor_init(struct Preprocessor*preprocessor,struct Tokenizer *tokenizer){
 	array_init(&preprocessor->include_paths,sizeof(char*));
-	array_init(&preprocessor->defines,sizeof(Token));
+	array_init(&preprocessor->defines,sizeof(struct PreprocessorDefine));
 	array_init(&preprocessor->already_included_files,sizeof(char*));
 
 	preprocessor->tokenizer_in=tokenizer;
@@ -120,28 +120,35 @@ void Preprocessor_processDefine(struct Preprocessor*preprocessor){
 	Token token;
 
 	// read define argument
-	TokenIter_nextToken(&preprocessor->token_iter,&token);
+	TokenIter_lastToken(&preprocessor->token_iter,&token);
 	println("next token %s",Token_print(&token));
 	if(token.tag!=TOKEN_TAG_SYMBOL){
 		fatal("expected symbol after #define directive but got instead %s",Token_print(&token));
 	}
 
-	char* define_name=calloc(token.len+1,1);
-	sprintf(define_name,"%.*s",token.len,token.p);
-
-	//array_append(&preprocessor->defines,&(Token){.len=strlen(define_name),.p=define_name});
+	Token define_name=token;
 
 	// read define value
 	int define_line_num=token.line;
+	array define_value={};
+	array_init(&define_value,sizeof(Token));
 	TokenIter_nextToken(&preprocessor->token_iter,&token);
-	if(token.line==define_line_num){
-		char* define_value=calloc(token.len+1,1);
-		sprintf(define_value,"%.*s",token.len,token.p);
+	while(token.line==define_line_num){
+		println("define %.*s as %s",define_name.len,define_name.p,define_value);
 
-		println("define %s as %s",define_name,define_value);
+		// append token to define value
+		array_append(&define_value,&token);
 
 		TokenIter_nextToken(&preprocessor->token_iter,&token);
 	}
+
+	array_append(
+		&preprocessor->defines,
+		&(struct PreprocessorDefine){
+			.name=define_name,
+			.tokens=define_value
+		}
+	);
 }
 void PreprocessorExpression_parse(
 	array if_expr_tokens,
@@ -165,7 +172,7 @@ void Preprocessor_run(struct Preprocessor *preprocessor){
 	Token token;
 	println("running preprocessor");
 	TokenIter_nextToken(&preprocessor->token_iter,&token);
-	while(!TokenIter_isEmpty(&preprocessor->token_iter)){
+	while(1){
 		// check for preprocessor directives
 		if(token.len==1 && token.p[0]=='#'){
 			TokenIter_nextToken(&preprocessor->token_iter,&token);
@@ -177,8 +184,35 @@ void Preprocessor_run(struct Preprocessor *preprocessor){
 				TokenIter_lastToken(&preprocessor->token_iter,&token);
 				continue;
 			}else if(Token_equalString(&token,"define")){
+				TokenIter_nextToken(&preprocessor->token_iter,&token);
+
 				Preprocessor_processDefine(preprocessor);
 				TokenIter_lastToken(&preprocessor->token_iter,&token);
+
+				continue;
+			}else if(Token_equalString(&token,"undef")){
+				TokenIter_nextToken(&preprocessor->token_iter,&token);
+				if(token.tag!=TOKEN_TAG_SYMBOL){
+					fatal("expected symbol after #undef directive but got instead %s",Token_print(&token));
+				}
+
+				char* define_name=calloc(token.len+1,1);
+				sprintf(define_name,"%.*s",token.len,token.p);
+
+				TokenIter_nextToken(&preprocessor->token_iter,&token);
+
+				// remove define from list of defines
+				for(int i=0;i<preprocessor->defines.len;i+=2){
+					Token* define_token=array_get(&preprocessor->defines,i);
+					if(Token_equalString(define_token,define_name)){
+						// TODO this needs a better solution, but the array api
+						// currently does not support removing elements from
+						// an arbitrary index
+						define_token->len=0;
+						break;
+					}
+				}
+
 				continue;
 			}else if(Token_equalString(&token, "pragma")){
 				TokenIter_nextToken(&preprocessor->token_iter,&token);
@@ -385,8 +419,13 @@ void Preprocessor_run(struct Preprocessor *preprocessor){
 				char* define_name=calloc(token.len+1,1);
 				sprintf(define_name,"%.*s",token.len,token.p);
 
+				TokenIter_nextToken(&preprocessor->token_iter,&token);
+
 				// check if define is already defined
-				struct PreprocessorExpression expr={.tag=PREPROCESSOR_EXPRESSION_TAG_DEFINED,.defined={.name=define_name}};
+				struct PreprocessorExpression expr={
+					.tag=PREPROCESSOR_EXPRESSION_TAG_DEFINED,
+					.defined={.name=define_name}
+				};
 				int expr_value=Preprocessor_evalExpression(preprocessor,&expr);
 				// push if statement on stack
 				struct PreprocessorStackItem item={.tag=PREPROCESSOR_STACK_ITEM_TYPE_IF,.if_={.if_token=token,.expr=&expr}};
@@ -468,6 +507,9 @@ void Preprocessor_run(struct Preprocessor *preprocessor){
 
 		if(append_token)
 			array_append(&preprocessor->tokens_out,&token);
+
+		if(TokenIter_isEmpty(&preprocessor->token_iter))
+			break;
 
 		TokenIter_nextToken(&preprocessor->token_iter,&token);
 	}
