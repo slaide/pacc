@@ -27,16 +27,26 @@ arg_parser.add_argument(
 class BuildPlatform(str,Enum):
     LINUX_AMD64="linux_amd64"
     LINUX_ARM64="linux_arm64"
+    MACOS_AMD64="macos_amd64"
     MACOS_ARM64="macos_arm64"
+    WINDOWS_AMD64="windows_amd64"
+    WINDOWS_ARM64="windows_arm64"
 
-if platform.system()=="Linux" and platform.machine()=="x86_64":
-    default_build_platform=BuildPlatform.LINUX_AMD64
-if platform.system()=="Linux" and platform.machine()=="aarch64":
-    default_build_platform=BuildPlatform.LINUX_ARM64
-elif platform.system()=="Darwin" and platform.machine()=="arm64":
-    default_build_platform=BuildPlatform.MACOS_ARM64
-else:
-    raise RuntimeError(f"unsupported platform: os = {platform.system()} , arch = {platform.machine()}")
+match (platform.system(),platform.machine().lower()):
+    case ("Linux","x86_64") | ("Linux","amd64"):
+        default_build_platform=BuildPlatform.LINUX_AMD64
+    case ("Linux","aarch64") | ("Linux","arm64"):
+        default_build_platform=BuildPlatform.LINUX_ARM64
+    case ("Darwin","x86_64") | ("Darwin","amd64"):
+        default_build_platform=BuildPlatform.MACOS_AMD64
+    case ("Darwin","arm64"):
+        default_build_platform=BuildPlatform.MACOS_ARM64
+    case ("Windows","amd64") | ("Windows","x86_64"):
+        default_build_platform=BuildPlatform.WINDOWS_AMD64
+    case ("Windows","arm64"):
+        default_build_platform=BuildPlatform.WINDOWS_ARM64
+    case (sys_os,sys_arch):
+        raise RuntimeError(f"unsupported platform: os = {sys_os} , arch = {sys_arch}")
 
 arg_parser.add_argument(
     "-p","--platform",
