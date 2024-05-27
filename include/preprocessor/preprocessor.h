@@ -48,8 +48,8 @@ struct PreprocessorStack{
 struct PreprocessorStackItem{
 	enum{
 		PREPROCESSOR_STACK_ITEM_TYPE_IF,
-		PREPROCESSOR_STACK_ITEM_TYPE_ELSE,
 		PREPROCESSOR_STACK_ITEM_TYPE_ELSE_IF,
+		PREPROCESSOR_STACK_ITEM_TYPE_ELSE,
 	}tag;
 	union{
 		struct{
@@ -59,13 +59,13 @@ struct PreprocessorStackItem{
 		}if_;
 		struct{
 			Token else_token;
-			int _reservedAndUnused;
-		}else_;
-		struct{
-			Token else_token;
 			struct PreprocessorExpression*expr;
 			bool anyPreviousIfEvaluatedToTrue;
 		}else_if;
+		struct{
+			Token else_token;
+			int _reservedAndUnused;
+		}else_;
 	};
 };
 struct PreprocessorDefine{

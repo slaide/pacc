@@ -193,128 +193,7 @@ void Preprocessor_consume(struct Preprocessor *preprocessor, struct TokenIter *t
 
 			println("token %s",Token_print(&token));
 
-			if(Token_equalString(&token,"include")){
-				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
-				if(!ntr) fatal("no token after #include");
-
-				Preprocessor_processInclude(preprocessor);
-				ntr=TokenIter_lastToken(&preprocessor->token_iter,&token);
-
-				continue;
-			}else if(Token_equalString(&token,"define")){
-				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
-				if(!ntr) fatal("no token after #define");
-
-				Preprocessor_processDefine(preprocessor);
-				ntr=TokenIter_lastToken(&preprocessor->token_iter,&token);
-
-				continue;
-			}else if(Token_equalString(&token,"undef")){
-				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
-				if(!ntr) fatal("no token after #undef");
-				if(token.tag!=TOKEN_TAG_SYMBOL){
-					fatal("expected symbol after #undef directive but got instead %s",Token_print(&token));
-				}
-
-				char* define_name=calloc(token.len+1,1);
-				sprintf(define_name,"%.*s",token.len,token.p);
-
-				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
-
-				// remove define from list of defines
-				for(int i=0;i<preprocessor->defines.len;i+=2){
-					Token* define_token=array_get(&preprocessor->defines,i);
-					if(Token_equalString(define_token,define_name)){
-						// TODO this needs a better solution, but the array api
-						// currently does not support removing elements from
-						// an arbitrary index
-						define_token->len=0;
-						break;
-					}
-				}
-
-				continue;
-			}else if(Token_equalString(&token, "pragma")){
-				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
-				if(!ntr) fatal("no token after #pragma");
-				if(Token_equalString(&token,"once")){
-					// read include argument
-					ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
-
-					// add file to list of already included files
-					const char*include_path=preprocessor->token_iter.tokenizer->token_src;
-					char* include_path_copy=allocAndCopy(strlen(include_path)+1,include_path);
-					array_append(&preprocessor->already_included_files,&include_path_copy);
-
-					continue;
-				}
-				println("unknown pragma %s",Token_print(&token));
-				int line_num=token.line;
-				while(!TokenIter_isEmpty(&preprocessor->token_iter)){
-					ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
-					if(!ntr) fatal("");
-					if(token.line!=line_num){
-						break;
-					}
-				}
-				fatal("unknown pragma");
-			}else if(Token_equalString(&token, "ifndef")){
-				// read define argument
-				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
-				if(!ntr) fatal("no token after #ifndef");
-				if(token.tag!=TOKEN_TAG_SYMBOL){
-					fatal("expected symbol after #ifndef directive but got instead %s",Token_print(&token));
-				}
-
-				char* define_name=calloc(token.len+1,1);
-				sprintf(define_name,"%.*s",token.len,token.p);
-
-				// check if define is already defined
-				bool define_already_defined=false;
-				for(int i=0;i<preprocessor->defines.len;i+=2){
-					Token* define_token=array_get(&preprocessor->defines,i);
-					if(Token_equalString(define_token,define_name)){
-						define_already_defined=true;
-						break;
-					}
-				}
-
-				// if not defined, skip to #endif
-				if(define_already_defined){
-					// skip over tokens until #endif or #else or #elif
-					bool stop=false;
-					while(!TokenIter_isEmpty(&preprocessor->token_iter) && !stop){
-						ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
-						if(!ntr) fatal("");
-						if(token.len==1 && token.p[0]=='#'){
-							ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
-							if(!ntr) fatal("");
-							if(Token_equalString(&token,"endif")){
-								stop=true;
-								break;
-							}else if(Token_equalString(&token,"else") || Token_equalString(&token,"elif")){
-								// skip over tokens until #endif
-								while(!TokenIter_isEmpty(&preprocessor->token_iter) && !stop){
-									ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
-									if(!ntr) fatal("");
-									if(token.len==1 && token.p[0]=='#'){
-										ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
-										if(!ntr) fatal("");
-										if(Token_equalString(&token,"endif")){
-											stop=true;
-											break;
-										}
-									}
-								}
-								stop=true;
-								break;
-							}
-						}
-					}
-				}
-
-				continue;
-			}else if(Token_equalString(&token, "if")){
+			if(Token_equalString(&token, "if")){
 				// get next token
 				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
 				if(!ntr) fatal("");
@@ -444,6 +323,34 @@ void Preprocessor_consume(struct Preprocessor *preprocessor, struct TokenIter *t
 					array_pop_back(&preprocessor->stack.items);
 				println("popped %d items from stack, now got %d left",num_items_to_pop,preprocessor->stack.items.len);
 				continue;
+			}else if(Token_equalString(&token, "ifndef")){
+				// read define argument
+				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+				if(!ntr) fatal("");
+				if(token.tag!=TOKEN_TAG_SYMBOL){
+					fatal("expected symbol after #ifdef directive but got instead %s",Token_print(&token));
+				}
+
+				char* define_name=calloc(token.len+1,1);
+				sprintf(define_name,"%.*s",token.len,token.p);
+
+				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+				if(!ntr) fatal("");
+
+				// check if define is already defined
+				struct PreprocessorExpression expr={
+					.tag=PREPROCESSOR_EXPRESSION_TAG_NOT,
+					.not={.expr=allocAndCopy(sizeof(struct PreprocessorExpression),&(struct PreprocessorExpression){
+						.tag=PREPROCESSOR_EXPRESSION_TAG_DEFINED,
+						.defined={.name=define_name}
+					})}
+				};
+				int expr_value=Preprocessor_evalExpression(preprocessor,&expr);
+				// push if statement on stack
+				struct PreprocessorStackItem item={.tag=PREPROCESSOR_STACK_ITEM_TYPE_IF,.if_={.if_token=token,.expr=&expr}};
+				array_append(&preprocessor->stack.items,&item);
+
+				continue;
 			}else if(Token_equalString(&token,"ifdef")){
 				// read define argument
 				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
@@ -482,7 +389,76 @@ void Preprocessor_consume(struct Preprocessor *preprocessor, struct TokenIter *t
 				
 				array_append(&preprocessor->stack.items,&item);
 				continue;
-			} 
+			}
+			// free-standing preprocessor directives
+			else{
+				if(Token_equalString(&token,"include")){
+					ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+					if(!ntr) fatal("no token after #include");
+
+					Preprocessor_processInclude(preprocessor);
+					ntr=TokenIter_lastToken(&preprocessor->token_iter,&token);
+
+					continue;
+				}else if(Token_equalString(&token,"define")){
+					ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+					if(!ntr) fatal("no token after #define");
+
+					Preprocessor_processDefine(preprocessor);
+					ntr=TokenIter_lastToken(&preprocessor->token_iter,&token);
+
+					continue;
+				}else if(Token_equalString(&token,"undef")){
+					ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+					if(!ntr) fatal("no token after #undef");
+					if(token.tag!=TOKEN_TAG_SYMBOL){
+						fatal("expected symbol after #undef directive but got instead %s",Token_print(&token));
+					}
+
+					char* define_name=calloc(token.len+1,1);
+					sprintf(define_name,"%.*s",token.len,token.p);
+
+					ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+
+					// remove define from list of defines
+					for(int i=0;i<preprocessor->defines.len;i+=2){
+						Token* define_token=array_get(&preprocessor->defines,i);
+						if(Token_equalString(define_token,define_name)){
+							// TODO this needs a better solution, but the array api
+							// currently does not support removing elements from
+							// an arbitrary index
+							define_token->len=0;
+							break;
+						}
+					}
+
+					continue;
+				}else if(Token_equalString(&token, "pragma")){
+					ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+					if(!ntr) fatal("no token after #pragma");
+					if(Token_equalString(&token,"once")){
+						// read include argument
+						ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+
+						// add file to list of already included files
+						const char*include_path=preprocessor->token_iter.tokenizer->token_src;
+						char* include_path_copy=allocAndCopy(strlen(include_path)+1,include_path);
+						array_append(&preprocessor->already_included_files,&include_path_copy);
+
+						continue;
+					}
+					println("unknown pragma %s",Token_print(&token));
+					int line_num=token.line;
+					while(!TokenIter_isEmpty(&preprocessor->token_iter)){
+						ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+						if(!ntr) fatal("");
+						if(token.line!=line_num){
+							break;
+						}
+					}
+					fatal("unknown pragma");
+				}
+			}
 
 			fatal("unknown preprocessor directive %s",Token_print(&token));
 		}
