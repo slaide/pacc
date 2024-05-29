@@ -614,10 +614,45 @@ bool TokenIter_isEmpty(struct TokenIter*iter){
 }
 
 char*Token_print(Token*token){
+	const char*token_tag_name=nullptr;
+	switch(token->tag){
+		case TOKEN_TAG_UNDEFINED:
+			token_tag_name="undefined";
+			break;
+		case TOKEN_TAG_SYMBOL:
+			token_tag_name="symbol";
+			break;
+		case TOKEN_TAG_KEYWORD:
+			token_tag_name="keyword";
+			break;
+		case TOKEN_TAG_LITERAL_INTEGER:
+			token_tag_name="integer";
+			break;
+		case TOKEN_TAG_LITERAL_FLOAT:
+			token_tag_name="float";
+			break;
+		case TOKEN_TAG_LITERAL_CHAR:
+			token_tag_name="char";
+			break;
+		case TOKEN_TAG_LITERAL_STRING:
+			token_tag_name="string";
+			break;
+		case TOKEN_TAG_COMMENT:
+			token_tag_name="comment";
+			break;
+		case TOKEN_TAG_PREP_INCLUDE_ARGUMENT:
+			token_tag_name="include argument";
+			break;
+		default:
+			token_tag_name="unknown?";
+			break;
+	}
+
 	const char*t_loc=Token_loc(token);
-	int ret_len=strlen(t_loc)+token->len+16/*16 should be enough for the '(tag x)' stuff*/;
+	int ret_len=strlen(t_loc)+token->len+strlen(token_tag_name)+16/*16 should be enough for the '(tag x)' stuff*/;
 	char*ret=calloc(1,ret_len);
-	sprintf(ret,"%s: %.*s (tag %d)",t_loc,token->len,token->p,token->tag);
+	sprintf(ret,"%s: >%.*s< (tag %s)",t_loc,token->len,token->p,token_tag_name);
+	
 	return ret;
 }
 char*Token_loc(Token*token){
