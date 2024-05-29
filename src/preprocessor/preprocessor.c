@@ -192,6 +192,51 @@ void Preprocessor_processUndefine(struct Preprocessor*preprocessor){
 	}
 	free(define_name);
 }
+void Preprocessor_processPragma(struct Preprocessor*preprocessor){
+	Token token={};
+	int ntr=TokenIter_lastToken(&preprocessor->token_iter,&token);
+	discard ntr;
+	if(Token_equalString(&token,"once")){
+		// read include argument
+		ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+
+		if(preprocessor->doSkip)
+			return;
+
+		// add file to list of already included files
+		const char*include_path=preprocessor->token_iter.tokenizer->token_src;
+		char* include_path_copy=allocAndCopy(strlen(include_path)+1,include_path);
+		array_append(&preprocessor->already_included_files,&include_path_copy);
+
+		return;
+	}
+
+	println("unknown pragma %s",Token_print(&token));
+	int line_num=token.line;
+	while(!TokenIter_isEmpty(&preprocessor->token_iter)){
+		ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+		if(!ntr) fatal("");
+		if(token.line!=line_num){
+			break;
+		}
+	}
+	fatal("unknown pragma");
+}
+void Preprocessor_processError(struct Preprocessor*preprocessor){
+	Token token={};
+	int ntr=TokenIter_lastToken(&preprocessor->token_iter,&token);
+	discard ntr;
+	if(preprocessor->doSkip)
+		return;
+
+	println("%s: ",Token_print(&token));
+	while(!TokenIter_isEmpty(&preprocessor->token_iter)){
+		ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+		if(!ntr) fatal("");
+		println("%.*s",token.len,token.p);
+	}
+	fatal("");
+}
 
 void PreprocessorExpression_parse(
 	array if_expr_tokens,
@@ -206,7 +251,7 @@ void PreprocessorExpression_parse(
 				out->value=atoi(nextToken->p);
 				break;
 			default:
-				fatal("unimplemented token tag %d",nextToken->tag);
+				fatal("unimplemented token: %s",Token_print(nextToken));
 		}
 	}
 	return;
@@ -272,8 +317,6 @@ void Preprocessor_consume(struct Preprocessor *preprocessor, struct TokenIter *t
 		if(token.len==1 && token.p[0]=='#'){
 			ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
 			if(!ntr) fatal("");
-
-			println("token %s",Token_print(&token));
 
 			if(Token_equalString(&token, "if")){
 				Token ifToken=token;
@@ -501,27 +544,19 @@ void Preprocessor_consume(struct Preprocessor *preprocessor, struct TokenIter *t
 				}else if(Token_equalString(&token, "pragma")){
 					ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
 					if(!ntr) fatal("no token after #pragma");
-					if(Token_equalString(&token,"once")){
-						// read include argument
-						ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
 
-						// add file to list of already included files
-						const char*include_path=preprocessor->token_iter.tokenizer->token_src;
-						char* include_path_copy=allocAndCopy(strlen(include_path)+1,include_path);
-						array_append(&preprocessor->already_included_files,&include_path_copy);
+					Preprocessor_processPragma(preprocessor);
+					ntr=TokenIter_lastToken(&preprocessor->token_iter,&token);
 
-						continue;
-					}
-					println("unknown pragma %s",Token_print(&token));
-					int line_num=token.line;
-					while(!TokenIter_isEmpty(&preprocessor->token_iter)){
-						ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
-						if(!ntr) fatal("");
-						if(token.line!=line_num){
-							break;
-						}
-					}
-					fatal("unknown pragma");
+					continue;
+				}else if(Token_equalString(&token,"error")){
+					ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+					if(!ntr) fatal("no token after #error");
+
+					Preprocessor_processError(preprocessor);
+					ntr=TokenIter_lastToken(&preprocessor->token_iter,&token);
+
+					continue;
 				}
 			}
 
