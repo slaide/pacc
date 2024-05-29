@@ -119,6 +119,9 @@ tests=[
     Test(file="test/test047.c", goal="preprocessor include directive", flags="-p"),
     Test(file="test/test048.c", goal="preprocessor pragma once directive", flags="-p"),
     Test(file="test/test049.c", goal="preprocessor nested if directive (2)", flags="-p"),
+
+    Test(file="test/test050.c", goal="preprocessor nested if directive (3)", flags="-p"),
+    Test(file="test/test051.c", goal="preprocessor nested if directive (4)", flags="-p"),
 ]
 
 # run all tests
