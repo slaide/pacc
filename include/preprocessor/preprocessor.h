@@ -16,7 +16,7 @@ enum PreprocessorExpressionTag{
 };
 struct PreprocessorExpression{
 	enum PreprocessorExpressionTag tag;
-	/* value that this expression evaluates to */
+	/* (cached) value that this expression evaluates to */
 	int value;
 	union{
 		struct{
@@ -41,11 +41,32 @@ struct PreprocessorExpression{
 		}literal;
 	};
 };
+/*
+parse expression by consuming tokens (until end of line), then evaluating the expression
 
-struct PreprocessorStack{
+can use: <symbol>, <symbol>(args), defined, !, &&, ||, ==, !=, <=, >=, <, >, +, -, *, /, %, (, )
+
+e.g.
+1) #if FOO
+2) #if defined(FOO)
+3) #if !defined(FOO)
+4) #if defined(FOO) && defined(BAR)
+5) #if defined(FOO) || defined(BAR)
+6) #if defined(FOO) && defined(BAR) || defined(BAZ)
+7) #if defined(FOO) && ( defined(BAR) || defined(BAZ) )
+*/
+struct PreprocessorExpression*Preprocessor_parseExpression(struct Preprocessor*preprocessor);
+
+/* stack of if[/elif[/else]] directives */
+struct PreprocessorIfStack{
+	/* if any parent statement has not evaluated to true, parse this stack, but do no evalute any clause and hence do not take any path */
+	bool inherited_doSkip;
+	/* any previous path in this stack has evaluated to true, used to track if a newly added may still be taken or not */
+	bool anyPathEvaluatedToTrue;
+	/* array of struct PreprocessorStackItem */
 	array items;
 };
-struct PreprocessorStackItem{
+struct PreprocessorIfStackItem{
 	enum{
 		PREPROCESSOR_STACK_ITEM_TYPE_IF,
 		PREPROCESSOR_STACK_ITEM_TYPE_ELSE_IF,
@@ -58,16 +79,19 @@ struct PreprocessorStackItem{
 			struct PreprocessorExpression*expr;
 		}if_;
 		struct{
+			/* the else token at the start of the statement */
 			Token else_token;
 			struct PreprocessorExpression*expr;
-			bool anyPreviousIfEvaluatedToTrue;
 		}else_if;
 		struct{
+			/* the else token */
 			Token else_token;
-			int _reservedAndUnused;
 		}else_;
 	};
 };
+/* get value of last item in the stack (fatal if called on empty stack) */
+bool PreprocessorIfStack_getLastValue(struct PreprocessorIfStack*item);
+
 struct PreprocessorDefine{
 	Token name;
 	array tokens;
@@ -87,16 +111,22 @@ struct Preprocessor{
 	/* eventual output*/
 	array tokens_out;
 
-	/* stack of preprocessor directives, e.g. for nested ifs */
-	struct PreprocessorStack stack;
+	/* stack of struct PreprocessorIfStack (for [nested] if statements) */
+	array stack;
+
+	/* based on if directives, quickly indicate if non-conditional statements should be processed (include non-directive tokens) */
+	bool doSkip;
 };
+/* initialize fields, must be called before any other function is called */
 void Preprocessor_init(struct Preprocessor*preprocessor);
 
+/* evaluate expression and return its value (see also docs for struct PreprocessorExpression) */
 int Preprocessor_evalExpression(struct Preprocessor *preprocessor,struct PreprocessorExpression*expr);
 
 /* process an include statement */
 void Preprocessor_processInclude(struct Preprocessor*preprocessor);
 /* process a define statements */
 void Preprocessor_processDefine(struct Preprocessor*preprocessor);
+
 /* run preprocessor on a stream of tokens */
 void Preprocessor_consume(struct Preprocessor *preprocessor, struct TokenIter *token_iter);
