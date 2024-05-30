@@ -5,11 +5,17 @@ struct Preprocessor;
 struct PreprocessorExpression;
 
 enum PreprocessorExpressionTag{
+	PREPROCESSOR_EXPRESSION_TAG_UNKNOWN=0,
+
 	PREPROCESSOR_EXPRESSION_TAG_DEFINED,
 
 	PREPROCESSOR_EXPRESSION_TAG_NOT,
 	PREPROCESSOR_EXPRESSION_TAG_AND,
 	PREPROCESSOR_EXPRESSION_TAG_OR,
+
+	PREPROCESSOR_EXPRESSION_TAG_GREATER_THAN,
+	PREPROCESSOR_EXPRESSION_TAG_LESSER_THAN,
+
 	PREPROCESSOR_EXPRESSION_TAG_LITERAL,
 
 	PREPROCESSOR_EXPRESSION_TAG_ELSE,
@@ -33,6 +39,14 @@ struct PreprocessorExpression{
 			struct PreprocessorExpression*lhs;
 			struct PreprocessorExpression*rhs;
 		}or;
+		struct{
+			struct PreprocessorExpression*lhs;
+			struct PreprocessorExpression*rhs;
+		}greater_than;
+		struct{
+			struct PreprocessorExpression*lhs;
+			struct PreprocessorExpression*rhs;
+		}lesser_than;
 		struct{
 			int _reservedAndUnused;
 		}else_;
@@ -68,6 +82,8 @@ struct PreprocessorIfStack{
 };
 struct PreprocessorIfStackItem{
 	enum{
+		PREPROCESSOR_STACK_ITEM_TYPE_UNKNOWN=0,
+
 		PREPROCESSOR_STACK_ITEM_TYPE_IF,
 		PREPROCESSOR_STACK_ITEM_TYPE_ELSE_IF,
 		PREPROCESSOR_STACK_ITEM_TYPE_ELSE,

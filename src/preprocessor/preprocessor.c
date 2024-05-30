@@ -45,6 +45,12 @@ int Preprocessor_evalExpression(struct Preprocessor *preprocessor,struct Preproc
 		case PREPROCESSOR_EXPRESSION_TAG_ELSE:
 			expr->value=1;
 			return expr->value;
+		case PREPROCESSOR_EXPRESSION_TAG_GREATER_THAN:
+			expr->value=Preprocessor_evalExpression(preprocessor,expr->greater_than.lhs) > Preprocessor_evalExpression(preprocessor,expr->greater_than.rhs);
+			return expr->value;
+		case PREPROCESSOR_EXPRESSION_TAG_LESSER_THAN:
+			expr->value=Preprocessor_evalExpression(preprocessor,expr->lesser_than.lhs) < Preprocessor_evalExpression(preprocessor,expr->lesser_than.rhs);
+			return expr->value;
 		case PREPROCESSOR_EXPRESSION_TAG_LITERAL:
 			return expr->value;
 		default:
@@ -238,23 +244,228 @@ void Preprocessor_processError(struct Preprocessor*preprocessor){
 	fatal("");
 }
 
-void PreprocessorExpression_parse(
+/* returns number of tokens consumed */
+int PreprocessorExpression_parse(
+	struct Preprocessor*preprocessor,
 	array if_expr_tokens,
 	struct PreprocessorExpression *out,
 	int precedence
 ){
-	for(int nextTokenIndex=0;nextTokenIndex<if_expr_tokens.len;nextTokenIndex++){
+	// init out
+	*out=(struct PreprocessorExpression){};
+	/* track number of currently open paranthesis */
+	int openParanthesis=0;
+
+	int nextTokenIndex=0;
+	for(;nextTokenIndex<if_expr_tokens.len;){
 		Token* nextToken=array_get(&if_expr_tokens,nextTokenIndex);
+
 		switch(nextToken->tag){
 			case TOKEN_TAG_LITERAL_INTEGER:
+				if(out->tag!=0)fatal("unexpected token %s",Token_print(nextToken));
+				nextTokenIndex++;
+
 				out->tag=PREPROCESSOR_EXPRESSION_TAG_LITERAL;
 				out->value=atoi(nextToken->p);
+				break;
+			case TOKEN_TAG_SYMBOL:
+				{
+					if(Token_equalString(nextToken,"defined")){
+						if(out->tag!=0)fatal("unexpected token %s",Token_print(nextToken));
+						nextTokenIndex++;
+
+						// read next token
+						if(nextTokenIndex>=if_expr_tokens.len) fatal("expected symbol after defined keyword");
+						Token* nextToken=array_get(&if_expr_tokens,nextTokenIndex);
+
+						if(nextToken->tag!=TOKEN_TAG_SYMBOL) fatal("expected symbol after defined keyword");
+						out->tag=PREPROCESSOR_EXPRESSION_TAG_DEFINED;
+						out->defined.name=calloc(nextToken->len+1,1);
+						sprintf(out->defined.name,"%.*s",nextToken->len,nextToken->p);
+
+						nextTokenIndex++;
+
+						break;
+					}else{
+						// if this symbol is defined, replace it with the defined value
+						// otherwise, replace it with 0 (per spec)
+						if(out->tag!=0)fatal("unexpected token %s",Token_print(nextToken));
+						nextTokenIndex++;
+
+						// check if symbol is defined
+						int defined=0;
+						for(int i=0;i<preprocessor->defines.len;i+=2){
+							Token* define_token=array_get(&preprocessor->defines,i);
+							if(Token_equalToken(define_token,nextToken)){
+								defined=1;
+								// assume new token is a literal
+								out->tag=PREPROCESSOR_EXPRESSION_TAG_LITERAL;
+								// get value from define_token->p, which is a string of len define_token->len
+								char* value=calloc(define_token->len+1,1);
+								sprintf(value,"%.*s",define_token->len,define_token->p);
+								out->value=atoi(value);
+								free(value);
+								break;
+							}
+						}
+						if(!defined){
+							out->tag=PREPROCESSOR_EXPRESSION_TAG_LITERAL;
+							out->value=0;
+						}
+						break;
+					}
+				}
+				break;
+			case TOKEN_TAG_KEYWORD:
+				{
+					if(Token_equalString(nextToken,"(")){
+						if(out->tag!=0)fatal("unexpected token %s",Token_print(nextToken));
+						nextTokenIndex++;
+
+						openParanthesis++;
+
+						// parse new expression
+						struct PreprocessorExpression sub_expr={};
+						nextTokenIndex+=PreprocessorExpression_parse(
+							preprocessor,
+							(array){
+								.data=((Token*)if_expr_tokens.data)+nextTokenIndex,
+								.len=if_expr_tokens.len-nextTokenIndex,
+								.elem_size=if_expr_tokens.elem_size,
+								// omit cap
+							},
+							&sub_expr,
+							0
+						);
+						*out=sub_expr;
+						break;
+					}else if(Token_equalString(nextToken,")")){
+						if(out->tag==0)fatal("unexpected token %s",Token_print(nextToken));
+
+						// if there are no open paranthesis, we may be inside a subexpression, hence return without consuming the token
+						if(openParanthesis==0) goto PREPROCESSOR_EXPRESSION_PARSE_RET_SUCCESS;
+
+						nextTokenIndex++;
+						openParanthesis--;
+
+						break;
+					}else if(Token_equalString(nextToken,"||")){
+						if(out->tag==0)fatal("unexpected token %s",Token_print(nextToken));
+						nextTokenIndex++;
+
+						// parse new expression
+						struct PreprocessorExpression sub_expr={};
+						nextTokenIndex+=PreprocessorExpression_parse(
+							preprocessor,
+							(array){
+								.data=((Token*)if_expr_tokens.data)+nextTokenIndex,
+								.len=if_expr_tokens.len-nextTokenIndex,
+								.elem_size=if_expr_tokens.elem_size,
+								// omit cap
+							},
+							&sub_expr,
+							0
+						);
+
+						*out=(struct PreprocessorExpression){
+							.tag=PREPROCESSOR_EXPRESSION_TAG_OR,
+							.or={
+								.lhs=allocAndCopy(sizeof(struct PreprocessorExpression),out),
+								.rhs=allocAndCopy(sizeof(struct PreprocessorExpression),&sub_expr)
+							}
+						};
+						break;
+					}else if(Token_equalString(nextToken,"&&")){
+						if(out->tag==0)fatal("unexpected token %s",Token_print(nextToken));
+						nextTokenIndex++;
+
+						// parse new expression
+						struct PreprocessorExpression sub_expr={};
+						nextTokenIndex+=PreprocessorExpression_parse(
+							preprocessor,
+							(array){
+								.data=((Token*)if_expr_tokens.data)+nextTokenIndex,
+								.len=if_expr_tokens.len-nextTokenIndex,
+								.elem_size=if_expr_tokens.elem_size,
+								// omit cap
+							},
+							&sub_expr,
+							0
+						);
+
+						*out=(struct PreprocessorExpression){
+							.tag=PREPROCESSOR_EXPRESSION_TAG_AND,
+							.and={
+								.lhs=allocAndCopy(sizeof(struct PreprocessorExpression),out),
+								.rhs=allocAndCopy(sizeof(struct PreprocessorExpression),&sub_expr)
+							}
+						};
+						break;
+					}else if(Token_equalString(nextToken,">")){
+						if(out->tag==0)fatal("unexpected token %s",Token_print(nextToken));
+						nextTokenIndex++;
+
+						// parse new expression
+						struct PreprocessorExpression sub_expr={};
+						nextTokenIndex+=PreprocessorExpression_parse(
+							preprocessor,
+							(array){
+								.data=((Token*)if_expr_tokens.data)+nextTokenIndex,
+								.len=if_expr_tokens.len-nextTokenIndex,
+								.elem_size=if_expr_tokens.elem_size,
+								// omit cap
+							},
+							&sub_expr,
+							0
+						);
+
+						*out=(struct PreprocessorExpression){
+							.tag=PREPROCESSOR_EXPRESSION_TAG_GREATER_THAN,
+							.greater_than={
+								.lhs=allocAndCopy(sizeof(struct PreprocessorExpression),out),
+								.rhs=allocAndCopy(sizeof(struct PreprocessorExpression),&sub_expr)
+							}
+						};
+						break;
+					}else if(Token_equalString(nextToken,"<")){
+						if(out->tag==0)fatal("unexpected token %s",Token_print(nextToken));
+						nextTokenIndex++;
+
+						// parse new expression
+						struct PreprocessorExpression sub_expr={};
+						nextTokenIndex+=PreprocessorExpression_parse(
+							preprocessor,
+							(array){
+								.data=((Token*)if_expr_tokens.data)+nextTokenIndex,
+								.len=if_expr_tokens.len-nextTokenIndex,
+								.elem_size=if_expr_tokens.elem_size,
+								// omit cap
+							},
+							&sub_expr,
+							0
+						);
+
+						*out=(struct PreprocessorExpression){
+							.tag=PREPROCESSOR_EXPRESSION_TAG_LESSER_THAN,
+							.lesser_than={
+								.lhs=allocAndCopy(sizeof(struct PreprocessorExpression),out),
+								.rhs=allocAndCopy(sizeof(struct PreprocessorExpression),&sub_expr)
+							}
+						};
+						break;
+					}else{
+						fatal("unexpected keyword %s",Token_print(nextToken));
+					}
+				}
 				break;
 			default:
 				fatal("unimplemented token: %s",Token_print(nextToken));
 		}
 	}
-	return;
+	if(openParanthesis>0)fatal("%d unmatched paranthesis",openParanthesis);
+
+PREPROCESSOR_EXPRESSION_PARSE_RET_SUCCESS:
+	return nextTokenIndex;
 }
 bool PreprocessorIfStack_getLastValue(struct PreprocessorIfStack*item){
 	if(item->items.len==0) fatal("stack is empty");
@@ -295,7 +506,7 @@ struct PreprocessorExpression* Preprocessor_parseExpression(struct Preprocessor*
 	}
 	// parse expression from tokens
 	struct PreprocessorExpression if_expr={};
-	PreprocessorExpression_parse(if_expr_tokens,&if_expr,0);
+	PreprocessorExpression_parse(preprocessor,if_expr_tokens,&if_expr,0);
 	Preprocessor_evalExpression(preprocessor,&if_expr);
 
 	return allocAndCopy(sizeof(struct PreprocessorExpression),&if_expr);
@@ -345,7 +556,6 @@ void Preprocessor_consume(struct Preprocessor *preprocessor, struct TokenIter *t
 				array_append(&new_if_stack.items,&item);
 
 				preprocessor->doSkip=new_if_stack.inherited_doSkip || new_if_stack.anyPathEvaluatedToTrue || !if_expr->value;
-				println("after intial if, doSkip=%d",preprocessor->doSkip);
 				new_if_stack.anyPathEvaluatedToTrue|=if_expr->value;
 
 				array_append(&preprocessor->stack,&new_if_stack);

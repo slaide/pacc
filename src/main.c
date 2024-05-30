@@ -169,7 +169,7 @@ int main(int argc, const char**argv){
 
 	for(int i=0;i<tokenizer.num_tokens;i++){
 		Token token=tokenizer.tokens[i];
-		println("token %d: %s",i,Token_print(&token));
+		//println("token %d: %s",i,Token_print(&token));
 	}
 
 	print("tokens from file %s:\n",input_filename);
