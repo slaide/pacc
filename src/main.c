@@ -139,6 +139,12 @@ int main(int argc, const char**argv){
 	char*input_filename=nullptr;
 	bool run_preprocessor=false;
 
+	array defines={};
+	array_init(&defines,sizeof(const char*));
+
+	array include_paths={};
+	array_init(&include_paths,sizeof(const char*));
+
 	for(int i=1;i<argc;i++){
 		if(
 			!run_preprocessor
@@ -148,6 +154,22 @@ int main(int argc, const char**argv){
 			)
 		){
 			run_preprocessor=true;
+			continue;
+		}
+
+		if(strncmp(argv[i],"-D",2)==0){
+			char*define=calloc(1,strlen(argv[i])-2+1);
+			strncpy(define,argv[i]+2,strlen(argv[i])-2);
+			array_append(&defines,&define);
+			println("cli define: %s",define);
+			continue;
+		}
+
+		if(strncmp(argv[i],"-I",2)==0){
+			char*include_path=calloc(1,strlen(argv[i])-2+1);
+			strncpy(include_path,argv[i]+2,strlen(argv[i])-2);
+			array_append(&include_paths,&include_path);
+			println("cli include path: %s",include_path);
 			continue;
 		}
 
@@ -176,23 +198,30 @@ int main(int argc, const char**argv){
 	highlight_token_kind=TOKEN_TAG_SYMBOL;
 	Tokenizer_print(&tokenizer);
 
-	char*include_paths[]={
-		".",
-		"./include",
-		"/usr/lib/llvm-16/lib/clang/16/include",
-		"/usr/local/include",
-		"/usr/include/aarch64-linux-gnu",
-		"/usr/include",
-	};
-
 	// run preprocessor
 	if(run_preprocessor){
-	struct Preprocessor preprocessor={};
+		struct Preprocessor preprocessor={};
 		Preprocessor_init(&preprocessor);
 
-	for(int i=0;i<sizeof(include_paths)/sizeof(char*);i++){
-		array_append(&preprocessor.include_paths,&include_paths[i]);
-	}
+		for(int i=0;i<defines.len;i++){
+			const char*def_str=*(char**)array_get(&defines,i);
+			struct PreprocessorDefine define={
+				.name=(Token){
+					.p=def_str,
+					.len=strlen(def_str),
+					.tag=TOKEN_TAG_SYMBOL,
+				},
+				.tokens={},
+				.args=nullptr,
+			};
+			array_init(&define.tokens,sizeof(Token));
+			println("define: %.*s",define.name.len,define.name.p);
+			array_append(&preprocessor.defines,&define);
+		}
+
+		for(int i=0;i<include_paths.len;i++){
+			array_append(&preprocessor.include_paths,array_get(&include_paths,i));
+		}
 
 		struct TokenIter token_iter;
 		TokenIter_init(&token_iter,&tokenizer,(struct TokenIterConfig){.skip_comments=true,});
@@ -200,30 +229,59 @@ int main(int argc, const char**argv){
 		Preprocessor_consume(&preprocessor,&token_iter);
 
 		print("tokens from file %s, after running preprocessor:\n",input_filename);
-	highlight_token_kind=TOKEN_TAG_SYMBOL;
-	Tokenizer preprocessed_tokenizer={
-		.token_src=tokenizer.token_src,
-		.tokens=preprocessor.tokens_out.data,
-		.num_tokens=preprocessor.tokens_out.len,
-	};
-	Tokenizer_print(&preprocessed_tokenizer);
+
+		highlight_token_kind=TOKEN_TAG_SYMBOL;
+		Tokenizer preprocessed_tokenizer={
+			.token_src=tokenizer.token_src,
+			.tokens=preprocessor.tokens_out.data,
+			.num_tokens=preprocessor.tokens_out.len,
+		};
+		Tokenizer_print(&preprocessed_tokenizer);
+
+		// print all defines as well:
+		if(1){
+			for(int i=0;i<preprocessor.defines.len;i++){
+				struct PreprocessorDefine*define=array_get(&preprocessor.defines,i);
+				if(define->name.len==0)
+					continue;
+				printf("define (from %s ) %.*s ",define->name.filename,define->name.len,define->name.p);
+				if(define->args!=nullptr){
+					printf("( ");
+					for(int j=0;j<define->args->len;j++){
+						struct PreprocessorDefineFunctionlikeArg*arg=array_get(define->args,j);
+						if(arg->tag==PREPROCESSOR_DEFINE_FUNCTIONLIKE_ARG_TYPE_NAME){
+							printf("%.*s ,",arg->name.name.len,arg->name.name.p);
+						}else if(arg->tag==PREPROCESSOR_DEFINE_FUNCTIONLIKE_ARG_TYPE_VARARGS){
+							printf(" varargs");
+						}
+					}
+					printf(" )");
+				}
+				printf(": ");
+				for(int j=0;j<define->tokens.len;j++){
+					Token*token=array_get(&define->tokens,j);
+					printf("%.*s ",token->len,token->p);
+				}
+				printf("\n");
+			}
+		}
 	}
 
 	if(0){
 		// parse tokens into AST
-	struct TokenIter token_iter;
-	TokenIter_init(&token_iter,&tokenizer,(struct TokenIterConfig){.skip_comments=true,});
+		struct TokenIter token_iter;
+		TokenIter_init(&token_iter,&tokenizer,(struct TokenIterConfig){.skip_comments=true,});
 
-	Module module={};
-	Module_parse(&module,&token_iter);
+		Module module={};
+		Module_parse(&module,&token_iter);
 
-	Module_print(&module);
+		Module_print(&module);
 
-	if(!TokenIter_isEmpty(&token_iter)){
-		Token next_token;
-		TokenIter_lastToken(&token_iter,&next_token);
-		fatal("unexpected tokens at end of file at line %d col %d: %.*s",next_token.line,next_token.col,next_token.len,next_token.p);
-	}
+		if(!TokenIter_isEmpty(&token_iter)){
+			Token next_token;
+			TokenIter_lastToken(&token_iter,&next_token);
+			fatal("unexpected tokens at end of file at line %d col %d: %.*s",next_token.line,next_token.col,next_token.len,next_token.p);
+		}
 	}
 
 	
