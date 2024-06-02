@@ -13,8 +13,17 @@ enum PreprocessorExpressionTag{
 	PREPROCESSOR_EXPRESSION_TAG_AND,
 	PREPROCESSOR_EXPRESSION_TAG_OR,
 
+	PREPROCESSOR_EXPRESSION_TAG_SUBTRACT,
+	PREPROCESSOR_EXPRESSION_TAG_ADD,
+
+	PREPROCESSOR_EXPRESSION_TAG_EQUAL,
+	PREPROCESSOR_EXPRESSION_TAG_UNEQUAL,
 	PREPROCESSOR_EXPRESSION_TAG_GREATER_THAN,
+	PREPROCESSOR_EXPRESSION_TAG_GREATER_THAN_OR_EQUAL,
 	PREPROCESSOR_EXPRESSION_TAG_LESSER_THAN,
+	PREPROCESSOR_EXPRESSION_TAG_LESSER_THAN_OR_EQUAL,
+
+	PREPROCESSOR_EXPRESSION_TAG_TERNARY,
 
 	PREPROCESSOR_EXPRESSION_TAG_LITERAL,
 
@@ -24,6 +33,7 @@ struct PreprocessorExpression{
 	enum PreprocessorExpressionTag tag;
 	/* (cached) value that this expression evaluates to */
 	int value;
+	bool value_is_known;
 	union{
 		struct{
 			char* name;
@@ -42,17 +52,46 @@ struct PreprocessorExpression{
 		struct{
 			struct PreprocessorExpression*lhs;
 			struct PreprocessorExpression*rhs;
+		}subtract;
+		struct{
+			struct PreprocessorExpression*lhs;
+			struct PreprocessorExpression*rhs;
+		}add;
+		struct{
+			struct PreprocessorExpression*lhs;
+			struct PreprocessorExpression*rhs;
+		}equal;
+		struct{
+			struct PreprocessorExpression*lhs;
+			struct PreprocessorExpression*rhs;
+		}unequal;
+		struct{
+			struct PreprocessorExpression*lhs;
+			struct PreprocessorExpression*rhs;
 		}greater_than;
 		struct{
 			struct PreprocessorExpression*lhs;
 			struct PreprocessorExpression*rhs;
+		}greater_than_or_equal;
+		struct{
+			struct PreprocessorExpression*lhs;
+			struct PreprocessorExpression*rhs;
 		}lesser_than;
+		struct{
+			struct PreprocessorExpression*lhs;
+			struct PreprocessorExpression*rhs;
+		}lesser_than_or_equal;
 		struct{
 			int _reservedAndUnused;
 		}else_;
 		struct{
 			Token token;
 		}literal;
+		struct{
+			struct PreprocessorExpression*condition;
+			struct PreprocessorExpression*then;
+			struct PreprocessorExpression*else_;
+		}ternary;
 	};
 };
 /*
@@ -105,12 +144,35 @@ struct PreprocessorIfStackItem{
 		}else_;
 	};
 };
+enum PreprocessorDefineFunctionlikeArgType{
+	PREPROCESSOR_DEFINE_FUNCTIONLIKE_ARG_TYPE_UNKNOWN=0,
+
+	PREPROCESSOR_DEFINE_FUNCTIONLIKE_ARG_TYPE_NAME,
+	PREPROCESSOR_DEFINE_FUNCTIONLIKE_ARG_TYPE_VARARGS,
+};
+struct PreprocessorDefineFunctionlikeArg{
+	enum PreprocessorDefineFunctionlikeArgType tag;
+	union{
+		struct{
+			Token name;
+		}name;
+		struct{
+			Token token;
+		}varargs;
+	};
+};
 /* get value of last item in the stack (fatal if called on empty stack) */
 bool PreprocessorIfStack_getLastValue(struct PreprocessorIfStack*item);
-
+/* preprocessor define directive definition */
 struct PreprocessorDefine{
 	Token name;
 	array tokens;
+	/*
+	if this define is function-like, contains a list of all arguments (may be of length zero)
+
+	item type is struct PreprocessorDefineFunctionlikeArg
+	*/
+	array*args;
 };
 struct Preprocessor{
 	/* include paths, type char* */
@@ -118,6 +180,8 @@ struct Preprocessor{
 	
 	/* definitions, element type is struct PreprocessorDefine */
 	array defines;
+	/* temporary definitions, e.g. used for function-like macro expansion */
+	array temp_defines;
 	/* protect against double include with pragma once, the results of which are saved here, i.e. element is char* */
 	array already_included_files;
 
