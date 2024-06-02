@@ -26,6 +26,19 @@ bool Token_equalString(Token* a,char* b){
 
 	return strncmp(a->p,b,a->len)==0;
 }
+bool isValidNumFromChar(char c,int base){
+	switch(base){
+		case 2:
+			return c>='0' && c<='1';
+		case 8:
+			return c>='0' && c<='7';
+		case 10:
+			return c>='0' && c<='9';
+		case 16:
+			return (c>='0' && c<='9') || (c>='a' && c<='f') || (c>='A' && c<='F');
+	}
+	fatal("invalid base %d",base);
+}
 
 // map to keywords
 void Token_map(Token*token){
@@ -394,18 +407,28 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 			int offset=token.num_info.hasLeadingSign;
 
 			// check for prefix (0x for hex, 0b for binary, 0 for octal)
+			int base=10;
 			if(numericToken->p[offset]=='0'){
+				base=8;
 				offset+=1;
 				if(numericToken->p[offset]=='x' || numericToken->p[offset]=='X'){
+					base=16;
 					offset+=1;
 				}else if(numericToken->p[offset]=='b' || numericToken->p[offset]=='B'){
+					base=2;
 					offset+=1;
 				}
 				token.num_info.hasPrefix=true;
 			}
 
+			// check if number is just a zero
+			if(base==8 && offset==(1+token.num_info.hasLeadingSign)){
+				token.num_info.hasPrefix=false;
+				offset--;
+			}
+
 			// check for leading digit[s]
-			while(numericToken->p[offset]>='0' && numericToken->p[offset]<='9'){
+			while(isValidNumFromChar(numericToken->p[offset],base)){
 				token.num_info.hasLeadingDigits=true;
 				offset++;
 			}
@@ -418,17 +441,22 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 			}
 			offset+=token.num_info.hasDecimalPoint;
 
+			// a number must have either of these two properties, otherwise it is not a valid number
+			if(!(token.num_info.hasLeadingDigits || token.num_info.hasDecimalPoint)){
+				break;
+			}
+
 			// check for trailing digits (can only be present if there is a decimal point)
 			if(token.num_info.hasDecimalPoint){
 				// check for trailing digits
-				while(numericToken->p[offset]>='0' && numericToken->p[offset]<='9'){
+				while(isValidNumFromChar(numericToken->p[offset],base)){
 					token.num_info.hasTrailingDigits=true;
 					offset++;
 				}
 			}
 
 			// check for exponent
-			if((numericToken->p[offset]=='e' || numericToken->p[offset]=='E')){
+			if(base!=16 && (numericToken->p[offset]=='e' || numericToken->p[offset]=='E')){
 				token.num_info.hasExponent=true;
 				offset++;
 				if(offset==numericToken->len)
@@ -444,7 +472,7 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 			}
 
 			// check for exponent digits (exponent must have at least one digit, and be base10 integer)
-			while(numericToken->p[offset]>='0' && numericToken->p[offset]<='9'){
+			while(isValidNumFromChar(numericToken->p[offset],base)){
 				token.num_info.hasExponentDigits=true;
 				offset++;
 			}
@@ -562,7 +590,7 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 				continue;
 			}
 			
-			fatal("undefined token %.*s in line %d col %d",tokenizer->tokens[i].len,tokenizer->tokens[i].p,tokenizer->tokens[i].line,tokenizer->tokens[i].col);
+			fatal("undefined token %s",Token_print(&tokenizer->tokens[i]));
 		}
 		return tokenizer->num_tokens;
 }
@@ -651,7 +679,7 @@ char*Token_print(Token*token){
 	const char*t_loc=Token_loc(token);
 	int ret_len=strlen(t_loc)+token->len+strlen(token_tag_name)+16/*16 should be enough for the '(tag x)' stuff*/;
 	char*ret=calloc(1,ret_len);
-	sprintf(ret,"%s: >%.*s< (tag %s)",t_loc,token->len,token->p,token_tag_name);
+	snprintf(ret,ret_len-1,"%s: >%.*s< (tag %s)",t_loc,token->len,token->p,token_tag_name);
 	
 	return ret;
 }
@@ -660,8 +688,9 @@ char*Token_loc(Token*token){
 	if(token->filename!=nullptr){
 		filename=token->filename;
 	}
-	char*ret=calloc(1,strlen(filename)+token->len+3);
-	snprintf(ret,256,"%s:%d:%d",filename,token->line,token->col);
+	const int strl=strlen(filename)+token->len+32;//some extra space for line and col
+	char*ret=calloc(1,strl);
+	snprintf(ret,strl-1,"%s:%d:%d",filename,token->line,token->col);
 	return ret;
 }
 void Tokenizer_print(Tokenizer*tokenizer){
