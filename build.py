@@ -1,170 +1,107 @@
-#!/usr/bin/env python3
+import concurrent.futures as fut
+import typing as tp
+import sys
 
-import argparse, platform
-from dataclasses import dataclass
-from pathlib import Path
-from enum import Enum
+from libbuild import *
 
-from libbuild import Command, InputVariant, OutputVariant
+argparser=ArgParser("build the pacc compiler")
+argparser.add(name="--help",short="-h",help="Prints this help message",key="show_help",arg_store_op=ArgStore.presence_flag)
+argparser.add(name="--num-threads",short="-j",help="number of compilation threads",key="num_threads",arg_store_op=ArgStore.store_value,default=get_num_cores(),type=int)
+argparser.add(name="--cc",help="compiler to use",key="cc",default="clang-17",arg_store_op=ArgStore.store_value)
+argparser.add(name="--show-cmds",help="show commands that are run",key="show_cmds",default=False,arg_store_op=ArgStore.presence_flag)
+args=argparser.parse(sys.argv[1:])
 
-arg_parser=argparse.ArgumentParser(
-    prog="build.py",
-    description="build script for the pacc c23 compiler",
-)
+if args.get("show_help",False):
+    argparser.print_help()
+    exit(0)
 
-build_targets=dict(
-    all=None,
-)
-default_build_target="all"
+file_paths=[
+    "src/util/array.c",
+    "src/util/util.c",
 
-arg_parser.add_argument(
-    "target",
-    choices=build_targets.keys(),
-    default=default_build_target,
-    help="target to build",
-    nargs="?")
+    "src/parser/parser.c",
+    "src/parser/statement.c",
+    "src/parser/symbol.c",
+    "src/parser/type.c",
+    "src/parser/value.c",
+    "src/parser/module.c",
 
-class BuildPlatform(str,Enum):
-    LINUX_AMD64="linux_amd64"
-    LINUX_ARM64="linux_arm64"
-    MACOS_AMD64="macos_amd64"
-    MACOS_ARM64="macos_arm64"
-    WINDOWS_AMD64="windows_amd64"
-    WINDOWS_ARM64="windows_arm64"
+    "src/preprocessor/preprocessor.c",
 
-match (platform.system(),platform.machine().lower()):
-    case ("Linux","x86_64") | ("Linux","amd64"):
-        default_build_platform=BuildPlatform.LINUX_AMD64
-    case ("Linux","aarch64") | ("Linux","arm64"):
-        default_build_platform=BuildPlatform.LINUX_ARM64
-    case ("Darwin","x86_64") | ("Darwin","amd64"):
-        default_build_platform=BuildPlatform.MACOS_AMD64
-    case ("Darwin","arm64"):
-        default_build_platform=BuildPlatform.MACOS_ARM64
-    case ("Windows","amd64") | ("Windows","x86_64"):
-        default_build_platform=BuildPlatform.WINDOWS_AMD64
-    case ("Windows","arm64"):
-        default_build_platform=BuildPlatform.WINDOWS_ARM64
-    case (sys_os,sys_arch):
-        raise RuntimeError(f"unsupported platform: os = {sys_os} , arch = {sys_arch}")
+    "src/file.c",
+    "src/tokenizer.c",
+    "src/main.c",
+]
 
-arg_parser.add_argument(
-    "-p","--platform",
-    choices=[b.value for b in BuildPlatform],
-    default=default_build_platform.value,
-    help="os/arch platform to build for",
-    nargs="?")
+CC_CMD=f"{args.get('cc')} -std=c2x -I./include"
 
-arg_parser.add_argument(
-    "--cc",
-    default="clang",
-    help="c compiler path"
-)
+class CompileFile(Command):
+    " compile a single file "
+    def __init__(self,file:str,out:str):
+        self.file=file
+        self.out=out
+        super().__init__(cmd=f"{CC_CMD} -c -o {self.out} {self.file}",in_files=[file],out_files=[out])
 
-@dataclass
-class BuildModeFlags:
-    compiler_flags:str
-    linker_flags:str
-    
-build_mode_flags=dict(
-    debug = BuildModeFlags("-O0 -g",""),
-    debugRelease = BuildModeFlags("-O2 -g",""),
-    release = BuildModeFlags("-O3","-s -flto=full"),
-)
-default_build_mode="debug"
+    # override return argument for compatibility with Link
+    def depends(self,*other_args:"Command")->"CompileFile":
+        super().depends(*other_args)
+        return self
 
-arg_parser.add_argument(
-    "-m","--mode",
-    choices=build_mode_flags.keys(),
-    default=default_build_mode,
-    help="build mode (i.e. optimization level)",
-    nargs="?")
+class Link(Command):
+    " link a set of object files "
+    def __init__(self,out:str,objs:tp.List[CompileFile]=[]):
+        obj_out_files=[d.out for d in objs]
+        super().__init__(cmd="",in_files=obj_out_files,out_files=[out])
 
-cli_args,unknown_args=arg_parser.parse_known_args()
+        self.out=out
+        for d in objs:
+            self.depends(d)
 
-assert len(unknown_args)==0, f"unknown arguments passed: {unknown_args}"
+        deps_str=" ".join(obj_out_files)
+        self.cmd=f"{CC_CMD} -o {self.out} {deps_str}"
 
-flags=build_mode_flags[cli_args.mode]
+class Mkdir(Command):
+    " create a directory "
+    def __init__(self,dirname:str):
+        super().__init__(cmd=f"mkdir -p {dirname}",phony=True)
 
-compiler:str=cli_args.cc
-warn_flags=" ".join([f" -W{wf} " for wf in [
-    "all",
-    "pedantic",
-    "extra",
-    "no-sign-compare",
-    "no-incompatible-pointer-types-discards-qualifiers",
-]])
-clang_comp_str=f"""
-    {compiler}
-    {warn_flags}
-    -std=gnu2x
-    -Iinclude
-    -DDEVELOP
-    {flags.compiler_flags}
-    -c
-    -o {{output}}
-    {{input}}
-""".replace("\n"," ")
+class CompileShader(Command):
+    " compile a glsl shader to spirv "
+    def __init__(self,shader:str,output:str):
+        super().__init__(cmd=f"glslangValidator -V {shader} -o {output}",in_files=[shader],out_files=[output])
 
-clang_link_str = f"""
-    {compiler}
-    {flags.linker_flags}
-    -o {{output}}
-    {{input}}
-""".replace("\n"," ")
+class Nop(Command):
+    " does nothing by itself, can be used to create a dependency chain "
 
-mkdir=Command(cmd="mkdir {output}",output=OutputVariant.Manual,overwrite=False,phony=True)
+    def __init__(self):
+        super().__init__(cmd="",phony=True)
 
-cc=Command(cmd=clang_comp_str,
-    input=InputVariant.Manual,
-    dependencies=[mkdir(output="build")],
-    output=OutputVariant.Generated,
-    output_generator=lambda i:f"build/{Path(i).stem}.o" if i else "build/ERROR_output_generator.o"
-)
-link=Command(cmd=clang_link_str,output=OutputVariant.Manual)
+class Remove(Command):
+    " remove a file "
+    def __init__(self,file:str):
+        super().__init__(cmd=f"rm -rf {file}",phony=True)
 
-# get build dependencies from #inclues : clang -Iwhatever -std=c2x -M -MT main.exe -MF main.d main.c
+Command.pool=fut.ThreadPoolExecutor(max_workers=args.get("num_threads"))
+Command.show_cmds=args.get("show_cmds") # type: ignore
+Command.cmd_cache=CacheManager()
 
 if __name__=="__main__":
-    try:
-        obj_files=[cc(f) for f in [
-            "src/util/array.c",
-            "src/util/util.c",
+    build_dir=Mkdir("build")
+    bin_dir=Mkdir("bin")
 
-            "src/parser/parser.c",
-            "src/parser/statement.c",
-            "src/parser/symbol.c",
-            "src/parser/type.c",
-            "src/parser/value.c",
-            "src/parser/module.c",
+    cmd_all=Nop()
 
-            "src/preprocessor/preprocessor.c",
+    final_bin=Link("bin/main",objs=[CompileFile(f,f"build/{f.replace('/','__').replace('.c','.o')}").depends(build_dir) for f in file_paths])
+    final_bin.depends(bin_dir)
 
-            "src/file.c",
-            "src/tokenizer.c",
-            "src/main.c",
-        ]]
+    cmd_all.depends(final_bin)
+    cmd_all.depends(CompileShader("src/shader.frag","frag.spv"))
 
-        app=link(depends=obj_files+[mkdir(output="bin")], output="bin/main")
-        app.get()
-    except Exception as e:
-        print(e)
-        print("building failed. aborting.")
+    Command.build(cmd_all)
 
-"""
+    clean_target=Nop().depends(Remove("build")).depends(Remove("bin"))
 
-.PHONY: all
-all: bin/main
+Command.pool.shutdown()
 
-.PHONY: run
-run: all
-	./bin/main src/main.c
-
-.PHONY: clean
-clean:
-	rm -f bin/main build/*
-
-.PHONY: test
-test: all
-	@bash test/run.sh
-"""
+if Command.cmd_cache is not None:
+    Command.cmd_cache.flush()

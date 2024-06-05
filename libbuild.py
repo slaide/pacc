@@ -1,240 +1,390 @@
-if __name__=="__main__":
-    print("error - this file is not meant to be run directly")
-    exit(1)
-
-import subprocess as sp, typing as tp
-import shutil, shlex, json
-from pathlib import Path
+import concurrent.futures as fut
+import subprocess
+import typing as tp
+import time
+import os
+import platform
+import shlex
 from enum import Enum
+from pathlib import Path
+import json
+import dataclasses
+from dataclasses import dataclass
 
-"""
-build_database_filepath=Path(".build")
-if build_database_filepath.exists():
-    build_database=json.parse(build_database_filepath.open("r"))
-else:
-    build_database={}
-"""
+from tqdm import tqdm
+
+
+
+def get_num_cores()->int:
+    """
+    get number of logical cores on the host system, minus 1
+
+    returns at least 1
+    """
+
+    max_num_cores=1
+    try:
+        native_num_cores=os.cpu_count()
+        if native_num_cores is not None:
+            max_num_cores=native_num_cores
+        elif platform.system()=="Darwin":
+            max_num_cores=int(os.popen("sysctl -n hw.logicalcpu").read())
+        elif platform.system()=="Linux":
+            max_num_cores=int(os.popen("nproc").read())
+    except:
+        pass
+
+    if max_num_cores==1:
+        return 1
     
-def remove(path:tp.Union[str,Path]):
-    """ remove file/symlink/directory from filesystem"""
-    path=Path(path)
-    
-    if path.is_file() or path.is_symlink():
-        # print(f"removing file {str(path)}")
-        path.unlink() # remove file/symlink
-    elif path.is_dir():
-        # print(f"removing directory {str(path)}")
-        shutil.rmtree(path) # remove dir and all contains
-    else:
-        raise ValueError(f"file {str(path)} is not a file/symlink or dir")
+    # leave 1 core for the system
+    return max_num_cores - 1
 
-class InputVariant(str,Enum):
-    None_="none",
-    Manual="manual",
+class ArgPos(str,Enum):
+    Anywhere="Anywhere"
+    Current="Current"
 
-class OutputVariant(str,Enum):
-    None_="none",
-    Manual="manual",
-    Generated="generated",
+class ArgStore(str,Enum):
+    presence_flag="presence_flag"
+    store_value="store_value"
 
-class CommandInstance:
+class Arg:
     def __init__(self,
-        cmd:"Command",
-        
-        input:tp.Optional[str]=None,
-        output:tp.Optional[str]=None,
-        
-        depends:tp.List["CommandInstance"]=[]
+        name:str,
+        short:tp.Optional[str]=None,
+        help:str="",
+        default:tp.Optional[tp.Any]=None,
+        key:tp.Optional[str]=None,
+        type:tp.Type=str,
+        arg_pos:ArgPos=ArgPos.Anywhere,
+        arg_store_op:ArgStore=ArgStore.store_value
     ):
-        self.cmd=cmd
-        
-        self.input=input
-        self.output=output
-        
-        self.depends=depends
-        
-        self.executed=False
+        self.name=name
+        self.short=short
+        self.help=help
+        self.default=default
+        self.key=key or self.name.lstrip("-").replace("-","_")
+        self.type=type
+        self.arg_pos=arg_pos
+        self.arg_store_op=arg_store_op
+        if self.arg_store_op==ArgStore.presence_flag and self.default is None:
+            self.default=False
 
-    def get(self):
-        """
-            execute this command (and run all its dependencies before the command itself is run)
-        """
+class ArgParser:
+    def __init__(self,program_info:str):
+        self.program_info=program_info
+        self.args:tp.List[Arg]=[]
+
+    def print_help(self):
+        print(self.program_info)
+        print()
+        print("Arguments:")
+
+        arg_strs=[]
+        for arg in self.args:
+            short_arg_name=(arg.short+' ') if arg.short else ''
+            arg_strs.append((f"  {short_arg_name}{arg.name}",f" : {arg.help}"))
+        longest_prefix=max(len(a[0]) for a in arg_strs)
+        for arg_pre,arg_post in arg_strs:
+            print(arg_pre,arg_post,sep=" "*(longest_prefix-len(arg_pre)))
+
+    def add(self,*args,**kwargs):
+        self.args.append(Arg(*args,**kwargs))
+
+    def parse(self,args:tp.List[str])->dict:
+        valid_args=dict()
+        for arg in self.args:
+            if arg.name in valid_args:
+                raise ValueError(f"Duplicate argument name {arg.name}")
+            valid_args[arg.name]=arg
+            if arg.short is not None:
+                if arg.short in valid_args:
+                    raise ValueError(f"Duplicate argument short {arg.short}")
+                valid_args[arg.short]=arg
+
+        arg_values={
+            a.key:a.default for a in self.args
+        }
+
+        for a in args:
+            arg_split=a.split("=",2)
+            arg_name=arg_split[0]
+            arg_value=arg_split[1] if len(arg_split)==2 else None
+            if arg_name in valid_args:
+                arg=valid_args[arg_name]
+                match arg.arg_store_op:
+                    case ArgStore.presence_flag:
+                        arg_values[arg.key]=True
+                    case ArgStore.store_value:
+                        arg_values[arg.key]=arg.type(arg_value) if arg_value is not None else arg.default
+            else:
+                raise ValueError(f"Unknown arg {a}")
+
+        return arg_values
+
+
+@dataclass
+class SingleFileCache:
+    file:str
+    time:float
+
+    def to_dict(self)->dict:
+        return dataclasses.asdict(self)
+
+@dataclass
+class CommandCache:
+    cmd:str
+    time:float
+    in_files:tp.List[SingleFileCache]
+    out_files:tp.List[SingleFileCache]
+
+    def to_dict(self)->dict:
+        return dataclasses.asdict(self)
+    
+    @staticmethod
+    def from_dict(d:dict)->"CommandCache":
+        return CommandCache(
+            cmd=d["cmd"],
+            time=d["time"],
+            in_files=[SingleFileCache(**i) for i in d["in_files"]],
+            out_files=[SingleFileCache(**i) for i in d["out_files"]]
+        )
+
+class CacheManager:
+    def __init__(self):
+        self.cache_file_name=".build_cache.json"
+        self.build_cache:tp.Dict[str,CommandCache]=dict()
+
+        self.new_keys=set()
+
+        if Path(self.cache_file_name).exists():
+            with open(self.cache_file_name,"r") as f:
+                self.build_cache={k:CommandCache.from_dict(v) for k,v in json.load(f).items()}
+
+    def flush(self):
+        " write results to disk "
+
+        # remove keys that are no longer in use
+        for k in list(self.build_cache.keys()):
+            if not k in self.new_keys:
+                del self.build_cache[k]
+
+        with open(self.cache_file_name,"w") as f:
+            json.dump({k:v.to_dict() for k,v in self.build_cache.items()},f)
+
+    def cmd_finished(self,c:"Command"):
+        """ can be called on finished commands to cache them """
+        current_time=time.time()
+
+        new_cmd_cache=CommandCache(
+            cmd=c.cmd,
+            time=current_time,
+            in_files=[SingleFileCache(file=f,time=Path(f).stat().st_mtime) for f in c.in_files],
+            out_files=[SingleFileCache(file=f,time=Path(f).stat().st_mtime) for f in c.out_files]
+        )
+
+        self.new_keys.add(c.cmd)
+        self.build_cache[c.cmd]=new_cmd_cache
+
+    def cmd_is_cached(self,c:"Command")->bool:
+        """ check if a command is cached """
+
+        # get time of last command run
+        if not c.cmd in self.build_cache:
+            return False
         
-        if not self.executed:
-            self.cmd.run(input=self.input,output=self.output,depends=self.depends)
-            self.executed=True
+        cmd_cache=self.build_cache[c.cmd]
+
+        old_in_files={f.file:f for f in cmd_cache.in_files}
+        old_out_files={f.file:f for f in cmd_cache.out_files}
+        new_in_files=c.in_files
+        
+        for f in new_in_files:
+            # not in cache
+            if not f in old_in_files:
+                return False
+
+            # file does not exist (e.g. requires building from dependent command)
+            if not Path(f).exists():
+                return False
             
-        return self.cmd.get_output(self.output)
+            f_cache=old_in_files[f]
 
+            # if file has changed since last build
+            if Path(f).stat().st_mtime>f_cache.time:
+                return False
+
+        for f in c.out_files:
+            # not in cache
+            if not f in old_out_files:
+                return False
+
+            # file does not exist (needs to be recreated)
+            if not Path(f).exists():
+                return False
+
+            f_cache=old_out_files[f]
+
+            # if file has changed since last build
+            if Path(f).stat().st_mtime>f_cache.time:
+                return False
+
+        return True
 
 class Command:
-    def __init__(self,
-        cmd:str,
-        input:InputVariant=InputVariant.None_,
-        output:OutputVariant=OutputVariant.None_,
-        output_generator:tp.Optional[tp.Callable[[tp.Optional[str]],str]]=None,
-        dependencies:tp.List[CommandInstance]=[],
-        overwrite:bool=True,
-        phony:bool=False,
-    ):
-        """
-            create command template
+    pool:tp.Optional[fut.ThreadPoolExecutor]=None
+    show_cmds:bool=False
+    cmd_cache:tp.Optional[CacheManager]=None
 
-            arguments:
-                cmd:
-                    command template, in shell syntax. will have inputs substituted for {input} and output for {output}
-                    
-                input:
-                    define input variant this command accepts. can be
-                        - none : no input argument
-                        - manual : input argument needs to be provided in instantiation
-                output:
-                    define output variant for this command. can be
-                        - none : no output
-                        - manual : specify output manually in instatiation
-                        - generated : generate output through function applied to input
+    @staticmethod
+    def build(cmd:"Command"):
+        all_cmds:tp.Set["Command"]=set()
+        def get_all_cmds(c:"Command"):
+            all_cmds.add(c)
+            for f in c.depends_on:
+                get_all_cmds(f)
+        
+        get_all_cmds(cmd)
 
-                output_generator:
-                    function that takes input as argument and generates output
+        if len(all_cmds)==0:
+            return
+        
+        tqdm_iter=tqdm(total=len(all_cmds),desc="Building",unit="cmd")
 
-                dependencies:
-                    command dependencies, which all instances of this command depend on
+        while 1:
+            # go through all cmds, if one is ready, process it
+            # if none are ready, sleep for a bit
+            # if all are done, break
+            finished=True
+            remove_set=set()
+            for c in all_cmds:
+                if c.ready and not c.done:
+                    if not c.running:
+                        was_cached=False
+                        if not c.phony:
+                            if Command.cmd_cache is not None:
+                                was_cached=Command.cmd_cache.cmd_is_cached(c)
 
-                overwrite:
-                    overwrite output file if it already exists (does NOT check file contents)
+                        if not was_cached:
+                            c.process()
+                        else:
+                            c.was_cached=True
 
-                phony:
-                    pretend this command does not have an output
+                    finished=False
                 
-        """
-        
-        self.cmd_str=cmd
-        
-        self.input=input
-        self.output=output
-        
-        self.output_generator=output_generator
+                if c.done:
+                    if not c.was_cached:
+                        if Command.show_cmds:
+                            print(f"{c.cmd}")
 
-        if self.output=="generated" and self.output_generator is None:
-            raise ValueError("output is configured to be generated, yet no output generator was provided")
+                        res=c.res
+                        assert res is not None
+                        (res_e,res_str)=res
+                        if res_e!=0:
+                            print(f"Error in command {c.cmd}")
+                            print(res_str)
+                            exit(1)
 
-        self.overwrite=overwrite
+                    if not c.phony:
+                        if Command.cmd_cache is not None:
+                            Command.cmd_cache.cmd_finished(c)
+
+                    tqdm_iter.update(1)
+
+                    remove_set.add(c)
+
+                if not c.ready:
+                    finished=False
+            
+            for r in remove_set:
+                all_cmds.remove(r)
+
+            if finished:
+                break
+
+            time.sleep(1e-3)
+
+
+    def __init__(self,cmd:str,in_files:tp.List[str]=[],out_files:tp.List[str]=[],phony:bool=False):
+        self.in_files=in_files
+        self.out_files=out_files
+
+        self.cmd=cmd
+        """ command to run """
         self.phony=phony
-        
-        self.dependencies=dependencies
+        """ if true, the command is not cached """
+        self.depends_on:tp.Set[Command]=set()
+        self.followed_by:tp.Set[Command]=set()
 
-    def __call__(self,
-        input:tp.Optional[str]=None,
-        output:tp.Optional[str]=None,
-        depends:tp.List[CommandInstance]=[]
-    )->CommandInstance:
-        """
-            instantiate command
+        self._future:tp.Optional[fut.Future[tp.Tuple[int,str]]]=None
+        self.was_cached=False
 
-            arguments:
-                input:
-                    provide input value
+    def depends(self,*other_cmds:"Command")->"Command":
+        for other_cmd in other_cmds:
+            other_cmd.followed_by.add(self)
+            self.depends_on.add(other_cmd)
+        return self
 
-                output:
-                    output path
-                    is used as override when command has an output path generator
-
-                depends:
-                    list of command instances required for this command instance to be able to run
-
-            returns:
-                handle to command instance which can be requested for later execution
-        """
-
-        # verify input
-        
-        if input is None and self.input!="none":
-            raise RuntimeError("input missing")
-
-        # verify output
-
-        if self.output==OutputVariant.None_:
-            if output is not None:
-                raise ValueError("command has no output, yet an output was provided")
-
-        elif self.output==OutputVariant.Manual:
-            if output is None:
-                raise ValueError("command requires output argument, yet no output was provided")
-
-        elif self.output==OutputVariant.Generated:
-            assert self.output_generator is not None, "output generator is not defined"
-            output=self.output_generator(input)
-
-        return CommandInstance(self,input=input,output=output,depends=depends)
-
-    def run(self,
-        input:tp.Optional[str]=None,
-        output:tp.Optional[str]=None,
-        depends:tp.List[CommandInstance]=[]
-    )->tp.Optional[str]:
-        """
-            execute an instance of this command
-
-            arguments:
-                input:
-                    input value of a command instance
-
-                output:
-                    output value of a command instance
-
-                depends:
-                    dependencies of the command instance
-
-            returns:
-                path of output, None if the command has no output
-        """
-        
-        inputs=[cmd.get() for cmd in self.dependencies+depends]
-        inputs=[str(i) for i in inputs if i is not None]
-        
-        exec_str_fmt_args={}
-        
-        if self.input!="none":
-            assert input is not None, repr(input)
-            input=str(input)
-            inputs.append(input)
-        
-        input_str=" ".join(inputs)
-
-        if self.output!="none":
-            output=str(output)
-            exec_str_fmt_args["output"]=output
-
-        exec_str_fmt_args["input"]=input_str
-        exec_str=self.cmd_str.format(**exec_str_fmt_args)
-        
-        if output and Path(output).exists():
-            if self.overwrite:
-                remove(output)
-            else:
-                return self.get_output(output)
-
-        # print info about running command
-        exec_args=shlex.split(exec_str)
-        print(shlex.join(exec_args))
-
-        # actually run the command
-        sp_res=sp.run(exec_args,capture_output=True)
-
-        # if command fails, print what the command printed to stdout and stderr
-        if sp_res.returncode!=0:
-            print("exec failed with",sp_res.returncode)
-            if len(sp_res.stdout)>0:
-                print("---- stdout begin ----","\n",sp_res.stdout.decode("utf-8"),"---- stdout end --",sep="")
-            if len(sp_res.stderr)>0:
-                print("---- stderr begin ----","\n",sp_res.stderr.decode("utf-8"),"---- stderr end -- ",sep="")
-            print(f"exec failed with {sp_res.returncode}")
-            exit(sp_res.returncode)
-           
-        return self.get_output(output)
-
-    def get_output(self,output:tp.Optional[str])->tp.Optional[str]:
-        if self.phony:
+    @property
+    def res(self)->tp.Optional[tp.Tuple[int,str]]:
+        if not self.done:
             return None
+        
+        if self.was_cached:
+            return (0,"")
 
-        return output
+        assert self._future is not None
+        return self._future.result()
+    
+    @property
+    def done(self)->bool:
+        " Returns true if the command has been executed "
+
+        if self.was_cached:
+            return True
+        
+        if self._future is None:
+            return False
+
+        return self._future.done()
+
+    @property
+    def ready(self)->bool:
+        " Returns true if all dependencies are done "
+        ret=all(f.done for f in self.depends_on)
+        return ret
+    
+    @property
+    def running(self)->bool:
+        " returns True if the task is running (rather, submitted to the pool for execution, may not be actively executing currently) "
+        if self._future is None:
+            return False
+
+        return True
+
+    def process(self):
+        " submit the command to the pool for processing "
+        assert self.ready
+
+        def run()->tp.Tuple[int,str]:
+            split_args=shlex.split(self.cmd)
+            if len(split_args)==0:
+                return (0,"")
+            
+            p=subprocess.run(split_args,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+
+            ret=""
+            if p.returncode!=0:
+                ret+=f"running $ {self.cmd}\n"
+                ret+=p.stdout.decode()
+                ret+=p.stderr.decode()
+
+            return (p.returncode,ret)
+            
+        if Command.pool is None:
+            # write custom future which is executed here, just preserving the interface to the outside
+            s_fut=fut.Future()
+            s_fut.set_result(run())
+            self._future=s_fut
+        else:
+            self._future=Command.pool.submit(run)
