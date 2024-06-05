@@ -40,7 +40,7 @@ file_paths=[
     "src/main.c",
 ]
 
-CC_CMD=f"{args.get('cc')} -std=c2x -I./include"
+CC_CMD=f"{args.get('cc')} -g -O0 -std=c2x -I./include -lvulkan -lxcb -lxcb-util -lxcb-randr"
 
 class CompileFile(Command):
     " compile a single file "
