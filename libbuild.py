@@ -327,7 +327,7 @@ class Command:
             time.sleep(1e-3)
 
 
-    def __init__(self,cmd:str,in_files:tp.List[str]=[],out_files:tp.List[str]=[],phony:bool=False):
+    def __init__(self,cmd:str,in_files:tp.List[str]=[],out_files:tp.List[str]=[],phony:bool=False,shell:bool=False):
         self.in_files=in_files
         self.out_files=out_files
 
@@ -335,6 +335,9 @@ class Command:
         """ command to run """
         self.phony=phony
         """ if true, the command is not cached """
+
+        self.shell=shell
+
         self.depends_on:tp.Set[Command]=set()
         self.followed_by:tp.Set[Command]=set()
 
@@ -393,7 +396,10 @@ class Command:
             if len(split_args)==0:
                 return (0,"")
             
-            p=subprocess.run(split_args,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            if self.shell:
+                p=subprocess.run(self.cmd,stdout=subprocess.PIPE,stderr=subprocess.PIPE,shell=True)
+            else:
+                p=subprocess.run(split_args,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
 
             ret=""
             if p.returncode!=0:

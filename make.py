@@ -8,7 +8,7 @@ from libbuild import *
 
 argparser=ArgParser("build the pacc compiler")
 
-argparser.add(name="--target",short="-t",help="target to build",key="build_target",arg_store_op=ArgStore.store_value,default="all",options=["all","clean"])
+argparser.add(name="--target",short="-t",help="target to build",key="build_target",arg_store_op=ArgStore.store_value,default="all",options=["all","clean","test_target"])
 argparser.add(name="--num-threads",short="-j",help="number of compilation threads",key="num_threads",arg_store_op=ArgStore.store_value,default=get_num_cores(),type=int)
 argparser.add(name="--cc",help="compiler to use",key="cc",default="clang-17",arg_store_op=ArgStore.store_value)
 argparser.add(name="--print-cmds",help="print commands that are run",key="show_cmds",default=False,arg_store_op=ArgStore.presence_flag)
@@ -88,6 +88,11 @@ class Remove(Command):
     def __init__(self,file:str):
         super().__init__(cmd=f"rm -rf {file}",phony=True)
 
+class AnyCmd(Command):
+    " run any command "
+    def __init__(self,cmd:str):
+        super().__init__(cmd=cmd,phony=True,shell=True)
+
 Command.pool=fut.ThreadPoolExecutor(max_workers=args.get("num_threads"))
 Command.show_cmds=args.get("show_cmds") # type: ignore
 Command.cmd_cache=CacheManager(rebuild=args.get("force_rebuild")) # type: ignore
@@ -116,6 +121,10 @@ if __name__=="__main__":
             Command.build(cmd_all)
         case "clean":
             Command.build(clean_target) 
+        # for debugging purposes, build only the test target (which may be changed to any other file)
+        # this mostly serves to store the command somewhere
+        case "test_target":
+            Command.build(AnyCmd("bin/main -I/home/pdev/musl/include test/test014.c -p").depends(final_bin))
 
     print("done")
 
