@@ -40,10 +40,6 @@ def get_num_cores()->int:
     # leave 1 core for the system
     return max_num_cores - 1
 
-class ArgPos(str,Enum):
-    Anywhere="Anywhere"
-    Current="Current"
-
 class ArgStore(str,Enum):
     presence_flag="presence_flag"
     store_value="store_value"
@@ -56,8 +52,8 @@ class Arg:
         default:tp.Optional[tp.Any]=None,
         key:tp.Optional[str]=None,
         type:tp.Type=str,
-        arg_pos:ArgPos=ArgPos.Anywhere,
-        arg_store_op:ArgStore=ArgStore.store_value
+        arg_store_op:ArgStore=ArgStore.store_value,
+        options:tp.Optional[tp.Union[tp.List[tp.Any],tp.Dict[str,tp.Any]]]=None
     ):
         self.name=name
         self.short=short
@@ -65,10 +61,10 @@ class Arg:
         self.default=default
         self.key=key or self.name.lstrip("-").replace("-","_")
         self.type=type
-        self.arg_pos=arg_pos
         self.arg_store_op=arg_store_op
         if self.arg_store_op==ArgStore.presence_flag and self.default is None:
             self.default=False
+        self.options=options
 
 class ArgParser:
     def __init__(self,program_info:str):
@@ -84,9 +80,22 @@ class ArgParser:
         for arg in self.args:
             short_arg_name=(arg.short+' ') if arg.short else ''
             arg_strs.append((f"  {short_arg_name}{arg.name}",f" : {arg.help}"))
+
         longest_prefix=max(len(a[0]) for a in arg_strs)
-        for arg_pre,arg_post in arg_strs:
+        for (arg_pre,arg_post),arg in zip(arg_strs,self.args):
             print(arg_pre,arg_post,sep=" "*(longest_prefix-len(arg_pre)))
+            match arg.arg_store_op:
+                case ArgStore.presence_flag:
+                    pass
+                case ArgStore.store_value:
+                    print(" "*(longest_prefix+4),f"- default: {arg.default}",sep=None)
+
+            if arg.options is not None:
+                if isinstance(arg.options,dict):
+                    options=[f"{k}={v}" for k,v in arg.options.items()]
+                else:
+                    options=[str(o) for o in arg.options]
+                print(" "*(longest_prefix+4),f"- options: {', '.join(options)}",sep=None)
 
     def add(self,*args,**kwargs):
         self.args.append(Arg(*args,**kwargs))
@@ -110,13 +119,23 @@ class ArgParser:
             arg_split=a.split("=",2)
             arg_name=arg_split[0]
             arg_value=arg_split[1] if len(arg_split)==2 else None
-            if arg_name in valid_args:
-                arg=valid_args[arg_name]
+
+            arg=valid_args.get(arg_name,None)
+            if arg is not None:
+                value=None
                 match arg.arg_store_op:
                     case ArgStore.presence_flag:
-                        arg_values[arg.key]=True
+                        value=True
                     case ArgStore.store_value:
-                        arg_values[arg.key]=arg.type(arg_value) if arg_value is not None else arg.default
+                        value=arg.type(arg_value) if arg_value is not None else arg.default
+                    case _other:
+                        raise ValueError(f"Unknown arg store operation {_other}")
+
+                if arg.options is not None:
+                    if value not in arg.options:
+                        raise ValueError(f"Invalid value '{value}' for argument {arg_name}, valid values are {arg.options}")
+
+                arg_values[arg.key]=value
             else:
                 raise ValueError(f"Unknown arg {a}")
 
@@ -151,13 +170,16 @@ class CommandCache:
         )
 
 class CacheManager:
-    def __init__(self):
+    def __init__(self,rebuild:bool=False):
+        self.rebuild=rebuild
         self.cache_file_name=".build_cache.json"
         self.build_cache:tp.Dict[str,CommandCache]=dict()
 
         self.new_keys=set()
 
-        if Path(self.cache_file_name).exists():
+        if self.rebuild:
+            self.build_cache=dict() 
+        elif Path(self.cache_file_name).exists():
             with open(self.cache_file_name,"r") as f:
                 self.build_cache={k:CommandCache.from_dict(v) for k,v in json.load(f).items()}
 
