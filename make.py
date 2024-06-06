@@ -124,6 +124,6 @@ if __name__=="__main__":
         # for debugging purposes, build only the test target (which may be changed to any other file)
         # this mostly serves to store the command somewhere
         case "test_target":
-            Command.build(AnyCmd("bin/main -I/home/pdev/musl/include test/test014.c -p").depends(final_bin))
+            Command.build(AnyCmd("bin/main -I$(pwd)/musl/include test/test014.c -p ; exit 1").depends(final_bin))
 
     print("done")
