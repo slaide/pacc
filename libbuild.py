@@ -170,9 +170,9 @@ class CommandCache:
         )
 
 class CacheManager:
-    def __init__(self,rebuild:bool=False):
+    def __init__(self,rebuild:bool=False,cache_file_name:str=".build_cache.json"):
         self.rebuild=rebuild
-        self.cache_file_name=".build_cache.json"
+        self.cache_file_name=cache_file_name
         self.build_cache:tp.Dict[str,CommandCache]=dict()
 
         self.new_keys=set()
@@ -273,6 +273,7 @@ class Command:
         
         tqdm_iter=tqdm(total=len(all_cmds),desc="Building",unit="cmd")
 
+        error_info=None
         while 1:
             # go through all cmds, if one is ready, process it
             # if none are ready, sleep for a bit
@@ -303,9 +304,8 @@ class Command:
                         assert res is not None
                         (res_e,res_str)=res
                         if res_e!=0:
-                            print(f"Error in command {c.cmd}")
-                            print(res_str)
-                            exit(1)
+                            error_info=(c,res_str)
+                            break
 
                     if not c.phony:
                         if Command.cmd_cache is not None:
@@ -325,6 +325,18 @@ class Command:
                 break
 
             time.sleep(1e-3)
+
+        if Command.pool is not None:
+            Command.pool.shutdown()
+            
+        if Command.cmd_cache is not None:
+            Command.cmd_cache.flush()
+
+        if error_info is not None:
+            (c,res_str)=error_info
+            print(f"Error in command {c.cmd}")
+            print(res_str)
+            exit(1)
 
 
     def __init__(self,cmd:str,in_files:tp.List[str]=[],out_files:tp.List[str]=[],phony:bool=False,shell:bool=False):

@@ -127,8 +127,3 @@ if __name__=="__main__":
             Command.build(AnyCmd("bin/main -I/home/pdev/musl/include test/test014.c -p").depends(final_bin))
 
     print("done")
-
-Command.pool.shutdown()
-
-if Command.cmd_cache is not None:
-    Command.cmd_cache.flush()
