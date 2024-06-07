@@ -93,7 +93,9 @@ class AnyCmd(Command):
     def __init__(self,cmd:str):
         super().__init__(cmd=cmd,phony=True,shell=True)
 
-Command.pool=fut.ThreadPoolExecutor(max_workers=args.get("num_threads"))
+num_worker_threads=args.get("num_threads")
+if num_worker_threads is not None and num_worker_threads>1:
+    Command.pool=fut.ThreadPoolExecutor(max_workers=num_worker_threads)
 Command.show_cmds=args.get("show_cmds") # type: ignore
 Command.cmd_cache=CacheManager(rebuild=args.get("force_rebuild")) # type: ignore
 
