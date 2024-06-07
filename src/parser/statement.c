@@ -177,7 +177,7 @@ char*Statement_asString(Statement*statement,int depth){
 	return ret;
 }
 
-enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token_iter_in){
+enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct TokenIter*token_iter_in){
 	struct TokenIter token_iter_copy=*token_iter_in;
 	struct TokenIter*token_iter=&token_iter_copy;
 
@@ -205,7 +205,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 			}
 
 			Statement bodyStatement={};
-			enum STATEMENT_PARSE_RESULT res=Statement_parse(&bodyStatement,token_iter);
+			enum STATEMENT_PARSE_RESULT res=Statement_parse(module,&bodyStatement,token_iter);
 			TokenIter_lastToken(token_iter,&token);
 			switch(res){
 				case STATEMENT_PARSE_RESULT_INVALID:
@@ -240,9 +240,12 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 	if(Token_equalString(&token,"typedef")){
 		TokenIter_nextToken(token_iter,&token);
 
-		Symbol typedefSymbol={};
-		enum SYMBOL_PARSE_RESULT res=Symbol_parse(&typedefSymbol,token_iter);
+		int numTypedefSymbols=0;
+		Symbol *typedefSymbols=nullptr;
+		enum SYMBOL_PARSE_RESULT res=Symbol_parse(module,&numTypedefSymbols,&typedefSymbols,token_iter);
 		TokenIter_lastToken(token_iter,&token);
+		if(numTypedefSymbols!=1)fatal("expected exactly one symbol in typedef statement but got %d at %s",numTypedefSymbols,Token_print(&token));
+		Symbol typedefSymbol=*typedefSymbols;
 
 		// it is legal to typedef nothing, or a type without a name, i.e. typedef; typedef int; typedef int a; are all legal
 		
@@ -252,7 +255,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 		}
 
 		if(!Token_equalString(&token,";")){
-			fatal("expected semicolon after typedef: line %d col %d but got instead %.*s",token.line,token.col,token.len,token.p);
+			fatal("expected semicolon after typedef but got instead %s",Token_print(&token));
 		}
 		TokenIter_nextToken(token_iter,&token);
 
@@ -262,7 +265,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 		TokenIter_nextToken(token_iter,&token);
 
 		Value caseValue={};
-		enum VALUE_PARSE_RESULT res=Value_parse(&caseValue,token_iter);
+		enum VALUE_PARSE_RESULT res=Value_parse(module,&caseValue,token_iter);
 		if(res==VALUE_INVALID){
 			fatal("invalid case value at line %d col %d %.*s",token.line,token.col,token.len,token.p);
 		}
@@ -291,7 +294,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 		TokenIter_nextToken(token_iter,&token);
 
 		Value condition={};
-		enum VALUE_PARSE_RESULT valres=Value_parse(&condition,token_iter);
+		enum VALUE_PARSE_RESULT valres=Value_parse(module,&condition,token_iter);
 		if(valres==VALUE_INVALID){
 			fatal("invalid condition in if statement at line %d col %d %.*s",token.line,token.col,token.len,token.p);
 		}
@@ -303,7 +306,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 		TokenIter_nextToken(token_iter,&token);
 
 		Statement ifBody={};
-		enum STATEMENT_PARSE_RESULT res=Statement_parse(&ifBody,token_iter);
+		enum STATEMENT_PARSE_RESULT res=Statement_parse(module,&ifBody,token_iter);
 		TokenIter_lastToken(token_iter,&token);
 		if(res==STATEMENT_PARSE_RESULT_INVALID){
 			fatal("invalid statement in if body at line %d col %d %.*s",token.line,token.col,token.len,token.p);
@@ -322,7 +325,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 			TokenIter_nextToken(token_iter,&token);
 
 			Statement elseBody={};
-			res=Statement_parse(&elseBody,token_iter);
+			res=Statement_parse(module,&elseBody,token_iter);
 			TokenIter_lastToken(token_iter,&token);
 
 			if(res==STATEMENT_PARSE_RESULT_PRESENT){
@@ -341,7 +344,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 		TokenIter_nextToken(token_iter,&token);
 
 		Value condition={};
-		enum VALUE_PARSE_RESULT valres=Value_parse(&condition,token_iter);
+		enum VALUE_PARSE_RESULT valres=Value_parse(module,&condition,token_iter);
 		if(valres==VALUE_INVALID){
 			fatal("invalid condition in while statement at line %d col %d %.*s",token.line,token.col,token.len,token.p);
 		}
@@ -363,7 +366,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 		bool endBody=false;
 		do{
 			Statement whileBodyStatement={};
-			enum STATEMENT_PARSE_RESULT res=Statement_parse(&whileBodyStatement,token_iter);
+			enum STATEMENT_PARSE_RESULT res=Statement_parse(module,&whileBodyStatement,token_iter);
 			TokenIter_lastToken(token_iter,&token);
 			switch(res){
 				case STATEMENT_PARSE_RESULT_INVALID:
@@ -401,7 +404,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 
 		do{
 			Statement doWhileBodyStatement={};
-			enum STATEMENT_PARSE_RESULT res=Statement_parse(&doWhileBodyStatement,token_iter);
+			enum STATEMENT_PARSE_RESULT res=Statement_parse(module,&doWhileBodyStatement,token_iter);
 			TokenIter_lastToken(token_iter,&token);
 			switch(res){
 				case STATEMENT_PARSE_RESULT_INVALID:
@@ -427,7 +430,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 		TokenIter_nextToken(token_iter,&token);
 
 		Value condition={};
-		enum VALUE_PARSE_RESULT valres=Value_parse(&condition,token_iter);
+		enum VALUE_PARSE_RESULT valres=Value_parse(module,&condition,token_iter);
 		if(valres==VALUE_INVALID){
 			fatal("invalid condition in do while statement at line %d col %d %.*s",token.line,token.col,token.len,token.p);
 		}
@@ -466,7 +469,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 		*out=(Statement){.tag=STATEMENT_KIND_FOR,.forLoop={}};
 
 		Statement init_statement={};
-		enum STATEMENT_PARSE_RESULT res=Statement_parse(&init_statement,token_iter);
+		enum STATEMENT_PARSE_RESULT res=Statement_parse(module,&init_statement,token_iter);
 		if(res==STATEMENT_PARSE_RESULT_INVALID){
 			out->forLoop.init=nullptr;
 		}else{
@@ -475,7 +478,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 		}
 
 		Value condition={};
-		enum VALUE_PARSE_RESULT valres=Value_parse(&condition,token_iter);
+		enum VALUE_PARSE_RESULT valres=Value_parse(module,&condition,token_iter);
 		if(valres==VALUE_INVALID){
 			out->forLoop.condition=nullptr;
 		}else{
@@ -490,7 +493,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 		TokenIter_nextToken(token_iter,&token);
 
 		Value post_expression={};
-		valres=Value_parse(&post_expression,token_iter);
+		valres=Value_parse(module,&post_expression,token_iter);
 		if(valres==VALUE_INVALID){
 			out->forLoop.step=nullptr;
 		}else{
@@ -519,7 +522,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 					break;
 				}
 				Statement forBodyStatement={};
-				enum STATEMENT_PARSE_RESULT res=Statement_parse(&forBodyStatement,token_iter);
+				enum STATEMENT_PARSE_RESULT res=Statement_parse(module,&forBodyStatement,token_iter);
 				TokenIter_lastToken(token_iter,&token);
 				switch(res){
 					case STATEMENT_PARSE_RESULT_INVALID:
@@ -534,7 +537,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 		// otherwise parse single statement
 		}else{
 			Statement forBodyStatement={};
-			enum STATEMENT_PARSE_RESULT res=Statement_parse(&forBodyStatement,token_iter);
+			enum STATEMENT_PARSE_RESULT res=Statement_parse(module,&forBodyStatement,token_iter);
 			TokenIter_lastToken(token_iter,&token);
 			switch(res){
 				case STATEMENT_PARSE_RESULT_INVALID:
@@ -557,7 +560,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 		Value returnValue={};
 		*out=(Statement){.tag=STATEMENT_KIND_RETURN};
 
-		enum VALUE_PARSE_RESULT res=Value_parse(&returnValue,token_iter);
+		enum VALUE_PARSE_RESULT res=Value_parse(module,&returnValue,token_iter);
 		TokenIter_lastToken(token_iter,&token);
 		switch(res){
 			case VALUE_INVALID:
@@ -595,7 +598,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 	if(Token_equalString(&token,"goto")){
 		TokenIter_nextToken(token_iter,&token);
 		Value label={};
-		enum VALUE_PARSE_RESULT res=Value_parse(&label,token_iter);
+		enum VALUE_PARSE_RESULT res=Value_parse(module,&label,token_iter);
 		if(res==VALUE_INVALID){
 			fatal("invalid label in goto statement at line %d col %d %.*s",token.line,token.col,token.len,token.p);
 		}
@@ -624,7 +627,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 		TokenIter_nextToken(token_iter,&token);
 
 		Value switchValue={};
-		enum VALUE_PARSE_RESULT res=Value_parse(&switchValue,token_iter);
+		enum VALUE_PARSE_RESULT res=Value_parse(module,&switchValue,token_iter);
 		if(res==VALUE_INVALID){
 			fatal("invalid switch value at line %d col %d %.*s",token.line,token.col,token.len,token.p);
 		}
@@ -651,7 +654,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 			}
 
 			Statement bodyStatement={};
-			enum STATEMENT_PARSE_RESULT res=Statement_parse(&bodyStatement,token_iter);
+			enum STATEMENT_PARSE_RESULT res=Statement_parse(module,&bodyStatement,token_iter);
 			TokenIter_lastToken(token_iter,&token);
 			switch(res){
 				case STATEMENT_PARSE_RESULT_INVALID:
@@ -672,13 +675,17 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 
 	// parse symbol definition
 	do{
-		Symbol symbol={};
+		int numSymbols=0;
+		Symbol *symbols=nullptr;
 		struct TokenIter preSymbolParseIter=*token_iter;
-		enum SYMBOL_PARSE_RESULT symbolParseResult=Symbol_parse(&symbol,token_iter);
+		enum SYMBOL_PARSE_RESULT symbolParseResult=Symbol_parse(module,&numSymbols,&symbols,token_iter);
 		if(symbolParseResult==SYMBOL_INVALID){
 			break;
 		}
 		TokenIter_lastToken(token_iter,&token);
+
+		if(numSymbols!=1)fatal("expected exactly one symbol in statement but got %d at %s",numSymbols,Token_print(&token));
+		Symbol symbol=*symbols;
 
 		Statement statement={};
 
@@ -705,7 +712,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 							}
 
 							Statement functionBodyStatement={};
-							enum STATEMENT_PARSE_RESULT res=Statement_parse(&functionBodyStatement,token_iter);
+							enum STATEMENT_PARSE_RESULT res=Statement_parse(module,&functionBodyStatement,token_iter);
 							TokenIter_lastToken(token_iter,&token);
 
 							switch(res){
@@ -727,11 +734,11 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 				break;
 			default:{
 				// check for value [expression]
-				if(symbolParseResult==SYMBOL_WITHOUT_NAME){
+				if(numSymbols==1 && symbol.name==nullptr){
 					Value value={};
 					// discard iterator result from symbol parse attempt
 					struct TokenIter valueParseIter=preSymbolParseIter;
-					enum VALUE_PARSE_RESULT res=Value_parse(&value,&valueParseIter);
+					enum VALUE_PARSE_RESULT res=Value_parse(module,&value,&valueParseIter);
 
 					bool foundValue=false;
 					switch(res){
@@ -760,7 +767,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 
 						// check for termination with semicolon
 						if(!Token_equalString(&token,";")){
-							fatal("expected semicolon but got instead: line %d col %d %.*s",token.line,token.col,token.len,token.p);
+							fatal("expected semicolon but got instead: %s",Token_print(&token));
 						}
 						TokenIter_nextToken(token_iter,&token);
 						
@@ -776,7 +783,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 						// i.e. still valid statement, of kind STATEMENT_KIND_SYMBOL_DEFINITION
 						// next token should be semicolon
 						if(!Token_equalString(&token,";")){
-							fatal("expected semicolon after statement: line %d col %d %.*s",token.line,token.col,token.len,token.p);
+							fatal("expected semicolon but got instead: %s",Token_print(&token));
 						}
 						TokenIter_nextToken(token_iter,&token);
 						*out=(Statement){
@@ -798,7 +805,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 				if(Token_equalString(&token,"=")){
 					TokenIter_nextToken(token_iter,&token);
 					Value value={};
-					enum VALUE_PARSE_RESULT res=Value_parse(&value,token_iter);
+					enum VALUE_PARSE_RESULT res=Value_parse(module,&value,token_iter);
 					TokenIter_lastToken(token_iter,&token);
 					switch(res){
 						case VALUE_INVALID:
@@ -810,7 +817,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 					}
 				}
 				if(!Token_equalString(&token,";")){
-					fatal("expected semicolon after statement: line %d col %d %.*s",token.line,token.col,token.len,token.p);
+					fatal("expected semicolon after statement but got instead: %s",Token_print(&token));
 				}
 				TokenIter_nextToken(token_iter,&token);
 
@@ -820,9 +827,10 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 		}
 	}while(0);
 
+	// parse a value
 	do{
 		Value value;
-		enum VALUE_PARSE_RESULT res=Value_parse(&value,token_iter);
+		enum VALUE_PARSE_RESULT res=Value_parse(module,&value,token_iter);
 		TokenIter_lastToken(token_iter,&token);
 		if(res==VALUE_INVALID){
 			break;
@@ -833,7 +841,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 
 		// check for terminating ;
 		if(!Token_equalString(&token,";")){
-			fatal("expected semicolon after statement: line %d col %d %.*s",token.line,token.col,token.len,token.p);
+			fatal("expected semicolon after statement at %s",Token_print(&token));
 		}
 		TokenIter_nextToken(token_iter,&token);
 
@@ -843,6 +851,24 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token
 	return STATEMENT_PARSE_RESULT_INVALID;
 
 STATEMENT_PARSE_RET_SUCCESS:
+	switch(out->tag){
+		case STATEMENT_TYPEDEF:{
+			// append typedef to module
+			if(out->typedef_.symbol==nullptr)fatal("bug");
+			if(out->typedef_.symbol->type==nullptr)fatal("bug");
+			Type*t_copy=allocAndCopy(sizeof(Type),&(Type){
+				.name=out->typedef_.symbol->name,
+				.kind=TYPE_KIND_REFERENCE,
+				.reference={.ref=out->typedef_.symbol->type}
+			});
+			array_append(&module->types,&t_copy);
+			Token alias_name=*out->typedef_.symbol->name;
+			println("just copied type %s as %.*s",Type_asString(out->typedef_.symbol->type),alias_name.len,alias_name.p);
+			break;
+		}
+		default:;
+	}
+
 	*token_iter_in=*token_iter;
 	return STATEMENT_PARSE_RESULT_PRESENT;
 }

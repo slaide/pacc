@@ -13,6 +13,78 @@ void Preprocessor_init(struct Preprocessor*preprocessor){
 
 	array_init(&preprocessor->include_paths,sizeof(char*));
 	array_init(&preprocessor->defines,sizeof(struct PreprocessorDefine));
+
+	// include some standard defined macros
+	array __FILE__tokens={};
+	array_init(&__FILE__tokens,sizeof(Token));
+	array_append(&__FILE__tokens,&(Token){
+		.tag=TOKEN_TAG_LITERAL_STRING,
+		.p="unknownfile",
+		.len=strlen("unknownfile"),
+	});
+	array_append(&preprocessor->defines,&(struct PreprocessorDefine){
+		.name={ .tag=TOKEN_TAG_SYMBOL, .p="__FILE__", .len=strlen("__FILE__"), },
+		.tokens=__FILE__tokens,
+	});
+
+	array __LINE__tokens={};
+	array_init(&__LINE__tokens,sizeof(Token));
+	array_append(&__LINE__tokens,&(Token){
+		.tag=TOKEN_TAG_LITERAL_INTEGER,
+		.p="1",
+		.len=strlen("1"),
+	});
+	array_append(&preprocessor->defines,&(struct PreprocessorDefine){
+		.name={ .tag=TOKEN_TAG_SYMBOL, .p="__LINE__", .len=strlen("__LINE__"), },
+		.tokens=__LINE__tokens,
+	});
+
+	array __STDC__tokens={};
+	array_init(&__STDC__tokens,sizeof(Token));
+	array_append(&__STDC__tokens,&(Token){
+		.tag=TOKEN_TAG_SYMBOL,
+		.p="1",
+		.len=strlen("1"),
+	});
+	array_append(&preprocessor->defines,&(struct PreprocessorDefine){
+		.name={ .tag=TOKEN_TAG_SYMBOL, .p="__STDC__", .len=strlen("__STDC__"), },
+		.tokens=__STDC__tokens,
+	});
+
+	/* from https://gcc.gnu.org/onlinedocs/cpp/Standard-Predefined-Macros.html
+	C Standard’s version number, a long integer constant of the form yyyymmL where yyyy and mm are the year and month of the Standard version
+
+	199409L signifies the 1989 C standard as amended in 1994
+	199901L signifies the 1999 revision of the C standard
+	201112L signifies the 2011 revision of the C standard
+	201710L signifies the 2017 revision of the C standard
+	202311L is used for the experimental -std=c23 [...] modes <- we are aiming for this one
+	*/
+	array __STDC_VERSION__tokens={};
+	array_init(&__STDC_VERSION__tokens,sizeof(Token));
+	array_append(&__STDC_VERSION__tokens,&(Token){
+		.tag=TOKEN_TAG_SYMBOL,
+		.p="202311L",
+		.len=strlen("202311L"),
+	});
+	array_append(&preprocessor->defines,&(struct PreprocessorDefine){
+		.name={ .tag=TOKEN_TAG_SYMBOL, .p="__STDC_VERSION__", .len=strlen("__STDC_VERSION__"), },
+		.tokens=__STDC_VERSION__tokens,
+	});
+
+	array __STDC_HOSTED__tokens={};
+	array_init(&__STDC_HOSTED__tokens,sizeof(Token));
+	array_append(&__STDC_HOSTED__tokens,&(Token){
+		.tag=TOKEN_TAG_SYMBOL,
+		.p="1",
+		.len=strlen("1"),
+	});
+	array_append(&preprocessor->defines,&(struct PreprocessorDefine){
+		.name={ .tag=TOKEN_TAG_SYMBOL, .p="__STDC_HOSTED__", .len=strlen("__STDC_HOSTED__"), },
+		.tokens=__STDC_HOSTED__tokens,
+	});
+
+
 	array_init(&preprocessor->temp_defines,sizeof(struct PreprocessorDefine));
 	array_init(&preprocessor->already_included_files,sizeof(char*));	
 

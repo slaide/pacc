@@ -26,7 +26,7 @@ bool Type_equal(Type*a,Type*b){
 
 	switch(a->kind){
 		case TYPE_KIND_REFERENCE:
-			return Token_equalToken(&a->reference.name,&b->reference.name);
+			return Type_equal(a->reference.ref,b->reference.ref);
 		case TYPE_KIND_POINTER:
 			return Type_equal(a->pointer.base,b->pointer.base);
 		case TYPE_KIND_ARRAY:
@@ -62,6 +62,10 @@ char* Type_asString(Type* type){
 
 	char*ret=makeString();
 	while(!printing_done){
+		if(type_ref->name!=nullptr){
+			stringAppend(ret,"<alias %.*s> ",type_ref->name->len,type_ref->name->p);
+		}
+
 		if(type_ref->is_thread_local){
 			stringAppend(ret,"thread_local ");
 		}
@@ -72,21 +76,32 @@ char* Type_asString(Type* type){
 			stringAppend(ret,"const ");
 		}
 
+		if(type_ref->is_signed){
+			stringAppend(ret,"signed ");
+		}
+		if(type_ref->is_unsigned){
+			stringAppend(ret,"unsigned ");
+		}
+		switch(type_ref->size_mod){
+			case -2:
+				stringAppend(ret,"short ");
+			case -1:
+				stringAppend(ret,"short ");
+				break;
+			case 2:
+				stringAppend(ret,"long ");
+			case 1:
+				stringAppend(ret,"long ");
+				break;
+			case 0:break;
+			default:fatal("bug %d",type_ref->size_mod);
+		}
+
 		switch(type_ref->kind){
 			case TYPE_KIND_REFERENCE:
-				if(type_ref->reference.is_enum){
-					stringAppend(ret,"ref enum ");
-				}
-				if(type_ref->reference.is_struct){
-					stringAppend(ret,"ref struct ");
-				}
-				if(type_ref->reference.is_union){
-					stringAppend(ret,"ref union ");
-				}
-				stringAppend(ret,"%.*s",type_ref->reference.name.len,type_ref->reference.name.p);
-
-				printing_done=true;
-				break;
+				stringAppend(ret,"ref ");
+				type_ref=type_ref->reference.ref;
+				continue;
 			case TYPE_KIND_POINTER:
 				stringAppend(ret,"pointer to ");
 
@@ -168,11 +183,15 @@ char* Type_asString(Type* type){
 
 				printing_done=true;
 				break;
+			case TYPE_KIND_PRIMITIVE:
+				stringAppend(ret,"primitive %.*s",type_ref->name->len,type_ref->name->p);
+				printing_done=true;
+				break;
 			default:
 				if(type_ref->name==nullptr){
 					fatal("unnamed type of kind %s",TypeKind_asString(type_ref->kind));
 				}else{
-					fatal("type %.*s of kind %s",type_ref->name->len,type_ref->name->p,TypeKind_asString(type_ref->kind));
+					fatal("unimplemented type %.*s of kind %s",type_ref->name->len,type_ref->name->p,TypeKind_asString(type_ref->kind));
 				}
 		}
 	}
@@ -198,6 +217,8 @@ char* TypeKind_asString(enum TYPEKIND kind){
 		return "TYPE_KIND_UNION";
 	case TYPE_KIND_ENUM:
 		return "TYPE_KIND_ENUM";
+	case TYPE_KIND_PRIMITIVE:
+		return "TYPE_KIND_PRIMITIVE";
 	default:
 		fatal("unimplemented %d",kind);
 	}

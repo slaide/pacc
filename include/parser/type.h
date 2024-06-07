@@ -17,7 +17,9 @@ enum TYPEKIND{
 
 	TYPE_KIND_STRUCT,
 	TYPE_KIND_UNION,
-	TYPE_KIND_ENUM,	
+	TYPE_KIND_ENUM,
+
+	TYPE_KIND_PRIMITIVE,
 };
 char* TypeKind_asString(enum TYPEKIND kind);
 
@@ -25,6 +27,10 @@ struct Type{
 	bool is_thread_local;
 	bool is_static;
 	bool is_const;
+	bool is_extern;
+	bool is_unsigned;
+	bool is_signed;
+	short size_mod;
 
 	/// @brief name of the type, if any (e.g. for struct, union, enum, typedef, etc.)
 	Token* name;
@@ -33,10 +39,7 @@ struct Type{
 	union{
 		/// @brief reference some type by name
 		struct{
-			Token name;
-			bool is_struct;
-			bool is_union;
-			bool is_enum;
+			Type*ref;
 		}reference;
 		/// @brief pointing to another type
 		struct{

@@ -2,7 +2,7 @@
 #include<util/util.h>
 #include<tokenizer.h>
 
-enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
+enum VALUE_PARSE_RESULT Value_parse(Module*module,Value*value,struct TokenIter*token_iter_in){
 	struct TokenIter token_iter_=*token_iter_in;
 	struct TokenIter *token_iter=&token_iter_;
 
@@ -68,7 +68,7 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 				TokenIter_nextToken(token_iter,&token);
 
 				Value dereferencedValue={};
-				enum VALUE_PARSE_RESULT res=Value_parse(&dereferencedValue,token_iter);
+				enum VALUE_PARSE_RESULT res=Value_parse(module,&dereferencedValue,token_iter);
 				if(res==VALUE_INVALID){
 					fatal("invalid value after *");
 				}
@@ -85,7 +85,7 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 				TokenIter_nextToken(token_iter,&token);
 
 				Value addressedValue={};
-				enum VALUE_PARSE_RESULT res=Value_parse(&addressedValue,token_iter);
+				enum VALUE_PARSE_RESULT res=Value_parse(module,&addressedValue,token_iter);
 				if(res==VALUE_INVALID){
 					fatal("invalid value after &");
 				}
@@ -104,8 +104,12 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 				bool foundValue=false;
 				do{
 					struct TokenIter castTestIter=*token_iter;
-					Symbol castTypeSymbol={};
-					enum SYMBOL_PARSE_RESULT res=Symbol_parse(&castTypeSymbol,&castTestIter);
+
+					int numCastTypeSymbols=0;
+					Symbol*symbols=nullptr;
+					enum SYMBOL_PARSE_RESULT res=Symbol_parse(module,&numCastTypeSymbols,&symbols,&castTestIter);
+					if(numCastTypeSymbols!=1)fatal("expected exactly one symbol but got %d at %s",numCastTypeSymbols,Token_print(&token));
+					Symbol castTypeSymbol=*(symbols);
 
 					switch(res){
 						case SYMBOL_PRESENT:
@@ -133,7 +137,7 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 							TokenIter_nextToken(&castTestIter, &token);
 
 							Value castValue={};
-							enum VALUE_PARSE_RESULT res=Value_parse(&castValue,&castTestIter);
+							enum VALUE_PARSE_RESULT res=Value_parse(module,&castValue,&castTestIter);
 							if(res==VALUE_INVALID){
 								fatal("invalid value after cast");
 							}
@@ -157,7 +161,7 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 				}
 
 				Value innerValue={};
-				enum VALUE_PARSE_RESULT res=Value_parse(&innerValue,token_iter);
+				enum VALUE_PARSE_RESULT res=Value_parse(module,&innerValue,token_iter);
 				if(res==VALUE_INVALID){
 					fatal("invalid value after (");
 				}
@@ -230,7 +234,7 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 					}
 
 					Value fieldValue={};
-					enum VALUE_PARSE_RESULT res=Value_parse(&fieldValue,token_iter);
+					enum VALUE_PARSE_RESULT res=Value_parse(module,&fieldValue,token_iter);
 					TokenIter_lastToken(token_iter, &token);
 					if(res==VALUE_INVALID){
 						fatal("invalid value in struct initializer");
@@ -265,7 +269,7 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 				TokenIter_nextToken(token_iter,&token);
 
 				Value innerValue={};
-				enum VALUE_PARSE_RESULT res=Value_parse(&innerValue,token_iter);
+				enum VALUE_PARSE_RESULT res=Value_parse(module,&innerValue,token_iter);
 				if(res==VALUE_INVALID){
 					fatal("invalid value after %s",KEYWORD_BANG);
 				}
@@ -283,7 +287,7 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 				TokenIter_nextToken(token_iter,&token);
 
 				Value innerValue={};
-				enum VALUE_PARSE_RESULT res=Value_parse(&innerValue,token_iter);
+				enum VALUE_PARSE_RESULT res=Value_parse(module,&innerValue,token_iter);
 				if(res==VALUE_INVALID){
 					fatal("invalid value after ~");
 				}
@@ -306,9 +310,13 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 
 				// try parsing a type, i.e. a symbol without a name, as type reference value
 				{
-					Symbol typeSymbol={};
-					enum SYMBOL_PARSE_RESULT res=Symbol_parse(&typeSymbol,token_iter);
+					int numTypeSymbols=0;
+					Symbol*typeSymbols=nullptr;
+					enum SYMBOL_PARSE_RESULT res=Symbol_parse(module,&numTypeSymbols,&typeSymbols,token_iter);
 					TokenIter_lastToken(token_iter,&token);
+					if(numTypeSymbols!=1)fatal("expected exactly one symbol but got %d at %s",numTypeSymbols,Token_print(&token));
+					Symbol typeSymbol=*(typeSymbols);
+					
 					// only if symbol has no name (i.e. just type) and is not a reference (i.e. not just a token that might be a value)
 					if(res==SYMBOL_WITHOUT_NAME){
 						if(typeSymbol.type->kind==TYPE_KIND_REFERENCE){
@@ -488,7 +496,7 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 
 			case VALUE_OPERATOR_CONDITIONAL:{
 				Value trueValue={};
-				enum VALUE_PARSE_RESULT resTrue=Value_parse(&trueValue,token_iter);
+				enum VALUE_PARSE_RESULT resTrue=Value_parse(module,&trueValue,token_iter);
 				if(resTrue==VALUE_INVALID){
 					fatal("invalid onTrue value in conditional");
 				}
@@ -499,7 +507,7 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 				TokenIter_nextToken(token_iter,&token);
 
 				Value falseValue={};
-				enum VALUE_PARSE_RESULT resFalse=Value_parse(&falseValue,token_iter);
+				enum VALUE_PARSE_RESULT resFalse=Value_parse(module,&falseValue,token_iter);
 				if(resFalse==VALUE_INVALID){
 					fatal("invalid onFalse value in conditional");
 				}
@@ -557,7 +565,7 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 					}
 
 					Value arg={};
-					enum VALUE_PARSE_RESULT res=Value_parse(&arg,token_iter);
+					enum VALUE_PARSE_RESULT res=Value_parse(module,&arg,token_iter);
 					TokenIter_lastToken(token_iter,&token);
 					switch(res){
 						case VALUE_INVALID:
@@ -587,7 +595,7 @@ enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter_in){
 				if(requiresSecondOperand){
 					ret.op.right=malloc(sizeof(Value));
 
-					enum VALUE_PARSE_RESULT res=Value_parse(ret.op.right,token_iter);
+					enum VALUE_PARSE_RESULT res=Value_parse(module,ret.op.right,token_iter);
 					switch(res){
 						case VALUE_INVALID:
 							// print next token

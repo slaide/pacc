@@ -5,6 +5,7 @@
 
 typedef struct Value Value;
 
+#include<parser/module.h>
 #include<parser/type.h>
 
 enum VALUE_KIND{
@@ -188,5 +189,5 @@ enum VALUE_PARSE_RESULT{
 	/// @brief  value was not parsed successfully (e.g. syntax error)
 	VALUE_INVALID,
 };
-enum VALUE_PARSE_RESULT Value_parse(Value*value,struct TokenIter*token_iter);
+enum VALUE_PARSE_RESULT Value_parse(Module*module,Value*value,struct TokenIter*token_iter);
 bool Value_equal(Value*a,Value*b);

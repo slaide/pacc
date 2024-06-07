@@ -1,6 +1,7 @@
 #pragma once
 
 #include<tokenizer.h>
+#include<parser/module.h>
 
 #include<parser/type.h>
 
@@ -11,6 +12,7 @@ enum SYMBOLKIND{
 	SYMBOL_KIND_DECLARATION,
 	/// @brief reference to a symbol, i.e. does not include type information
 	SYMBOL_KIND_REFERENCE,
+	SYMBOL_KIND_VARARG,
 };
 const char* Symbolkind_asString(enum SYMBOLKIND kind);
 
@@ -25,12 +27,12 @@ enum SYMBOL_PARSE_RESULT{
 	SYMBOL_PRESENT,
 	/// @brief symbol was not parsed successfully (e.g. syntax error)
 	SYMBOL_INVALID,
-	/// @brief something that looks like a type was present, but no name for the symbol (this _may_ be an error, depending on the context)
-	SYMBOL_WITHOUT_NAME,
 };
 /// @brief  type cannot be parsed separate from symbol, so we parse a symbol as combination of type and name parser
-/// @param symbol 
-/// @param token_iter 
-enum SYMBOL_PARSE_RESULT Symbol_parse(Symbol*symbol,struct TokenIter*token_iter);
+/// @param module module that provides the context for parsing
+/// @param num_symbols number of symbols returned
+/// @param symbols_out pointer to number of symbols (to be freed by the caller)
+/// @param token_iter_in iterator over tokens to be consumed for symbol parsing, iterator is mutated only on success
+enum SYMBOL_PARSE_RESULT Symbol_parse(Module*module,int*num_symbols,Symbol**symbols_out,struct TokenIter*token_iter_in);
 
 bool Symbol_equal(Symbol*a,Symbol*b);

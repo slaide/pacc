@@ -1,3 +1,4 @@
+#include "parser/type.h"
 #include <tokenizer.h>
 #include <util/array.h>
 #include <util/util.h>
@@ -9,15 +10,15 @@
 void Module_print(Module*module){
 	printf("module:\n");
 	for(int i=0;i<module->statements.len;i++){
-		Statement*statement=array_get(&module->statements,i);
+		Statement*statement=*(Statement**)array_get(&module->statements,i);
 		printf("%s\n",Statement_asString(statement,0));
 	}
 }
 
 bool test1(){
 	Type* intType=allocAndCopy(sizeof(Type),&(Type){
-		.kind=TYPE_KIND_REFERENCE,
-		.reference={.name=(Token){.len=3,.p="int",}},
+		.kind=TYPE_KIND_PRIMITIVE,
+		.name=allocAndCopy(sizeof(Token),&(Token){.len=3,.p="int",}),
 	});
 
 	File testFile;
@@ -62,8 +63,8 @@ bool test1(){
 
 bool test2(){
 	Type* intType=allocAndCopy(sizeof(Type),&(Type){
-		.kind=TYPE_KIND_REFERENCE,
-		.reference={.name=(Token){.len=3,.p="int",}},
+		.kind=TYPE_KIND_PRIMITIVE,
+		.name=allocAndCopy(sizeof(Token),&(Token){.len=3,.p="int",}),
 	});
 
 	File testFile;
@@ -148,8 +149,8 @@ int main(int argc, const char**argv){
 
 	for(int i=1;i<argc;i++){
 		if(
-				strcmp(argv[i],"--preprocessor")==0
-				|| strcmp(argv[i],"-p")==0
+			strcmp(argv[i],"--preprocessor")==0
+			|| strcmp(argv[i],"-p")==0
 		){
 			run_preprocessor=true;
 			continue;
@@ -283,6 +284,7 @@ int main(int argc, const char**argv){
 		TokenIter_init(&token_iter,&tokenizer,(struct TokenIterConfig){.skip_comments=true,});
 
 		Module module={};
+		Module_init(&module);
 		Module_parse(&module,&token_iter);
 
 		Module_print(&module);
