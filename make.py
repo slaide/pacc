@@ -9,7 +9,7 @@ from libbuild import *
 argparser=ArgParser("build the pacc compiler")
 
 argparser.add(name="--target",short="-t",help="target to build",key="build_target",arg_store_op=ArgStore.store_value,default="all",options=["all","clean","test_target"])
-argparser.add(name="--num-threads",short="-j",help="number of compilation threads",key="num_threads",arg_store_op=ArgStore.store_value,default=get_num_cores(),type=int)
+argparser.add(name="--num-threads",short="-j",help="number of compilation threads",key="num_threads",arg_store_op=ArgStore.store_value,default=1,type=int)
 argparser.add(name="--cc",help="compiler to use",key="cc",default="clang-17",arg_store_op=ArgStore.store_value)
 argparser.add(name="--print-cmds",help="print commands that are run",key="show_cmds",default=False,arg_store_op=ArgStore.presence_flag)
 argparser.add(name="--force-rebuild",short="-f",help="force rebuild, i.e. do not read cache, but still build it",key="force_rebuild",arg_store_op=ArgStore.presence_flag)
