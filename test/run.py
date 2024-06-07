@@ -136,6 +136,12 @@ tests=[
 
     Test(file="test/test056.c", goal="compound symbol definitions", flags="-p -a"),
 
+    Test(file="test/test001.c", goal="basic function definition", flags="-p -a"),
+    Test(file="test/test002.c", goal="function definition with arguments", flags="-p -a"),
+    Test(file="test/test003.c", goal="function definition with statements in body, single line comment before any code", flags="-p -a"),
+    Test(file="test/test004.c", goal="multi line comment", flags="-p -a"),
+    Test(file="test/test005.c", goal="string literal, variable declaration and assignment to string literal", flags="-p -a"),
+    Test(file="test/test006.c", goal="variable declaration and assignment to integer literal", flags="-p -a"),
 ]
 
 # run all tests
