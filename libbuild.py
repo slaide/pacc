@@ -318,6 +318,9 @@ class Command:
                 if not c.ready:
                     finished=False
             
+            if error_info is not None:
+                break
+
             for r in remove_set:
                 all_cmds.remove(r)
 
@@ -402,6 +405,7 @@ class Command:
     def process(self):
         " submit the command to the pool for processing "
         assert self.ready
+        assert not self.running
 
         def run()->tp.Tuple[int,str]:
             split_args=shlex.split(self.cmd)
