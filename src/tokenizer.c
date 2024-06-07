@@ -698,12 +698,22 @@ void Tokenizer_print(Tokenizer*tokenizer){
 	int last_line=0;
 	int last_col=0;
 
+	int line_offset=0;
+	const char*last_filename=nullptr;
+
 	struct TokenIter token_iter={};
 	TokenIter_init(&token_iter, tokenizer, (struct TokenIterConfig){});
 	while(!TokenIter_isEmpty(&token_iter)){
 		TokenIter_nextToken(&token_iter,&token);
+
+		if(token.filename!=last_filename){
+			last_filename=token.filename;
+			line_offset+=last_line;
+			last_line=0;
+		}
+
 		for(;(last_line<token.line);last_line++){
-			printf("\nline %*d: ",6,last_line);
+			printf("\n%*d: ",5,last_line+line_offset);
 			last_col=0;
 		}
 		if(token.col>last_col){
