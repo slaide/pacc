@@ -129,6 +129,13 @@ tests=[
 
     Test(file="test/test050.c", goal="preprocessor nested if directive (3)", flags="-p"),
     Test(file="test/test051.c", goal="preprocessor nested if directive (4)", flags="-p"),
+    Test(file="test/test052.c", goal="", flags="-p"),
+    Test(file="test/test053.c", goal="", flags="-p"),
+    Test(file="test/test054.c", goal="", flags="-p"),
+    Test(file="test/test055.c", goal="", flags="-p"),
+
+    Test(file="test/test056.c", goal="compound symbol definitions", flags="-p -a"),
+
 ]
 
 # run all tests
