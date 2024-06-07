@@ -6,6 +6,8 @@ import typing as tp
 from pathlib import Path
 import os
 from tqdm import tqdm
+import shlex
+
 # ensure project root directory
 os.chdir(Path(__file__).parent.parent)
 
@@ -38,14 +40,16 @@ class Test:
         command=f"bin/main {self.flags or ''} {self.file}"
 
         # exec command
+        proc=sp.Popen(shlex.split(command), stdout=sp.PIPE, stderr=sp.PIPE) # do not use shell=True because killing will not work
         try:
-            result = sp.run(command, shell=True, stdout=sp.PIPE, timeout=timeout)
+            proc.wait(timeout=timeout)
         except sp.TimeoutExpired:
+            proc.kill() # make sure the timed out process is terminated
             print(f"{BOLD}{RED}Error: test '{self.file}' timed out{RESET}")
             self.result=TestResult.TIMEOUT
             return
 
-        did_fail=result.returncode!=0
+        did_fail=proc.returncode!=0
 
         if (not did_fail and not self.should_fail) or (did_fail and self.should_fail):
             if print_info:
@@ -59,9 +63,12 @@ class Test:
             if self.should_fail:
                 print(f"Expected to fail, but succeeded")
             else:
-                print(f"Expected to succeed, but failed with code {result.returncode}")
+                print(f"Expected to succeed, but failed with code {proc.returncode}")
 
-        print("stdout:\n",result.stdout.decode("utf-8"))
+        assert proc.stdout is not None
+        assert proc.stderr is not None
+        print("stdout: ---- \n",proc.stdout.read().decode("utf-8"))
+        print("stderr: ---- \n",proc.stderr.read().decode("utf-8"))
             
         self.result=TestResult.FAILURE
 
