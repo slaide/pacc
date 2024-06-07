@@ -12,9 +12,6 @@ enum STATEMENT_KIND{
 	/// e.g. just a semicolon
 	STATEMENT_EMPTY,
 
-	STATEMENT_PREP_DEFINE,
-	STATEMENT_PREP_INCLUDE,
-
 	/// @brief function declaration, e.g. int foo(int a, int b);
 	STATEMENT_FUNCTION_DECLARATION,
 	/// @brief function definition, e.g. int foo(int a, int b){ return a+b; }
@@ -56,24 +53,6 @@ char*Statement_asString(Statement*statement,int indentDepth);
 struct Statement{
 	enum STATEMENT_KIND tag;
 	union{
-		/// @brief #define preprocessor directive
-		/// also see STATEMENT_PREP_DEFINE_ARGUMENT
-		struct{
-			Token name;
-
-			/// @brief array of argument tokens
-			array args;
-			
-			/// @brief array of body tokens
-			array body;
-		}prep_define;
-
-		/// @brief #include preprocessor directive
-		/// also see STATEMENT_PREP_INCLUDE_ARGUMENT
-		struct{
-			Token path;
-		}prep_include;
-
 		/// @brief function declaration
 		/// also see STATEMENT_FUNCTION_DEFINITION
 		struct{
@@ -155,5 +134,5 @@ enum STATEMENT_PARSE_RESULT{
 	/// @brief statement was not parsed successfully (e.g. syntax error)
 	STATEMENT_PARSE_RESULT_INVALID,
 };
-enum STATEMENT_PARSE_RESULT Statement_parse(Statement*out,struct TokenIter*token_iter);
+enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct TokenIter*token_iter);
 bool Statement_equal(Statement*a,Statement*b);

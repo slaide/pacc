@@ -75,35 +75,6 @@ char*Statement_asString(Statement*statement,int depth){
 			stringAppend(ret,"%sval %s\n",ind(depth*4),Value_asString(statement->value.value));
 			break;
 		}
-		case STATEMENT_PREP_INCLUDE:{
-			stringAppend(ret,"%s",ind(depth*4));
-			stringAppend(ret,"#include %.*s\n",statement->prep_include.path.len,statement->prep_include.path.p);
-			break;
-		}
-		case STATEMENT_PREP_DEFINE:{
-			stringAppend(ret,"%s",ind(depth*4));
-			stringAppend(ret,"#define %.*s",statement->prep_define.name.len,statement->prep_define.name.p);
-
-			if(statement->prep_define.args.len>0){
-				stringAppend(ret," args (");
-				for(int i=0;i<statement->prep_define.args.len;i++){
-					Token*arg=array_get(&statement->prep_define.args,i);
-					stringAppend(ret," %.*s ",arg->len,arg->p);
-				}
-				stringAppend(ret,")");
-			}
-
-			if(statement->prep_define.body.len>0){
-				stringAppend(ret," body {");
-				for(int i=0;i<statement->prep_define.body.len;i++){
-					Token*body_token=array_get(&statement->prep_define.body,i);
-					stringAppend(ret," %.*s ",body_token->len,body_token->p);
-				}
-				stringAppend(ret,"}");
-			}
-			stringAppend(ret,"\n");
-			break;
-		}
 		case STATEMENT_KIND_IF:{
 			stringAppend(ret,"%s",ind(depth*4));
 			stringAppend(ret,"if %s\n",Value_asString(statement->if_.condition));
@@ -882,13 +853,6 @@ bool Statement_equal(Statement*a,Statement*b){
 	}
 
 	switch(a->tag){
-		case STATEMENT_PREP_DEFINE:{
-			return Token_equalToken(&a->prep_define.name,&b->prep_define.name);
-				//&& Token_equalToken(&a->prep_define.value,&b->prep_define.value);
-		}
-		case STATEMENT_PREP_INCLUDE:{
-			return Token_equalToken(&a->prep_include.path,&b->prep_include.path);
-		}
 		case STATEMENT_FUNCTION_DECLARATION:{
 			println("comparing function declarations");
 			return Symbol_equal(&a->functionDecl.symbol,&b->functionDecl.symbol);
@@ -936,10 +900,6 @@ const char* Statementkind_asString(enum STATEMENT_KIND kind){
 	switch(kind){
 		case STATEMENT_UNKNOWN:
 			return("STATEMENT_UNKNOWN");
-		case STATEMENT_PREP_DEFINE:
-			return("STATEMENT_PREP_DEFINE");
-		case STATEMENT_PREP_INCLUDE:
-			return("STATEMENT_PREP_INCLUDE");
 		case STATEMENT_FUNCTION_DECLARATION:
 			return("STATEMENT_FUNCTION_DECLARATION");
 		case STATEMENT_FUNCTION_DEFINITION:
