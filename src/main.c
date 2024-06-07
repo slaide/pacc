@@ -138,6 +138,7 @@ int main(int argc, const char**argv){
 
 	char*input_filename=nullptr;
 	bool run_preprocessor=false;
+	bool run_parser=false;
 
 	array defines={};
 	array_init(&defines,sizeof(const char*));
@@ -147,13 +148,18 @@ int main(int argc, const char**argv){
 
 	for(int i=1;i<argc;i++){
 		if(
-			!run_preprocessor
-			&& (
 				strcmp(argv[i],"--preprocessor")==0
 				|| strcmp(argv[i],"-p")==0
-			)
 		){
 			run_preprocessor=true;
+			continue;
+		}
+
+		if(
+			strcmp(argv[i],"--parse-ast")==0
+			|| strcmp(argv[i],"-a")==0
+		){
+			run_parser=true;
 			continue;
 		}
 
@@ -203,6 +209,7 @@ int main(int argc, const char**argv){
 		struct Preprocessor preprocessor={};
 		Preprocessor_init(&preprocessor);
 
+		// add defines from command line
 		for(int i=0;i<defines.len;i++){
 			const char*def_str=*(char**)array_get(&defines,i);
 			struct PreprocessorDefine define={
@@ -219,6 +226,7 @@ int main(int argc, const char**argv){
 			array_append(&preprocessor.defines,&define);
 		}
 
+		// add include paths from command line
 		for(int i=0;i<include_paths.len;i++){
 			array_append(&preprocessor.include_paths,array_get(&include_paths,i));
 		}
@@ -238,8 +246,10 @@ int main(int argc, const char**argv){
 		};
 		Tokenizer_print(&preprocessed_tokenizer);
 
-		// print all defines as well:
-		if(1){
+		tokenizer=preprocessed_tokenizer;
+
+		// print all defines executed during preprocessor run:
+		if(0){
 			for(int i=0;i<preprocessor.defines.len;i++){
 				struct PreprocessorDefine*define=array_get(&preprocessor.defines,i);
 				if(define->name.len==0)
@@ -267,7 +277,7 @@ int main(int argc, const char**argv){
 		}
 	}
 
-	if(0){
+	if(run_parser){
 		// parse tokens into AST
 		struct TokenIter token_iter;
 		TokenIter_init(&token_iter,&tokenizer,(struct TokenIterConfig){.skip_comments=true,});
