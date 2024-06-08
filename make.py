@@ -40,7 +40,7 @@ file_paths=[
     "src/main.c",
 ]
 
-CC_CMD=f"{args.get('cc')} -g -O0 -std=c2x -I./include -lvulkan -lxcb -lxcb-util -lxcb-randr"
+CC_CMD=f"{args.get('cc')} -g -O0 -std=c2x -I./include -Wall -Wextra -Wpedantic -fsanitize=undefined -fno-omit-frame-pointer -fno-common"+("-fsanitize=address " if 0 else "")
 
 class CompileFile(Command):
     " compile a single file "
@@ -94,7 +94,9 @@ class AnyCmd(Command):
         super().__init__(cmd=cmd,phony=True,shell=True)
 
 num_worker_threads=args.get("num_threads")
-if num_worker_threads is not None and num_worker_threads>1:
+if num_worker_threads is not None:
+    if num_worker_threads<1:
+        num_worker_threads=get_num_cores()
     Command.pool=fut.ThreadPoolExecutor(max_workers=num_worker_threads)
 Command.show_cmds=args.get("show_cmds") # type: ignore
 Command.cmd_cache=CacheManager(rebuild=args.get("force_rebuild")) # type: ignore
@@ -126,6 +128,6 @@ if __name__=="__main__":
         # for debugging purposes, build only the test target (which may be changed to any other file)
         # this mostly serves to store the command somewhere
         case "test_target":
-            Command.build(AnyCmd("bin/main -I$(pwd)/musl/include test/test014.c -p ; exit 1").depends(final_bin))
+            Command.build(AnyCmd("bin/main -I$(pwd)/musl/include test/test057.c -p -a ; exit 1").depends(final_bin))
 
     print("done")
