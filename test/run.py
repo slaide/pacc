@@ -15,6 +15,11 @@ BOLD="\033[1m"
 RESET="\033[0m"
 RED="\033[31m"
 GREEN="\033[32m"
+ORANGE="\033[33m"
+BLUE="\033[34m"
+PURPLE="\033[35m"
+CYAN="\033[36m"
+LIGHT_GRAY="\033[37m"
 
 from enum import Enum
 class TestResult(str,Enum):
@@ -135,6 +140,7 @@ tests=[
     Test(file="test/test055.c", goal="", flags="-p"),
 
     Test(file="test/test056.c", goal="compound symbol definitions", flags="-p -a"),
+    Test(file="test/test057.c", goal="compound symbol definitions with initializer", flags="-p -a"),
 
     Test(file="test/test001.c", goal="basic function definition", flags="-p -a"),
     Test(file="test/test002.c", goal="function definition with arguments", flags="-p -a"),
@@ -143,6 +149,8 @@ tests=[
     Test(file="test/test005.c", goal="string literal, variable declaration and assignment to string literal", flags="-p -a"),
     Test(file="test/test006.c", goal="variable declaration and assignment to integer literal", flags="-p -a"),
 ]
+
+print(f"{BOLD}running tests...{RESET}")
 
 # run all tests
 results={res:0 for res in TestResult}
@@ -161,8 +169,18 @@ perc_success=num_succeeded/num_total*100
 perc_failed=num_failed/num_total*100
 perc_timed_out=num_timed_out/num_total*100
 
-print(f"{BOLD}Results:{RESET}")
+print(f"{BOLD}Test Results:{RESET}")
 print(f"Total: {num_total}")
-print(f"Succeeded: {num_succeeded} ({perc_success:.2f} %)")
-print(f"Failed: {num_failed} ({perc_failed:.2f} %)")
-print(f"Timed out: {num_timed_out} ({perc_timed_out:.2f} %)")
+max_num_tests_len=max(len(str(n)) for n in [num_succeeded,num_failed,num_timed_out])
+def pad_to(s,n:int,fmt_str:str="{s}")->str:
+    s_str=fmt_str.format(s=s)
+    return (" "*(n-len(s_str)))+s_str
+num_succeeded_str=pad_to(num_succeeded,max_num_tests_len)
+num_failed_str=pad_to(num_failed,max_num_tests_len)
+num_timed_out_str=pad_to(num_timed_out,max_num_tests_len)
+perc_success_str=pad_to(perc_success,6,fmt_str="{s:.2f}")
+perc_failed_str=pad_to(perc_failed,6,fmt_str="{s:.2f}")
+perc_timed_out_str=pad_to(perc_timed_out,6,fmt_str="{s:.2f}")
+print(f"{GREEN  }Succeeded : {num_succeeded_str} ({perc_success_str  } %){RESET}")
+print(f"{RED    }Failed    : {num_failed_str   } ({perc_failed_str   } %){RESET}")
+print(f"{ORANGE }Timed out : {num_timed_out_str} ({perc_timed_out_str} %){RESET}")

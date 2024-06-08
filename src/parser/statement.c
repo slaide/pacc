@@ -31,14 +31,21 @@ char*Statement_asString(Statement*statement,int depth){
 		}
 		case STATEMENT_KIND_SYMBOL_DEFINITION:{
 			stringAppend(ret,"%s",ind(depth*4));
-			if(statement->symbolDef.symbol.name!=nullptr){
-				stringAppend(ret,"%.*s of type %s",statement->symbolDef.symbol.name->len,statement->symbolDef.symbol.name->p,Type_asString(statement->symbolDef.symbol.type));
-			}else{
-				stringAppend(ret,"unnamed symbol of type %s",Type_asString(statement->symbolDef.symbol.type));
-			}
+			array *symbol_defs=&statement->symbolDef.symbols_defs;
+			if(symbol_defs->len==0)fatal("empty symbol definition? bug!");
+			stringAppend(ret,"symbols: ");
+			for(int i=0;i<symbol_defs->len;i++){
+				stringAppend(ret,"\n%s",ind((depth+1)*4));
+				struct SymbolDefinition*def=array_get(symbol_defs,i);
+				if(def->symbol.name!=nullptr){
+					stringAppend(ret,"%.*s of type %s",def->symbol.name->len,def->symbol.name->p,Type_asString(def->symbol.type));
+				}else{
+					stringAppend(ret,"unnamed symbol of type %s",Type_asString(def->symbol.type));
+				}
 
-			if(statement->symbolDef.init_value){
-				stringAppend(ret," = %s",Value_asString(statement->symbolDef.init_value));
+				if(def->initializer!=nullptr){
+					stringAppend(ret," = %s",Value_asString(def->initializer));
+				}
 			}
 			break;
 		}
@@ -162,15 +169,6 @@ char*Statement_asString(Statement*statement,int depth){
 			}
 			break;
 		}
-		case STATEMENT_FUNCTION_DECLARATION:{
-			stringAppend(ret,"%s",ind(depth*4));
-			if(statement->functionDecl.symbol.name)
-				stringAppend(ret,"declared function %.*s",statement->functionDecl.symbol.name->len,statement->functionDecl.symbol.name->p);
-			else
-				stringAppend(ret,"declared function");
-			stringAppend(ret," of type %s",Type_asString(statement->functionDecl.symbol.type));
-			break;
-		}
 		default:
 			fatal("unimplemented %s",Statementkind_asString(statement->tag));
 	}
@@ -241,11 +239,12 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 		TokenIter_nextToken(token_iter,&token);
 
 		int numTypedefSymbols=0;
-		Symbol *typedefSymbols=nullptr;
-		enum SYMBOL_PARSE_RESULT res=Symbol_parse(module,&numTypedefSymbols,&typedefSymbols,token_iter);
+		struct SymbolDefinition *typedefSymbols=nullptr;
+		enum SYMBOL_PARSE_RESULT res=SymbolDefinition_parse(module,&numTypedefSymbols,&typedefSymbols,token_iter,&(struct Symbol_parse_options){.forbid_multiple=false});
 		TokenIter_lastToken(token_iter,&token);
-		if(numTypedefSymbols!=1)fatal("expected exactly one symbol in typedef statement but got %d at %s",numTypedefSymbols,Token_print(&token));
-		Symbol typedefSymbol=*typedefSymbols;
+		
+		if(numTypedefSymbols!=1)fatal("expected typedef after typedef but got instead %s",Token_print(&token));
+		Symbol typedefSymbol=typedefSymbols[0].symbol;
 
 		// it is legal to typedef nothing, or a type without a name, i.e. typedef; typedef int; typedef int a; are all legal
 		
@@ -676,28 +675,25 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 	// parse symbol definition
 	do{
 		int numSymbols=0;
-		Symbol *symbols=nullptr;
-		struct TokenIter preSymbolParseIter=*token_iter;
-		enum SYMBOL_PARSE_RESULT symbolParseResult=Symbol_parse(module,&numSymbols,&symbols,token_iter);
+		struct SymbolDefinition *symbols=nullptr;
+		enum SYMBOL_PARSE_RESULT symbolParseResult=SymbolDefinition_parse(module,&numSymbols,&symbols,token_iter,&(struct Symbol_parse_options){.allow_initializers=true});
 		if(symbolParseResult==SYMBOL_INVALID){
 			break;
 		}
 		TokenIter_lastToken(token_iter,&token);
 
-		if(numSymbols!=1)fatal("expected exactly one symbol in statement but got %d at %s",numSymbols,Token_print(&token));
-		Symbol symbol=*symbols;
-
-		Statement statement={};
+		if(numSymbols<1)fatal("declaration does not declare anything at %s",Token_print(&token));
+		/* first symbol to check for function definition*/
+		Symbol symbol=symbols[0].symbol;
 
 		switch(symbol.type->kind){
+			// parse function definition
 			case TYPE_KIND_FUNCTION:
 				{
-					if(Token_equalString(&token,";")){
-						TokenIter_nextToken(token_iter,&token);
+					if(numSymbols>1)fatal("function definition not allowed in declaration at %s",Token_print(&token));
+					Statement statement={};
 
-						statement.tag=STATEMENT_FUNCTION_DECLARATION;
-						statement.functionDecl.symbol=symbol;
-					}else if(Token_equalString(&token,"{")){
+					if(Token_equalString(&token,"{")){
 						TokenIter_nextToken(token_iter,&token);
 
 						statement.tag=STATEMENT_FUNCTION_DEFINITION;
@@ -732,99 +728,27 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 					goto STATEMENT_PARSE_RET_SUCCESS;
 				}
 				break;
-			default:{
-				// check for value [expression]
-				if(numSymbols==1 && symbol.name==nullptr){
-					Value value={};
-					// discard iterator result from symbol parse attempt
-					struct TokenIter valueParseIter=preSymbolParseIter;
-					enum VALUE_PARSE_RESULT res=Value_parse(module,&value,&valueParseIter);
-
-					bool foundValue=false;
-					switch(res){
-						case VALUE_INVALID:
-							break;
-						case VALUE_PRESENT:
-							*token_iter=valueParseIter;
-							foundValue=true;
-							break;
-					}
-					// note the iterator writeback after value parsing within the switch statement above!
-					TokenIter_lastToken(token_iter,&token);
-
-					if(foundValue){
-						// check for label definition
-						if(Token_equalString(&token,":") && value.kind==VALUE_KIND_SYMBOL_REFERENCE){
-							TokenIter_nextToken(token_iter,&token);
-							*out=(Statement){
-								.tag=STATEMENT_LABEL,
-								.labelDefinition={
-									.label=value.symbol,
-								}
-							};
-							goto STATEMENT_PARSE_RET_SUCCESS;
-						}
-
-						// check for termination with semicolon
-						if(!Token_equalString(&token,";")){
-							fatal("expected semicolon but got instead: %s",Token_print(&token));
-						}
-						TokenIter_nextToken(token_iter,&token);
-						
-						*out=(Statement){
-							.tag=STATEMENT_VALUE,
-							.value={
-								.value=allocAndCopy(sizeof(Value), &value)
-							},
-						};
-						goto STATEMENT_PARSE_RET_SUCCESS;
-					}else{
-						// we got a symbol declaration without a name
-						// i.e. still valid statement, of kind STATEMENT_KIND_SYMBOL_DEFINITION
-						// next token should be semicolon
-						if(!Token_equalString(&token,";")){
-							fatal("expected semicolon but got instead: %s",Token_print(&token));
-						}
-						TokenIter_nextToken(token_iter,&token);
-						*out=(Statement){
-							.tag=STATEMENT_KIND_SYMBOL_DEFINITION,
-							.symbolDef={
-								.symbol=symbol,
-								.init_value=nullptr,
-							}
-						};
-						goto STATEMENT_PARSE_RET_SUCCESS;
-					}
-				}
-
-				statement.tag=STATEMENT_KIND_SYMBOL_DEFINITION;
-				statement.symbolDef.symbol=symbol;
-				statement.symbolDef.init_value=nullptr;
-
-				// next token should be assignment operator or semicolon
-				if(Token_equalString(&token,"=")){
-					TokenIter_nextToken(token_iter,&token);
-					Value value={};
-					enum VALUE_PARSE_RESULT res=Value_parse(module,&value,token_iter);
-					TokenIter_lastToken(token_iter,&token);
-					switch(res){
-						case VALUE_INVALID:
-							fatal("invalid value after assignment operator");
-							break;
-						case VALUE_PRESENT:
-							statement.symbolDef.init_value=allocAndCopy(sizeof(Value),&value);
-							break;
-					}
-				}
-				if(!Token_equalString(&token,";")){
-					fatal("expected semicolon after statement but got instead: %s",Token_print(&token));
-				}
-				TokenIter_nextToken(token_iter,&token);
-
-				*out=statement;
-				goto STATEMENT_PARSE_RET_SUCCESS;
-			}
+			default:;
 		}
+
+		Statement statement={
+			.tag=STATEMENT_KIND_SYMBOL_DEFINITION,
+			.symbolDef={
+				.symbols_defs={},
+			},
+		};
+		array_init(&statement.symbolDef.symbols_defs,sizeof(struct SymbolDefinition));
+		for(int i=0;i<numSymbols;i++){
+			array_append(&statement.symbolDef.symbols_defs,&symbols[i]);
+		}
+
+		if(!Token_equalString(&token,";")){
+			fatal("expected semicolon after declaration but got instead: %s",Token_print(&token));
+		}
+		TokenIter_nextToken(token_iter,&token);
+
+		*out=statement;
+		goto STATEMENT_PARSE_RET_SUCCESS;
 	}while(0);
 
 	// parse a value
@@ -879,10 +803,6 @@ bool Statement_equal(Statement*a,Statement*b){
 	}
 
 	switch(a->tag){
-		case STATEMENT_FUNCTION_DECLARATION:{
-			println("comparing function declarations");
-			return Symbol_equal(&a->functionDecl.symbol,&b->functionDecl.symbol);
-		}
 		case STATEMENT_FUNCTION_DEFINITION:{
 			println("comparing function definitions");
 			if(!Symbol_equal(&a->functionDef.symbol,&b->functionDef.symbol)){
@@ -926,8 +846,6 @@ const char* Statementkind_asString(enum STATEMENT_KIND kind){
 	switch(kind){
 		case STATEMENT_UNKNOWN:
 			return("STATEMENT_UNKNOWN");
-		case STATEMENT_FUNCTION_DECLARATION:
-			return("STATEMENT_FUNCTION_DECLARATION");
 		case STATEMENT_FUNCTION_DEFINITION:
 			return("STATEMENT_FUNCTION_DEFINITION");
 		case STATEMENT_KIND_RETURN:

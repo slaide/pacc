@@ -12,8 +12,6 @@ enum STATEMENT_KIND{
 	/// e.g. just a semicolon
 	STATEMENT_EMPTY,
 
-	/// @brief function declaration, e.g. int foo(int a, int b);
-	STATEMENT_FUNCTION_DECLARATION,
 	/// @brief function definition, e.g. int foo(int a, int b){ return a+b; }
 	STATEMENT_FUNCTION_DEFINITION,
 	/// @brief return statement, e.g. return 0;
@@ -53,12 +51,6 @@ char*Statement_asString(Statement*statement,int indentDepth);
 struct Statement{
 	enum STATEMENT_KIND tag;
 	union{
-		/// @brief function declaration
-		/// also see STATEMENT_FUNCTION_DEFINITION
-		struct{
-			Symbol symbol;
-		}functionDecl;
-
 		/// @brief function definition
 		/// also see STATEMENT_FUNCTION_DECLARATION
 		struct{
@@ -67,8 +59,8 @@ struct Statement{
 		}functionDef;
 
 		struct{
-			Symbol symbol;
-			Value*init_value;
+			/* item type is struct SymbolDefinition */
+			array symbols_defs;
 		}symbolDef;
 
 		/// @brief return statement

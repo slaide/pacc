@@ -6,12 +6,13 @@
 #include<util/util.h>
 #include<tokenizer.h>
 
-enum SYMBOL_PARSE_RESULT Symbol_parse(Module*module,int*num_symbols,Symbol**symbols_out,struct TokenIter*token_iter_in){
+enum SYMBOL_PARSE_RESULT SymbolDefinition_parse(Module*module,int*num_symbol_defs,struct SymbolDefinition**symbol_defs_out,struct TokenIter*token_iter_in,struct Symbol_parse_options*options){
 	struct TokenIter this_iter=*token_iter_in;
 	struct TokenIter *token_iter=&this_iter;
 
-	array symbols={};
-	array_init(&symbols,sizeof(Symbol));
+	/* temporary store for return value, i.e. item type is struct SymbolDefinition */
+	array symbol_defs={};
+	array_init(&symbol_defs,sizeof(struct SymbolDefinition));
 
 	// in preparation for multi-statements, a statement may start with a type, and then be succeeded 
 	// by definitions of multiple symbols, each one with a type derived from the base type
@@ -19,7 +20,7 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Module*module,int*num_symbols,Symbol**symb
 	Type base_type={.kind=TYPE_KIND_UNKNOWN};
 	Type*current_type=&base_type;
 
-	Symbol _symbol={},*symbol=&_symbol;
+	struct SymbolDefinition _symbol_def={},*symbol_def=&_symbol_def;
 
 	Token token;
 	TokenIter_lastToken(token_iter,&token);
@@ -117,13 +118,13 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Module*module,int*num_symbols,Symbol**symb
 						// parse struct
 						while(!Token_equalString(&token,"}")){
 							int num_members=0;
-							Symbol *members=nullptr;
-							enum SYMBOL_PARSE_RESULT symres=Symbol_parse(module,&num_members,&members,token_iter);
+							struct SymbolDefinition *members=nullptr;
+							enum SYMBOL_PARSE_RESULT symres=SymbolDefinition_parse(module,&num_members,&members,token_iter,&(struct Symbol_parse_options){});
 							if(symres==SYMBOL_INVALID){
 								fatal("invalid symbol in struct at %s",Token_print(&token));
 							}
 							for(int i=0;i<num_members;i++){
-								array_append(&structMembers,&members[i]);
+								array_append(&structMembers,&members[i].symbol);
 							}
 							TokenIter_lastToken(token_iter,&token);
 							
@@ -145,13 +146,13 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Module*module,int*num_symbols,Symbol**symb
 						// parse union
 						while(!Token_equalString(&token,"}")){
 							int num_members=0;
-							Symbol *members=nullptr;
-							enum SYMBOL_PARSE_RESULT symres=Symbol_parse(module,&num_members,&members,token_iter);
+							struct SymbolDefinition *members=nullptr;
+							enum SYMBOL_PARSE_RESULT symres=SymbolDefinition_parse(module,&num_members,&members,token_iter,&(struct Symbol_parse_options){});
 							if(symres==SYMBOL_INVALID){
 								fatal("invalid symbol in struct at %s",Token_print(&token));
 							}
 							for(int i=0;i<num_members;i++){
-								array_append(&unionMembers,&members[i]);
+								array_append(&unionMembers,&members[i].symbol);
 							}
 							TokenIter_lastToken(token_iter,&token);
 							
@@ -256,14 +257,14 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Module*module,int*num_symbols,Symbol**symb
 					println("module type %d is %s",i,Type_asString(type));
 				}*/
 				
-				if(symbols.len==0)
+				if(symbol_defs.len==0)
 					goto SYMBOL_PARSE_RET_FAILURE;
 				goto SYMBOL_PARSE_RET_SUCCESS;
 			}
 
 			if(Token_isValidIdentifier(&token) /* [implicit] && base_type.kind!=TYPE_KIND_UNKNOWN */){
-				if(symbol->name==nullptr){
-					symbol->name=allocAndCopy(sizeof(Token),&token);
+				if(symbol_def->symbol.name==nullptr){
+					symbol_def->symbol.name=allocAndCopy(sizeof(Token),&token);
 					TokenIter_nextToken(token_iter,&token);
 				}else{
 					goto SYMBOL_PARSE_RET_FAILURE;
@@ -297,8 +298,8 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Module*module,int*num_symbols,Symbol**symb
 					TokenIter_nextToken(token_iter,&token);
 
 					if(Token_isValidIdentifier(&token)){
-						if(symbol->name==nullptr){
-							symbol->name=allocAndCopy(sizeof(Token),&token);
+						if(symbol_def->symbol.name==nullptr){
+							symbol_def->symbol.name=allocAndCopy(sizeof(Token),&token);
 							TokenIter_nextToken(token_iter,&token);
 						}else{
 							goto SYMBOL_PARSE_RET_FAILURE;
@@ -334,8 +335,8 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Module*module,int*num_symbols,Symbol**symb
 					}
 
 					int num_arguments=0;
-					Symbol *argument=nullptr;
-					enum SYMBOL_PARSE_RESULT symres=Symbol_parse(module,&num_arguments,&argument,token_iter);
+					struct SymbolDefinition *argument=nullptr;
+					enum SYMBOL_PARSE_RESULT symres=SymbolDefinition_parse(module,&num_arguments,&argument,token_iter,&(struct Symbol_parse_options){.forbid_multiple=true});
 					TokenIter_lastToken(token_iter,&token);
 					if(symres==SYMBOL_INVALID){
 						// check for varargs
@@ -354,7 +355,7 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Module*module,int*num_symbols,Symbol**symb
 					}
 
 					for(int i=0;i<num_arguments;i++){
-						array_append(&args,&argument[i]);
+						array_append(&args,&argument[i].symbol);
 					}
 				}
 
@@ -378,6 +379,7 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Module*module,int*num_symbols,Symbol**symb
 				break;
 			}
 
+			// check for array
 			if(base_type.kind!=TYPE_KIND_UNKNOWN && Token_equalString(&token,"[")){
 				TokenIter_nextToken(token_iter,&token);
 
@@ -420,6 +422,26 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Module*module,int*num_symbols,Symbol**symb
 				continue;
 			}
 
+			// check for initialization
+			if(Token_equalString(&token,"=")){
+				if(options->allow_initializers==false){
+					fatal("initializers are not allowed at %s",Token_print(&token));
+				}
+
+				TokenIter_nextToken(token_iter,&token);
+				Value value={};
+				enum VALUE_PARSE_RESULT res=Value_parse(module,&value,token_iter);
+				TokenIter_lastToken(token_iter,&token);
+				switch(res){
+					case VALUE_INVALID:
+						fatal("invalid value after assignment operator at %s",Token_print(&token));
+						break;
+					case VALUE_PRESENT:
+						symbol_def->initializer=allocAndCopy(sizeof(Value),&value);
+						break;
+				}
+			}
+
 			break;
 		}
 
@@ -428,16 +450,23 @@ enum SYMBOL_PARSE_RESULT Symbol_parse(Module*module,int*num_symbols,Symbol**symb
 		}
 
 		// append symbol to output
-		symbol->type=allocAndCopy(sizeof(Type), current_type);
+		symbol_def->symbol.type=allocAndCopy(sizeof(Type), current_type);
 
-		array_append(&symbols,symbol);
+		array_append(&symbol_defs,symbol_def);
 
+		// if next token is a comma, fatal
+		if((!options->forbid_multiple) &&  Token_equalString(&token,",")){
+			TokenIter_nextToken(token_iter,&token);
+			// zero out symbol again
+			*symbol_def=(struct SymbolDefinition){};
+			continue;
+		}
 		break; // TODO: remove this break when multi-symbol declarations are implemented
 	}
 
 SYMBOL_PARSE_RET_SUCCESS:
-	*num_symbols=symbols.len;
-	*symbols_out=symbols.data;
+	*num_symbol_defs=symbol_defs.len;
+	*symbol_defs_out=symbol_defs.data;
 
 	*token_iter_in=this_iter;
 	return SYMBOL_PRESENT;

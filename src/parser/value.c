@@ -106,54 +106,54 @@ enum VALUE_PARSE_RESULT Value_parse(Module*module,Value*value,struct TokenIter*t
 					struct TokenIter castTestIter=*token_iter;
 
 					int numCastTypeSymbols=0;
-					Symbol*symbols=nullptr;
-					enum SYMBOL_PARSE_RESULT res=Symbol_parse(module,&numCastTypeSymbols,&symbols,&castTestIter);
+					struct SymbolDefinition*symbols=nullptr;
+					enum SYMBOL_PARSE_RESULT res=SymbolDefinition_parse(module,&numCastTypeSymbols,&symbols,&castTestIter,&(struct Symbol_parse_options){.forbid_multiple=true});
 					if(numCastTypeSymbols!=1)fatal("expected exactly one symbol but got %d at %s",numCastTypeSymbols,Token_print(&token));
-					Symbol castTypeSymbol=*(symbols);
+					Symbol castTypeSymbol=symbols[0].symbol;
 
 					switch(res){
-						case SYMBOL_PRESENT:
-							fatal("cannot cast to named symbol");
 						case SYMBOL_INVALID:
 							// fallthrough outer switch to parse value 
 							break;
-						case SYMBOL_WITHOUT_NAME:{
-							// print next token
-							TokenIter_lastToken(&castTestIter, &token);
-							// if symbol is present, assume this is a type cast and continue parsing value
+						
+						case SYMBOL_PRESENT:
+							if(castTypeSymbol.name==nullptr){
+								// print next token
+								TokenIter_lastToken(&castTestIter, &token);
+								// if symbol is present, assume this is a type cast and continue parsing value
 
-							// make sure there is no symbol name though
-							if(castTypeSymbol.name){
-								// not a casting operation
-								break;
-							}
-
-							// check for closing )
-							TokenIter_lastToken(&castTestIter, &token);
-							if(token.p!=KEYWORD_PARENS_CLOSE){
-								// not a casting operation
-								break;
-							}
-							TokenIter_nextToken(&castTestIter, &token);
-
-							Value castValue={};
-							enum VALUE_PARSE_RESULT res=Value_parse(module,&castValue,&castTestIter);
-							if(res==VALUE_INVALID){
-								fatal("invalid value after cast");
-							}
-
-							*token_iter=castTestIter;
-							TokenIter_lastToken(token_iter, &token);
-							*value=(Value){
-								.kind=VALUE_KIND_CAST,
-								.cast={
-									.castTo=castTypeSymbol.type,
-									.value=allocAndCopy(sizeof(Value),&castValue),
+								// make sure there is no symbol name though
+								if(castTypeSymbol.name){
+									// not a casting operation
+									break;
 								}
-							};
-							foundValue=true;
-							break;
-						}
+
+								// check for closing )
+								TokenIter_lastToken(&castTestIter, &token);
+								if(token.p!=KEYWORD_PARENS_CLOSE){
+									// not a casting operation
+									break;
+								}
+								TokenIter_nextToken(&castTestIter, &token);
+
+								Value castValue={};
+								enum VALUE_PARSE_RESULT res=Value_parse(module,&castValue,&castTestIter);
+								if(res==VALUE_INVALID){
+									fatal("invalid value after cast");
+								}
+
+								*token_iter=castTestIter;
+								TokenIter_lastToken(token_iter, &token);
+								*value=(Value){
+									.kind=VALUE_KIND_CAST,
+									.cast={
+										.castTo=castTypeSymbol.type,
+										.value=allocAndCopy(sizeof(Value),&castValue),
+									}
+								};
+								foundValue=true;
+								break;
+							}else fatal("cannot cast to named symbol");
 					}
 				}while(0);
 				if(foundValue){
@@ -311,22 +311,20 @@ enum VALUE_PARSE_RESULT Value_parse(Module*module,Value*value,struct TokenIter*t
 				// try parsing a type, i.e. a symbol without a name, as type reference value
 				{
 					int numTypeSymbols=0;
-					Symbol*typeSymbols=nullptr;
-					enum SYMBOL_PARSE_RESULT res=Symbol_parse(module,&numTypeSymbols,&typeSymbols,token_iter);
+					struct SymbolDefinition*typeSymbols=nullptr;
+					enum SYMBOL_PARSE_RESULT res=SymbolDefinition_parse(module,&numTypeSymbols,&typeSymbols,token_iter,&(struct Symbol_parse_options){.forbid_multiple=true});
 					TokenIter_lastToken(token_iter,&token);
-					if(numTypeSymbols!=1)fatal("expected exactly one symbol but got %d at %s",numTypeSymbols,Token_print(&token));
-					Symbol typeSymbol=*(typeSymbols);
+					if(res!=SYMBOL_PRESENT || numTypeSymbols!=1)fatal("expected exactly one symbol but got %d at %s",numTypeSymbols,Token_print(&token));
+					Symbol typeSymbol=typeSymbols[0].symbol;
 					
 					// only if symbol has no name (i.e. just type) and is not a reference (i.e. not just a token that might be a value)
-					if(res==SYMBOL_WITHOUT_NAME){
-						if(typeSymbol.type->kind==TYPE_KIND_REFERENCE){
-							*value=(Value){
-								.kind=VALUE_KIND_TYPEREF,
-								.typeref.type=typeSymbol.type,
-							};
-							// cannot operate on this type, so return instead of break
-							goto VALUE_PARSE_RET_SUCCESS;
-						}
+					if(typeSymbol.name==nullptr && typeSymbol.type->kind==TYPE_KIND_REFERENCE){
+						*value=(Value){
+							.kind=VALUE_KIND_TYPEREF,
+							.typeref.type=typeSymbol.type,
+						};
+						// cannot operate on this type, so return instead of break
+						goto VALUE_PARSE_RET_SUCCESS;
 					}
 					// on SYMBOL_PRESENT the iterator is in an invalid state (has iterated past the symbol, even though the symbol is discarded)
 					// this function fails in this case though, so we discard the invalid iterator anyway
