@@ -71,10 +71,7 @@ char*Statement_asString(Statement*statement,int depth){
 			else
 				stringAppend(ret,"step:\n%s","none");
 
-			for(int i=0;i<statement->forLoop.body.len;i++){
-				Statement*bodyStatement=array_get(&statement->forLoop.body,i);
-				stringAppend(ret,"%s",Statement_asString(bodyStatement,depth+1));
-			}
+			stringAppend(ret,"%s",Statement_asString(statement->forLoop.body,depth+1));
 
 			break;
 		}
@@ -100,11 +97,7 @@ char*Statement_asString(Statement*statement,int depth){
 			}else{
 				stringAppend(ret,"loop: while ( %s )",Value_asString(statement->whileLoop.condition));
 			}
-			for(int i=0;i<statement->whileLoop.body.len;i++){
-				Statement*bodyStatement=array_get(&statement->whileLoop.body,i);
-				stringAppend(ret,"\n%s",ind(depth*4));
-				stringAppend(ret,"%s",Statement_asString(bodyStatement,depth+1));
-			}
+			stringAppend(ret,"%s",Statement_asString(statement->whileLoop.body,depth+1));
 			break;
 		}
 		case STATEMENT_SWITCH:{
@@ -354,37 +347,18 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 		}
 		TokenIter_nextToken(token_iter,&token);
 
-		bool singleStatementBody=!Token_equalString(&token,"{");
-		if(!singleStatementBody){
-			TokenIter_nextToken(token_iter,&token);
+		Statement whileBody={};
+		enum STATEMENT_PARSE_RESULT res=Statement_parse(module,&whileBody,token_iter);
+		TokenIter_lastToken(token_iter,&token);
+		if(res==STATEMENT_PARSE_RESULT_INVALID){
+			fatal("invalid statement in if body at line %d col %d %.*s",token.line,token.col,token.len,token.p);
 		}
-
-		array body_tokens;
-		array_init(&body_tokens,sizeof(Statement));
-
-		bool endBody=false;
-		do{
-			Statement whileBodyStatement={};
-			enum STATEMENT_PARSE_RESULT res=Statement_parse(module,&whileBodyStatement,token_iter);
-			TokenIter_lastToken(token_iter,&token);
-			switch(res){
-				case STATEMENT_PARSE_RESULT_INVALID:
-					// e.g. empty body
-					endBody=true;
-					break;
-				default:
-					array_append(&body_tokens,&whileBodyStatement);
-					break;
-			}
-		}while(!singleStatementBody && !endBody &&!Token_equalString(&token,"}"));
-		if(!singleStatementBody)
-			TokenIter_nextToken(token_iter,&token);
 
 		*out=(Statement){
 			.tag=STATEMENT_KIND_WHILE,
 			.whileLoop={
 				.condition=allocAndCopy(sizeof(Value),&condition),
-				.body=body_tokens,
+				.body=allocAndCopy(sizeof(Statement),&whileBody),
 			}
 		};
 
@@ -393,29 +367,12 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 	if(Token_equalString(&token,"do")){
 		TokenIter_nextToken(token_iter,&token);
 		
-		bool singleStatementBody=!Token_equalString(&token,"{");
-		if(!singleStatementBody){
-			TokenIter_nextToken(token_iter,&token);
+		Statement whileBody={};
+		enum STATEMENT_PARSE_RESULT res=Statement_parse(module,&whileBody,token_iter);
+		TokenIter_lastToken(token_iter,&token);
+		if(res==STATEMENT_PARSE_RESULT_INVALID){
+			fatal("invalid statement in if body at line %d col %d %.*s",token.line,token.col,token.len,token.p);
 		}
-
-		array body_tokens;
-		array_init(&body_tokens,sizeof(Statement));
-
-		do{
-			Statement doWhileBodyStatement={};
-			enum STATEMENT_PARSE_RESULT res=Statement_parse(module,&doWhileBodyStatement,token_iter);
-			TokenIter_lastToken(token_iter,&token);
-			switch(res){
-				case STATEMENT_PARSE_RESULT_INVALID:
-					fatal("invalid statement in do while body");
-					break;
-				default:
-					array_append(&body_tokens,&doWhileBodyStatement);
-					break;
-			}
-		}while(!singleStatementBody && !Token_equalString(&token,"}"));
-		if(!singleStatementBody)
-			TokenIter_nextToken(token_iter,&token);
 
 		if(!Token_equalString(&token,"while")){
 			fatal("expected while after do while body");
@@ -452,7 +409,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 			.whileLoop={
 				.doWhile=true,
 				.condition=allocAndCopy(sizeof(Value),&condition),
-				.body=body_tokens,
+				.body=allocAndCopy(sizeof(Statement), &whileBody)
 			}
 		};
 
@@ -507,48 +464,14 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 		}
 		TokenIter_nextToken(token_iter,&token);
 
-		array body_tokens;
-		array_init(&body_tokens,sizeof(Statement));
-
-		// if next token is {, parse statement block
-		if(Token_equalString(&token,"{")){
-			TokenIter_nextToken(token_iter,&token);
-
-			bool stopParsingForBody=false;
-			while(!stopParsingForBody){
-				if(Token_equalString(&token,"}")){
-					TokenIter_nextToken(token_iter,&token);
-					break;
-				}
-				Statement forBodyStatement={};
-				enum STATEMENT_PARSE_RESULT res=Statement_parse(module,&forBodyStatement,token_iter);
-				TokenIter_lastToken(token_iter,&token);
-				switch(res){
-					case STATEMENT_PARSE_RESULT_INVALID:
-						fatal("invalid statement in for body");
-						stopParsingForBody=true;
-						break;
-					case STATEMENT_PARSE_RESULT_PRESENT:
-						array_append(&body_tokens,&forBodyStatement);
-						break;
-				}
-			}
-		// otherwise parse single statement
-		}else{
-			Statement forBodyStatement={};
-			enum STATEMENT_PARSE_RESULT res=Statement_parse(module,&forBodyStatement,token_iter);
-			TokenIter_lastToken(token_iter,&token);
-			switch(res){
-				case STATEMENT_PARSE_RESULT_INVALID:
-					fatal("invalid statement in for body");
-					break;
-				case STATEMENT_PARSE_RESULT_PRESENT:
-					array_append(&body_tokens,&forBodyStatement);
-					break;
-			}
+		Statement forBody={};
+		res=Statement_parse(module,&forBody,token_iter);
+		TokenIter_lastToken(token_iter,&token);
+		if(res==STATEMENT_PARSE_RESULT_INVALID){
+			fatal("invalid statement in if body at line %d col %d %.*s",token.line,token.col,token.len,token.p);
 		}
 
-		out->forLoop.body=body_tokens;
+		out->forLoop.body=allocAndCopy(sizeof(Statement),&forBody);
 
 		goto STATEMENT_PARSE_RET_SUCCESS;
 	}

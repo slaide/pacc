@@ -73,14 +73,6 @@ struct Statement{
 		}value;
 
 		struct{
-			Statement* init;
-			Value* condition;
-			Value* step;
-
-			array body;
-		}forLoop;
-
-		struct{
 			array body;
 		}block;
 
@@ -91,8 +83,16 @@ struct Statement{
 		}if_;
 
 		struct{
+			Statement* init;
 			Value* condition;
-			array body;
+			Value* step;
+
+			Statement* body;
+		}forLoop;
+
+		struct{
+			Value* condition;
+			Statement* body;
 			bool doWhile;
 		}whileLoop;
 
