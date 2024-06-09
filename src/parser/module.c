@@ -10,6 +10,7 @@ void Module_init(Module*module){
 	static const char* basicTypes[]={
 		"int",
 		"char",
+		"bool",
 		"void",
 		"float",
 		"double",

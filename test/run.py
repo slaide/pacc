@@ -27,6 +27,9 @@ class TestResult(str,Enum):
     FAILURE="FAILURE"
     TIMEOUT="TIMEOUT"
 
+NUM_TEST_FAILURES_TO_PRINT=2
+NUM_TEST_FAILURES_SO_FAR=0
+
 @dataclass
 class Test:
     file: str
@@ -37,6 +40,15 @@ class Test:
     flags:tp.Optional[str]=None
 
     result:tp.Optional[TestResult]=None
+
+    def copy(self)->"Test":
+        return Test(
+            file=self.file,
+            goal=self.goal,
+            should_fail=self.should_fail,
+            flags=self.flags,
+            result=self.result
+        )
 
     def run(self,print_info:bool=True,timeout:float=0.5):
         if print_info:
@@ -63,34 +75,38 @@ class Test:
             self.result=TestResult.SUCCESS
             return
         else:
-            print(f"{BOLD}{RED}Error: test '{self.file}' failed{RESET}")
-            print(f"Goal: {self.goal}")
-            if self.should_fail:
-                print(f"Expected to fail, but succeeded")
-            else:
-                print(f"Expected to succeed, but failed with code {proc.returncode}")
+            global NUM_TEST_FAILURES_SO_FAR
+            NUM_TEST_FAILURES_SO_FAR+=1
+            if NUM_TEST_FAILURES_SO_FAR<=NUM_TEST_FAILURES_TO_PRINT:
+                print(f"{BOLD}{RED}Error: test '{self.file}' failed{RESET}")
+                print(f"$ {command}")
+                print(f"Goal: {self.goal}")
+                if self.should_fail:
+                    print(f"Expected to fail, but succeeded")
+                else:
+                    print(f"Expected to succeed, but failed with code {proc.returncode}")
 
-        assert proc.stdout is not None
-        assert proc.stderr is not None
-        print("stdout: ---- \n",proc.stdout.read().decode("utf-8"))
-        print("stderr: ---- \n",proc.stderr.read().decode("utf-8"))
+                assert proc.stdout is not None
+                assert proc.stderr is not None
+                print("stdout: ---- \n",proc.stdout.read().decode("utf-8"))
+                print("stderr: ---- \n",proc.stderr.read().decode("utf-8"))
             
         self.result=TestResult.FAILURE
 
-tests=[
-    Test(file="test/test001.c", goal="basic function definition"),
-    Test(file="test/test002.c", goal="function definition with arguments"),
+TEST_FILES=[
+    Test(file="test/test001.c", goal="function definition without arguments, empty body"),
+    Test(file="test/test002.c", goal="function definition with arguments, empty body"),
     Test(file="test/test003.c", goal="function definition with statements in body, single line comment before any code"),
     Test(file="test/test004.c", goal="multi line comment"),
-    Test(file="test/test005.c", goal="string literal, variable declaration and assignment to string literal"),
-    Test(file="test/test006.c", goal="variable declaration and assignment to integer literal"),
+    Test(file="test/test005.c", goal="string literal, local symbol declaration and initialization, return statement"),
+    Test(file="test/test006.c", goal="char type symbol declaration and character literals"),
     Test(file="test/test007.c", goal="for loop and function call"),
-    Test(file="test/test008.c", goal="preprocessor define directive, return non-literal value"),
+    Test(file="test/test008.c", goal="preprocessor define directive and macro expansion"),
     Test(file="test/test009.c", goal="preprocessor function-like define directive"),
 
-    Test(file="test/test010.c", goal="include directive with quotation marks and angle brackets, function definition, for loop, arrow operator, dot operator"),
-    Test(file="test/test011.c", goal="float literals and casting operation"),
-    Test(file="test/test012.c", goal="type casting, array initializer, struct initializer, addrof operator, array subscript operator, arrow operator"),
+    Test(file="test/test010.c", goal="include directive with angle brackets, arrow operator, dot operator, call vararg function, struct definition"),
+    Test(file="test/test011.c", goal="float literals and casting operation, prefix and postfix operators"),
+    Test(file="test/test012.c", goal="array initializer, struct initializer, addrof operator, array subscript operator, explicit struct typename"),
     Test(file="test/test013.c", goal="explicit struct typename"),
     Test(file="test/test014.c", goal="const type"),
     Test(file="test/test015.c", goal="casting expression on struct initializer, typedef"),
@@ -118,36 +134,40 @@ tests=[
     Test(file="test/test035.c", goal="single unnamed function argument void"),
     Test(file="test/test036.c", goal="vararg function arguments"),
     Test(file="test/test037.c", goal="type as value"),
-    Test(file="test/test038.c", goal="escape sequence"),
+    Test(file="test/test038.c", goal="escape sequence in string"),
     Test(file="test/test039.c", goal="conditional (ternary) operator"),
 
-    Test(file="test/test040.c", goal="preprocessor if directive", flags="-p"),
-    Test(file="test/test041.c", goal="preprocessor if/else directive", flags="-p"),
-    Test(file="test/test042.c", goal="preprocessor nested if directive", flags="-p"),
-    Test(file="test/test043.c", goal="preprocessor elif directive", flags="-p"),
-    Test(file="test/test044.c", goal="preprocessor ifdef directive, evaluating to true", flags="-p"),
-    Test(file="test/test045.c", goal="preprocessor ifdef directive, evaluating to false", flags="-p"),
-    Test(file="test/test046.c", goal="preprocessor undef directive", flags="-p"),
-    Test(file="test/test047.c", goal="preprocessor include directive", flags="-p"),
-    Test(file="test/test048.c", goal="preprocessor pragma once directive", flags="-p"),
-    Test(file="test/test049.c", goal="preprocessor nested if directive (2)", flags="-p"),
+    Test(file="test/test040.c", goal="preprocessor if directive"),
+    Test(file="test/test041.c", goal="preprocessor if/else directive"),
+    Test(file="test/test042.c", goal="preprocessor nested if directive"),
+    Test(file="test/test043.c", goal="preprocessor elif directive"),
+    Test(file="test/test044.c", goal="preprocessor ifdef directive, evaluating to true"),
+    Test(file="test/test045.c", goal="preprocessor ifdef directive, evaluating to false"),
+    Test(file="test/test046.c", goal="preprocessor undef directive"),
+    Test(file="test/test047.c", goal="preprocessor include directive"),
+    Test(file="test/test048.c", goal="preprocessor pragma once directive"),
+    Test(file="test/test049.c", goal="preprocessor nested if directive (2)"),
 
-    Test(file="test/test050.c", goal="preprocessor nested if directive (3)", flags="-p"),
-    Test(file="test/test051.c", goal="preprocessor nested if directive (4)", flags="-p"),
-    Test(file="test/test052.c", goal="", flags="-p"),
-    Test(file="test/test053.c", goal="", flags="-p"),
-    Test(file="test/test054.c", goal="", flags="-p"),
-    Test(file="test/test055.c", goal="", flags="-p"),
+    Test(file="test/test050.c", goal="preprocessor nested if directive (3)"),
+    Test(file="test/test051.c", goal="preprocessor nested if directive (4)"),
+    Test(file="test/test052.c", goal="preprocessor value operators"),
+    Test(file="test/test053.c", goal="stringification preprcessor operator"),
+    Test(file="test/test054.c", goal="internal preprocessor expansion"),
+    Test(file="test/test055.c", goal="internal resursive preprocessor expansion"),
 
-    Test(file="test/test056.c", goal="compound symbol definitions", flags="-p -a"),
-    Test(file="test/test057.c", goal="compound symbol definitions with initializer", flags="-p -a"),
+    Test(file="test/test056.c", goal="compound symbol definitions"),
+    Test(file="test/test057.c", goal="compound symbol definitions with initializer"),
+    Test(file="test/test058.c", goal="signed char type use"),
+]
 
-    Test(file="test/test001.c", goal="basic function definition", flags="-p -a"),
-    Test(file="test/test002.c", goal="function definition with arguments", flags="-p -a"),
-    Test(file="test/test003.c", goal="function definition with statements in body, single line comment before any code", flags="-p -a"),
-    Test(file="test/test004.c", goal="multi line comment", flags="-p -a"),
-    Test(file="test/test005.c", goal="string literal, variable declaration and assignment to string literal", flags="-p -a"),
-    Test(file="test/test006.c", goal="variable declaration and assignment to integer literal", flags="-p -a"),
+def set_flags(t:Test,flags:str)->Test:
+    t.flags=flags
+    return t
+
+tests=[
+    *TEST_FILES,
+    *[set_flags(t.copy(),"-p -Imusl/include") for t in TEST_FILES],
+    *[set_flags(t.copy(),"-p -Imusl/include -a") for t in TEST_FILES],
 ]
 
 print(f"{BOLD}running tests...{RESET}")

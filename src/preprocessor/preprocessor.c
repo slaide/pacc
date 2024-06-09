@@ -1,5 +1,4 @@
 #include "tokenizer.h"
-#include "util/array.h"
 #include <libgen.h>
 #include <string.h>
 #include <unistd.h> // access
@@ -7,6 +6,8 @@
 #include<util/util.h>
 
 #include<preprocessor/preprocessor.h>
+
+static const char*_PLACEHOLDER_FILENAME="unknownfile";
 
 void Preprocessor_init(struct Preprocessor*preprocessor){
 	*preprocessor=(struct Preprocessor){};
@@ -18,9 +19,15 @@ void Preprocessor_init(struct Preprocessor*preprocessor){
 	array __FILE__tokens={};
 	array_init(&__FILE__tokens,sizeof(Token));
 	array_append(&__FILE__tokens,&(Token){
-		.tag=TOKEN_TAG_LITERAL_STRING,
-		.p="unknownfile",
-		.len=strlen("unknownfile"),
+		.tag=TOKEN_TAG_LITERAL,
+		.p=_PLACEHOLDER_FILENAME,
+		.len=strlen(_PLACEHOLDER_FILENAME),
+		.literal={
+			.string={
+				.len=strlen(_PLACEHOLDER_FILENAME),
+				.str=allocAndCopy(strlen(_PLACEHOLDER_FILENAME)+1,_PLACEHOLDER_FILENAME),
+			}
+		}
 	});
 	array_append(&preprocessor->defines,&(struct PreprocessorDefine){
 		.name={ .tag=TOKEN_TAG_SYMBOL, .p="__FILE__", .len=strlen("__FILE__"), },
@@ -30,7 +37,7 @@ void Preprocessor_init(struct Preprocessor*preprocessor){
 	array __LINE__tokens={};
 	array_init(&__LINE__tokens,sizeof(Token));
 	array_append(&__LINE__tokens,&(Token){
-		.tag=TOKEN_TAG_LITERAL_INTEGER,
+		.tag=TOKEN_TAG_LITERAL,
 		.p="1",
 		.len=strlen("1"),
 	});
@@ -167,7 +174,7 @@ void Preprocessor_processInclude(struct Preprocessor*preprocessor){
 	// read include argument
 	int ntr=TokenIter_lastToken(&preprocessor->token_iter,&token);
 	if(!ntr) fatal("");
-	if(token.tag!=TOKEN_TAG_PREP_INCLUDE_ARGUMENT && token.tag!=TOKEN_TAG_LITERAL_STRING){
+	if(token.tag!=TOKEN_TAG_PREP_INCLUDE_ARGUMENT && !(token.tag==TOKEN_TAG_LITERAL && token.literal.tag==TOKEN_LITERAL_TAG_STRING)){
 		fatal("expected include argument after #include directive but got instead %.*s",token.len,token.p);
 	}
 
@@ -439,6 +446,10 @@ tokens_out must already be initialized
 preprocessor directives in tokens_in are not allowed
 */
 void Preprocessor_expandMacros(struct Preprocessor*preprocessor,int num_tokens_in_arg,Token*tokens_in_arg,array*tokens_out_arg){
+	if(num_tokens_in_arg==0){
+		return;
+	}
+
 	bool expanded_any=true;
 
 	// copy input arguments
@@ -680,11 +691,18 @@ void Preprocessor_expandMacros(struct Preprocessor*preprocessor,int num_tokens_i
 							snprintf(arg_str_out,total_str_len+3,"\"%s\"",arg_str);
 							// replace last token in token_out with string literal
 							Token string_literal_token={
-								.tag=TOKEN_TAG_LITERAL_STRING,
+								.tag=TOKEN_TAG_LITERAL,
 								.line=define_token.line,
 								.col=define_token.col,
 								.len=total_str_len+2,
-								.p=arg_str_out
+								.p=arg_str_out,
+								.literal={
+									.tag=TOKEN_LITERAL_TAG_STRING,
+									.string={
+										.len=total_str_len,
+										.str=arg_str,
+									}
+								}
 							};
 							array_append(new_tokens,&string_literal_token);
 
@@ -777,10 +795,125 @@ enum PreprocessorOperatorPrecedence{
 	PREPROCESSOR_OPERATOR_PRECEDENCE_MAX=0xFF,
 };
 
+const char*PreprocessorExpression_print(struct PreprocessorExpression*expr){
+	if(expr==nullptr)fatal("expr is null");
+
+	char*ret=makeString();
+	switch(expr->tag){
+		case PREPROCESSOR_EXPRESSION_TAG_LITERAL:
+			stringAppend(ret,"%d",expr->value);
+			break;
+		case PREPROCESSOR_EXPRESSION_TAG_NOT:
+			stringAppend(ret,"not( %s )",PreprocessorExpression_print(expr->not.expr));
+			break;
+		case PREPROCESSOR_EXPRESSION_TAG_OR:
+			stringAppend(ret,"( %s ) or ( %s )",PreprocessorExpression_print(expr->or.lhs),PreprocessorExpression_print(expr->or.rhs));
+			break;
+		case PREPROCESSOR_EXPRESSION_TAG_AND:
+			stringAppend(ret,"( %s ) and ( %s )",PreprocessorExpression_print(expr->and.lhs),PreprocessorExpression_print(expr->and.rhs));
+			break;
+		case PREPROCESSOR_EXPRESSION_TAG_UNKNOWN:
+			stringAppend(ret,"unknown");
+			break;
+		default:
+			fatal("unimplemented tag %d",expr->tag);
+	}
+
+	return ret;
+}
+
+// for internal use only
+int PreprocessorExpression_parse(
+	struct Preprocessor*preprocessor,
+	array if_expr_tokens,
+	struct PreprocessorExpression *out,
+	int precedence
+);
+
+/*
+for internal use only, from inside PreprocessorExpression_parse (arguments carry internal state)
+
+*/
+void PreprocessorExpression_parse_processOperator(
+	struct Preprocessor*preprocessor,
+
+	int num_operands,
+
+	int *nextTokenIndex,
+	struct PreprocessorExpression*out,
+	array if_expr_tokens,
+	int precedence,
+	enum PreprocessorExpressionTag operator_expression_tag,
+	Token*nextToken
+){
+	if(num_operands>1 && out->tag==0)fatal("n>1 operand operation was not preceded by another operand, instead got token %s",Token_print(nextToken));
+	if(num_operands==1 && out->tag!=0)fatal("unexpected token %s, %s",Token_print(nextToken),PreprocessorExpression_print(out));
+	(*nextTokenIndex)++;
+
+	switch(num_operands){
+		case 1: case 2: case 3:break;
+		default:fatal("invalid number of operands %d",num_operands);
+	}
+
+	// parse new expression
+	struct PreprocessorExpression sub_expr[2]={};
+
+	int num_operands_yet_to_parse=0;
+	switch(num_operands){
+		case 1:
+			// for unary operations, the operatand follows the operator
+			num_operands_yet_to_parse=1;
+			break;
+		case 2:
+			// for binary and tertiary operations, the second (and third) operands follow the operator
+			num_operands_yet_to_parse=1;
+			break;
+		case 3:
+			num_operands_yet_to_parse=2;
+			break;
+		default:fatal("unreachable");
+	}
+	for(int i=0;i<num_operands_yet_to_parse;i++){
+		(*nextTokenIndex)+=PreprocessorExpression_parse(
+			preprocessor,
+			(array){
+				.data=((Token*)if_expr_tokens.data)+nextTokenIndex[0],
+				.len=if_expr_tokens.len-nextTokenIndex[0],
+				.elem_size=if_expr_tokens.elem_size,
+				// omit cap
+			},
+			&sub_expr[i],
+			precedence
+		);
+	}
+
+	switch(num_operands){
+		case 1:
+			*out=(struct PreprocessorExpression){
+				.tag=operator_expression_tag,
+				.unary_operand={
+					.expr=allocAndCopy(sizeof(struct PreprocessorExpression),&sub_expr[0]),
+				}
+			};
+			return;
+		case 2:
+			if(sub_expr[0].tag==0)fatal("");
+			*out=(struct PreprocessorExpression){
+				.tag=operator_expression_tag,
+				.binary_operands={
+					.lhs=allocAndCopy(sizeof(struct PreprocessorExpression),out),
+					.rhs=allocAndCopy(sizeof(struct PreprocessorExpression),&sub_expr[0])
+				}
+			};
+			return;
+		case 3:fatal("unimplemented");
+	}
+	fatal("unreachable");
+}
 
 #define PREPROCESSOR_EXPRESSION_PARSE_CHECK_PRECEDENCE(OPERATOR_PRECEDENCE) \
 	if(precedence<=OPERATOR_PRECEDENCE) \
-		goto PREPROCESSOR_EXPRESSION_PARSE_RET_CHECK;
+		goto PREPROCESSOR_EXPRESSION_PARSE_RET_SUCCESS;
 
 /*
 parse expression by consuming tokens (until end of line), then evaluating the expression
@@ -812,12 +945,18 @@ int PreprocessorExpression_parse(
 		nextToken=array_get(&if_expr_tokens,nextTokenIndex);
 
 		switch(nextToken->tag){
-			case TOKEN_TAG_LITERAL_INTEGER:
-				if(out->tag!=0)fatal("unexpected token %s",Token_print(nextToken));
+			case TOKEN_TAG_LITERAL:
+				if(out->tag!=0){
+					fatal("unexpected token %s, %d",Token_print(nextToken),out->tag);
+				}
 				nextTokenIndex++;
 
+				if(nextToken->literal.tag!=TOKEN_LITERAL_TAG_NUMERIC)fatal("unexpected literal %s",Token_print(nextToken));
+
 				out->tag=PREPROCESSOR_EXPRESSION_TAG_LITERAL;
-				out->value=atoi(nextToken->p);
+				int64_t v=0;
+				TokenLiteral_getNumericValue(nextToken,nullptr,&v,nullptr);
+				out->value=v;
 				break;
 			case TOKEN_TAG_SYMBOL:
 				{
@@ -915,309 +1054,156 @@ int PreprocessorExpression_parse(
 					}else if(Token_equalString(nextToken,"||")){
 						PREPROCESSOR_EXPRESSION_PARSE_CHECK_PRECEDENCE(PREPROCESSOR_OPERATOR_PRECEDENCE_OR)
 
-						if(out->tag==0)fatal("unexpected token %s",Token_print(nextToken));
-						nextTokenIndex++;
-
-						// parse new expression
-						struct PreprocessorExpression sub_expr={};
-						nextTokenIndex+=PreprocessorExpression_parse(
+						PreprocessorExpression_parse_processOperator(
 							preprocessor,
-							(array){
-								.data=((Token*)if_expr_tokens.data)+nextTokenIndex,
-								.len=if_expr_tokens.len-nextTokenIndex,
-								.elem_size=if_expr_tokens.elem_size,
-								// omit cap
-							},
-							&sub_expr,
-							PREPROCESSOR_OPERATOR_PRECEDENCE_OR
+							2,
+							&nextTokenIndex,
+							out,
+							if_expr_tokens,
+							PREPROCESSOR_OPERATOR_PRECEDENCE_OR,
+							PREPROCESSOR_EXPRESSION_TAG_OR,
+							nextToken
 						);
-
-						*out=(struct PreprocessorExpression){
-							.tag=PREPROCESSOR_EXPRESSION_TAG_OR,
-							.or={
-								.lhs=allocAndCopy(sizeof(struct PreprocessorExpression),out),
-								.rhs=allocAndCopy(sizeof(struct PreprocessorExpression),&sub_expr)
-							}
-						};
 						break;
 					}else if(Token_equalString(nextToken,"&&")){
 						PREPROCESSOR_EXPRESSION_PARSE_CHECK_PRECEDENCE(PREPROCESSOR_OPERATOR_PRECEDENCE_AND)
 
-						if(out->tag==0)fatal("unexpected token %s",Token_print(nextToken));
-						nextTokenIndex++;
-
-						// parse new expression
-						struct PreprocessorExpression sub_expr={};
-						nextTokenIndex+=PreprocessorExpression_parse(
+						PreprocessorExpression_parse_processOperator(
 							preprocessor,
-							(array){
-								.data=((Token*)if_expr_tokens.data)+nextTokenIndex,
-								.len=if_expr_tokens.len-nextTokenIndex,
-								.elem_size=if_expr_tokens.elem_size,
-								// omit cap
-							},
-							&sub_expr,
-							PREPROCESSOR_OPERATOR_PRECEDENCE_AND
+							2,
+							&nextTokenIndex,
+							out,
+							if_expr_tokens,
+							PREPROCESSOR_OPERATOR_PRECEDENCE_AND,
+							PREPROCESSOR_EXPRESSION_TAG_AND,
+							nextToken
 						);
-
-						*out=(struct PreprocessorExpression){
-							.tag=PREPROCESSOR_EXPRESSION_TAG_AND,
-							.and={
-								.lhs=allocAndCopy(sizeof(struct PreprocessorExpression),out),
-								.rhs=allocAndCopy(sizeof(struct PreprocessorExpression),&sub_expr)
-							}
-						};
 						break;
 					}else if(Token_equalString(nextToken,">")){
 						PREPROCESSOR_EXPRESSION_PARSE_CHECK_PRECEDENCE(PREPROCESSOR_OPERATOR_PRECEDENCE_GREATER_THAN)
 
-						if(out->tag==0)fatal("unexpected token %s",Token_print(nextToken));
-						nextTokenIndex++;
-
-						// parse new expression
-						struct PreprocessorExpression sub_expr={};
-						nextTokenIndex+=PreprocessorExpression_parse(
+						PreprocessorExpression_parse_processOperator(
 							preprocessor,
-							(array){
-								.data=((Token*)if_expr_tokens.data)+nextTokenIndex,
-								.len=if_expr_tokens.len-nextTokenIndex,
-								.elem_size=if_expr_tokens.elem_size,
-								// omit cap
-							},
-							&sub_expr,
-							PREPROCESSOR_OPERATOR_PRECEDENCE_GREATER_THAN
+							2,
+							&nextTokenIndex,
+							out,
+							if_expr_tokens,
+							PREPROCESSOR_OPERATOR_PRECEDENCE_GREATER_THAN,
+							PREPROCESSOR_EXPRESSION_TAG_GREATER_THAN,
+							nextToken
 						);
-
-						*out=(struct PreprocessorExpression){
-							.tag=PREPROCESSOR_EXPRESSION_TAG_GREATER_THAN,
-							.greater_than={
-								.lhs=allocAndCopy(sizeof(struct PreprocessorExpression),out),
-								.rhs=allocAndCopy(sizeof(struct PreprocessorExpression),&sub_expr)
-							}
-						};
 						break;
 					}else if(Token_equalString(nextToken,">=")){
 						PREPROCESSOR_EXPRESSION_PARSE_CHECK_PRECEDENCE(PREPROCESSOR_OPERATOR_PRECEDENCE_GREATER_THAN_OR_EQUAL)
 
-						if(out->tag==0)fatal("unexpected token %s",Token_print(nextToken));
-						nextTokenIndex++;
-
-						// parse new expression
-						struct PreprocessorExpression sub_expr={};
-						nextTokenIndex+=PreprocessorExpression_parse(
+						PreprocessorExpression_parse_processOperator(
 							preprocessor,
-							(array){
-								.data=((Token*)if_expr_tokens.data)+nextTokenIndex,
-								.len=if_expr_tokens.len-nextTokenIndex,
-								.elem_size=if_expr_tokens.elem_size,
-								// omit cap
-							},
-							&sub_expr,
-							PREPROCESSOR_OPERATOR_PRECEDENCE_GREATER_THAN_OR_EQUAL
+							2,
+							&nextTokenIndex,
+							out,
+							if_expr_tokens,
+							PREPROCESSOR_OPERATOR_PRECEDENCE_GREATER_THAN_OR_EQUAL,
+							PREPROCESSOR_EXPRESSION_TAG_GREATER_THAN_OR_EQUAL,
+							nextToken
 						);
-
-						*out=(struct PreprocessorExpression){
-							.tag=PREPROCESSOR_EXPRESSION_TAG_GREATER_THAN_OR_EQUAL,
-							.greater_than_or_equal={
-								.lhs=allocAndCopy(sizeof(struct PreprocessorExpression),out),
-								.rhs=allocAndCopy(sizeof(struct PreprocessorExpression),&sub_expr)
-							}
-						};
 						break;
 					}else if(Token_equalString(nextToken,"<")){
 						PREPROCESSOR_EXPRESSION_PARSE_CHECK_PRECEDENCE(PREPROCESSOR_OPERATOR_PRECEDENCE_LESSER_THAN)
 
-						if(out->tag==0)fatal("unexpected token %s",Token_print(nextToken));
-						nextTokenIndex++;
-
-						// parse new expression
-						struct PreprocessorExpression sub_expr={};
-						nextTokenIndex+=PreprocessorExpression_parse(
+						PreprocessorExpression_parse_processOperator(
 							preprocessor,
-							(array){
-								.data=((Token*)if_expr_tokens.data)+nextTokenIndex,
-								.len=if_expr_tokens.len-nextTokenIndex,
-								.elem_size=if_expr_tokens.elem_size,
-								// omit cap
-							},
-							&sub_expr,
-							PREPROCESSOR_OPERATOR_PRECEDENCE_LESSER_THAN
+							2,
+							&nextTokenIndex,
+							out,
+							if_expr_tokens,
+							PREPROCESSOR_OPERATOR_PRECEDENCE_LESSER_THAN,
+							PREPROCESSOR_EXPRESSION_TAG_LESSER_THAN,
+							nextToken
 						);
-
-						*out=(struct PreprocessorExpression){
-							.tag=PREPROCESSOR_EXPRESSION_TAG_LESSER_THAN,
-							.lesser_than={
-								.lhs=allocAndCopy(sizeof(struct PreprocessorExpression),out),
-								.rhs=allocAndCopy(sizeof(struct PreprocessorExpression),&sub_expr)
-							}
-						};
 						break;
 					}else if(Token_equalString(nextToken,"<=")){
 						PREPROCESSOR_EXPRESSION_PARSE_CHECK_PRECEDENCE(PREPROCESSOR_OPERATOR_PRECEDENCE_LESSER_THAN_OR_EQUAL)
 
-						if(out->tag==0)fatal("unexpected token %s",Token_print(nextToken));
-						nextTokenIndex++;
-
-						// parse new expression
-						struct PreprocessorExpression sub_expr={};
-						nextTokenIndex+=PreprocessorExpression_parse(
+						PreprocessorExpression_parse_processOperator(
 							preprocessor,
-							(array){
-								.data=((Token*)if_expr_tokens.data)+nextTokenIndex,
-								.len=if_expr_tokens.len-nextTokenIndex,
-								.elem_size=if_expr_tokens.elem_size,
-								// omit cap
-							},
-							&sub_expr,
-							PREPROCESSOR_OPERATOR_PRECEDENCE_LESSER_THAN_OR_EQUAL
+							2,
+							&nextTokenIndex,
+							out,
+							if_expr_tokens,
+							PREPROCESSOR_OPERATOR_PRECEDENCE_LESSER_THAN_OR_EQUAL,
+							PREPROCESSOR_EXPRESSION_TAG_LESSER_THAN_OR_EQUAL,
+							nextToken
 						);
-
-						*out=(struct PreprocessorExpression){
-							.tag=PREPROCESSOR_EXPRESSION_TAG_LESSER_THAN_OR_EQUAL,
-							.lesser_than_or_equal={
-								.lhs=allocAndCopy(sizeof(struct PreprocessorExpression),out),
-								.rhs=allocAndCopy(sizeof(struct PreprocessorExpression),&sub_expr)
-							}
-						};
 						break;
 					}else if(Token_equalString(nextToken,"==")){
 						PREPROCESSOR_EXPRESSION_PARSE_CHECK_PRECEDENCE(PREPROCESSOR_OPERATOR_PRECEDENCE_EQUAL)
 
-						if(out->tag==0)fatal("unexpected token %s",Token_print(nextToken));
-						nextTokenIndex++;
-
-						// parse new expression
-						struct PreprocessorExpression sub_expr={};
-						nextTokenIndex+=PreprocessorExpression_parse(
+						PreprocessorExpression_parse_processOperator(
 							preprocessor,
-							(array){
-								.data=((Token*)if_expr_tokens.data)+nextTokenIndex,
-								.len=if_expr_tokens.len-nextTokenIndex,
-								.elem_size=if_expr_tokens.elem_size,
-								// omit cap
-							},
-							&sub_expr,
-							PREPROCESSOR_OPERATOR_PRECEDENCE_EQUAL
+							2,
+							&nextTokenIndex,
+							out,
+							if_expr_tokens,
+							PREPROCESSOR_OPERATOR_PRECEDENCE_EQUAL,
+							PREPROCESSOR_EXPRESSION_TAG_EQUAL,
+							nextToken
 						);
-
-						*out=(struct PreprocessorExpression){
-							.tag=PREPROCESSOR_EXPRESSION_TAG_EQUAL,
-							.equal={
-								.lhs=allocAndCopy(sizeof(struct PreprocessorExpression),out),
-								.rhs=allocAndCopy(sizeof(struct PreprocessorExpression),&sub_expr)
-							}
-						};
 						break;
 					}else if(Token_equalString(nextToken,"!=")){
 						PREPROCESSOR_EXPRESSION_PARSE_CHECK_PRECEDENCE(PREPROCESSOR_OPERATOR_PRECEDENCE_UNEQUAL)
 
-						if(out->tag==0)fatal("unexpected token %s",Token_print(nextToken));
-						nextTokenIndex++;
-
-						// parse new expression
-						struct PreprocessorExpression sub_expr={};
-						nextTokenIndex+=PreprocessorExpression_parse(
+						PreprocessorExpression_parse_processOperator(
 							preprocessor,
-							(array){
-								.data=((Token*)if_expr_tokens.data)+nextTokenIndex,
-								.len=if_expr_tokens.len-nextTokenIndex,
-								.elem_size=if_expr_tokens.elem_size,
-								// omit cap
-							},
-							&sub_expr,
-							PREPROCESSOR_OPERATOR_PRECEDENCE_UNEQUAL
+							2,
+							&nextTokenIndex,
+							out,
+							if_expr_tokens,
+							PREPROCESSOR_OPERATOR_PRECEDENCE_UNEQUAL,
+							PREPROCESSOR_EXPRESSION_TAG_UNEQUAL,
+							nextToken
 						);
-
-						*out=(struct PreprocessorExpression){
-							.tag=PREPROCESSOR_EXPRESSION_TAG_UNEQUAL,
-							.unequal={
-								.lhs=allocAndCopy(sizeof(struct PreprocessorExpression),out),
-								.rhs=allocAndCopy(sizeof(struct PreprocessorExpression),&sub_expr)
-							}
-						};
 						break;
 					}else if(Token_equalString(nextToken,"+")){
 						PREPROCESSOR_EXPRESSION_PARSE_CHECK_PRECEDENCE(PREPROCESSOR_OPERATOR_PRECEDENCE_ADD)
 
-						if(out->tag==0)fatal("unexpected token %s",Token_print(nextToken));
-						nextTokenIndex++;
-
-						// parse new expression
-						struct PreprocessorExpression sub_expr={};
-						nextTokenIndex+=PreprocessorExpression_parse(
+						PreprocessorExpression_parse_processOperator(
 							preprocessor,
-							(array){
-								.data=((Token*)if_expr_tokens.data)+nextTokenIndex,
-								.len=if_expr_tokens.len-nextTokenIndex,
-								.elem_size=if_expr_tokens.elem_size,
-								// omit cap
-							},
-							&sub_expr,
-							PREPROCESSOR_OPERATOR_PRECEDENCE_ADD
+							2,
+							&nextTokenIndex,
+							out,
+							if_expr_tokens,
+							PREPROCESSOR_OPERATOR_PRECEDENCE_ADD,
+							PREPROCESSOR_EXPRESSION_TAG_ADD,
+							nextToken
 						);
-
-						*out=(struct PreprocessorExpression){
-							.tag=PREPROCESSOR_EXPRESSION_TAG_AND,
-							.add={
-								.lhs=allocAndCopy(sizeof(struct PreprocessorExpression),out),
-								.rhs=allocAndCopy(sizeof(struct PreprocessorExpression),&sub_expr)
-							}
-						};
 						break;
 					}else if(Token_equalString(nextToken,"-")){
 						PREPROCESSOR_EXPRESSION_PARSE_CHECK_PRECEDENCE(PREPROCESSOR_OPERATOR_PRECEDENCE_SUBTRACT)
 
-						if(out->tag==0)fatal("unexpected token %s",Token_print(nextToken));
-						nextTokenIndex++;
-
-						// parse new expression
-						struct PreprocessorExpression sub_expr={};
-						nextTokenIndex+=PreprocessorExpression_parse(
+						PreprocessorExpression_parse_processOperator(
 							preprocessor,
-							(array){
-								.data=((Token*)if_expr_tokens.data)+nextTokenIndex,
-								.len=if_expr_tokens.len-nextTokenIndex,
-								.elem_size=if_expr_tokens.elem_size,
-								// omit cap
-							},
-							&sub_expr,
-							PREPROCESSOR_OPERATOR_PRECEDENCE_SUBTRACT
+							2,
+							&nextTokenIndex,
+							out,
+							if_expr_tokens,
+							PREPROCESSOR_OPERATOR_PRECEDENCE_SUBTRACT,
+							PREPROCESSOR_EXPRESSION_TAG_SUBTRACT,
+							nextToken
 						);
-
-						*out=(struct PreprocessorExpression){
-							.tag=PREPROCESSOR_EXPRESSION_TAG_SUBTRACT,
-							.subtract={
-								.lhs=allocAndCopy(sizeof(struct PreprocessorExpression),out),
-								.rhs=allocAndCopy(sizeof(struct PreprocessorExpression),&sub_expr)
-							}
-						};
 						break;
 					}else if(Token_equalString(nextToken,"!")){
-						PREPROCESSOR_EXPRESSION_PARSE_CHECK_PRECEDENCE(PREPROCESSOR_OPERATOR_PRECEDENCE_NOT)
+						//PREPROCESSOR_EXPRESSION_PARSE_CHECK_PRECEDENCE(PREPROCESSOR_OPERATOR_PRECEDENCE_NOT)
 
-						if(out->tag!=0)fatal("unexpected token %s",Token_print(nextToken));
-						nextTokenIndex++;
-
-						// parse new expression
-						struct PreprocessorExpression sub_expr={};
-						nextTokenIndex+=PreprocessorExpression_parse(
+						PreprocessorExpression_parse_processOperator(
 							preprocessor,
-							(array){
-								.data=((Token*)if_expr_tokens.data)+nextTokenIndex,
-								.len=if_expr_tokens.len-nextTokenIndex,
-								.elem_size=if_expr_tokens.elem_size,
-								// omit cap
-							},
-							&sub_expr,
-							PREPROCESSOR_OPERATOR_PRECEDENCE_NOT
+							1,
+							&nextTokenIndex,
+							out,
+							if_expr_tokens,
+							PREPROCESSOR_OPERATOR_PRECEDENCE_NOT,
+							PREPROCESSOR_EXPRESSION_TAG_NOT,
+							nextToken
 						);
-
-						*out=(struct PreprocessorExpression){
-							.tag=PREPROCESSOR_EXPRESSION_TAG_NOT,
-							.not={
-								.expr=allocAndCopy(sizeof(struct PreprocessorExpression),&sub_expr)
-							}
-						};
 						break;
 					}else if(Token_equalString(nextToken,"?")){
 						if(out->tag==0)fatal("unexpected token %s",Token_print(nextToken));
@@ -1268,8 +1254,7 @@ int PreprocessorExpression_parse(
 						};
 						break;
 					}else if(Token_equalString(nextToken,":")){
-						if(precedence<=PREPROCESSOR_OPERATOR_PRECEDENCE_TERNARY)
-							goto PREPROCESSOR_EXPRESSION_PARSE_RET_CHECK;
+						PREPROCESSOR_EXPRESSION_PARSE_CHECK_PRECEDENCE(PREPROCESSOR_OPERATOR_PRECEDENCE_TERNARY)
 
 						fatal("unexpected token %s outside ternary expression",Token_print(nextToken));
 					}else{
@@ -1283,12 +1268,11 @@ int PreprocessorExpression_parse(
 	}
 	if(openParanthesis>0)fatal("%d unmatched paranthesis at %s",openParanthesis,Token_print(array_get(&if_expr_tokens,0)));
 
-PREPROCESSOR_EXPRESSION_PARSE_RET_CHECK:
-	if(out->tag==0)fatal("expected expression, got instead %s",Token_print(nextToken));
-
-	// else, fallthrough
-
 PREPROCESSOR_EXPRESSION_PARSE_RET_SUCCESS:
+	if(out->tag==0){
+PREPROCESSOR_EXPRESSION_PARSE_RET_FAILURE:
+		fatal("expected expression, got instead %s",Token_print(nextToken));
+	}
 	return nextTokenIndex;
 }
 
@@ -1356,11 +1340,19 @@ struct PreprocessorExpression* Preprocessor_parseExpression(struct Preprocessor*
 			// append 1 or 0 to if_expr_tokens
 			array_append(&if_expr_tokens,(Token[]){
 				{
-					.tag=TOKEN_TAG_LITERAL_INTEGER,
+					.tag=TOKEN_TAG_LITERAL,
+					.filename=token.filename,
 					.line=token.line,
 					.col=token.col,
 					.len=1,
-					.p=defined?"1":"0"
+					.p=defined?"1":"0",
+					.literal={
+						.tag=TOKEN_LITERAL_TAG_NUMERIC,
+						.numeric={
+							.tag=TOKEN_LITERAL_NUMERIC_TAG_INTEGER,
+							.value.int_=defined?1:0
+						}
+					}
 				}
 			});
 

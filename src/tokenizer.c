@@ -1,3 +1,4 @@
+#include <limits.h>
 #include<tokenizer.h>
 
 #include<util/util.h>
@@ -221,7 +222,8 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 
 		// 1) string literals
 		if(token.len==1 && token.p[0]=='"'){
-			token.tag=TOKEN_TAG_LITERAL_STRING;
+			token.tag=TOKEN_TAG_LITERAL;
+			token.literal.tag=TOKEN_LITERAL_TAG_STRING;
 
 			// include all characters until next quotation mark
 			// note escaped quotation mark though (which is part of the string, does not terminate it)
@@ -242,23 +244,94 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 
 		// 2) character literal
 		if(token.len==1 && token.p[0]=='\''){
-			token.tag=TOKEN_TAG_LITERAL_CHAR;
+			bool is_wchar=false;
+			// get last token, if one exists
+			Token*last_token=nullptr;
+			if(tokenizer->num_tokens>0){
+				last_token=&tokenizer->tokens[tokenizer->num_tokens-1];
+				if(Token_equalString(last_token,"L") && /* no space between last token and this one */ (last_token->p + last_token->len)==token.p){
+					is_wchar=true;
+				}
+			}
+
+			token.tag=TOKEN_TAG_LITERAL;
+			token.literal.tag=TOKEN_LITERAL_TAG_NUMERIC;
+			token.literal.numeric.tag=TOKEN_LITERAL_NUMERIC_TAG_CHAR;
+			if(is_wchar){
+				token.literal.numeric.tag=TOKEN_LITERAL_NUMERIC_TAG_WCHAR;
+			}
 
 			// check escaped character
+			int64_t char_val=0;
 			if(*p=='\\'){
 				p++;
+			}
+			switch(*p){
+				case '0': char_val=0; break;
+				case '1': char_val=1; break;
+				case '2': char_val=2; break;
+				case '3': char_val=3; break;
+				case '4': char_val=4; break;
+				case '5': char_val=5; break;
+				case '6': char_val=6; break;
+				case '7': char_val=7; break;
+				case '8': char_val=8; break;
+				case '9': char_val=9; break;
+
+				case 'a': char_val=7; break;
+				case 'b': char_val=8; break;
+				case 't': char_val=9; break;
+				case 'n': char_val=10; break;
+
+				case 'v': char_val=11; break;
+				case 'f': char_val=12; break;
+				case 'r': char_val=13; break;
+
+				case 'e': char_val=27; break;
+
+				case 'u':{
+					// unicode character
+					fatal("unicode character literals not yet implemented");
+					break;
+				}
+
+				default:
+					char_val=*p;
+			}
+
+			if(is_wchar){
+				if(char_val>WCHAR_MAX)fatal("character literal out of range");
+				if(char_val<WCHAR_MIN)fatal("character literal out of range");
+				token.literal.numeric.value.wchar=char_val;
+			}else{
+				if(char_val>CHAR_MAX)fatal("character literal out of range");
+				if(char_val<CHAR_MIN)fatal("character literal out of range");
+				token.literal.numeric.value.char_=char_val;
 			}
 
 			// skip actual character literal
 			p++;
 
-			// end character literal with trailing single quotation mark
+			// end character literal with trailing single quotation mark (terminator)
 			if(*p!='\''){
-				// TODO error
+				fatal("unterminated character literal");
 			}
+			// skip over terminator
 			p++;
 
 			token.len=p-token.p;
+
+			if(is_wchar){
+				// mutate last_token to include L prefix and contents of this token, then continue (omitting new token generation)
+				last_token->len+=token.len;
+				// modify tag
+				last_token->tag=TOKEN_TAG_LITERAL;
+				last_token->literal.tag=TOKEN_LITERAL_TAG_NUMERIC;
+				// copy tag and value
+				last_token->literal.numeric=token.literal.numeric;
+
+				continue;
+			}
 		}
 
 		// 3) comment compound tokens
@@ -397,14 +470,14 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 		while(token.len>0){
 			Token*numericToken=&token;
 
+			/* leading signs disabled until further notice, because they cause issues -> there is no leading sign, only unary operators
 			// check for leading sign
 			if(numericToken->p[0]=='-' || numericToken->p[0]=='+'){
 				token.num_info.hasLeadingSign=true;
-				/*if(numericToken->len==1)
-					break;*/
 			}
+			*/
 
-			int offset=token.num_info.hasLeadingSign;
+			int offset=token.literal.numeric.num_info.hasLeadingSign;
 
 			// check for prefix (0x for hex, 0b for binary, 0 for octal)
 			int base=10;
@@ -418,54 +491,54 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 					base=2;
 					offset+=1;
 				}
-				token.num_info.hasPrefix=true;
+				token.literal.numeric.num_info.hasPrefix=true;
 			}
 
 			// check if number is just a zero
-			if(base==8 && offset==(1+token.num_info.hasLeadingSign)){
-				token.num_info.hasPrefix=false;
+			if(base==8 && offset==(1+token.literal.numeric.num_info.hasLeadingSign)){
+				token.literal.numeric.num_info.hasPrefix=false;
 				offset--;
 			}
 
 			// check for leading digit[s]
 			while(isValidNumFromChar(numericToken->p[offset],base)){
-				token.num_info.hasLeadingDigits=true;
+				token.literal.numeric.num_info.hasLeadingDigits=true;
 				offset++;
 			}
 
 			// check for decimal point (which may be the leading character, omitting any leading digit, e.g. ".5")
 			if(numericToken->p[offset]=='.'){
-				token.num_info.hasDecimalPoint=true;
+				token.literal.numeric.num_info.hasDecimalPoint=true;
 				if(numericToken->len==offset+1)
 					break;
 			}
-			offset+=token.num_info.hasDecimalPoint;
+			offset+=token.literal.numeric.num_info.hasDecimalPoint;
 
 			// a number must have either of these two properties, otherwise it is not a valid number
-			if(!(token.num_info.hasLeadingDigits || token.num_info.hasDecimalPoint)){
+			if(!(token.literal.numeric.num_info.hasLeadingDigits || token.literal.numeric.num_info.hasDecimalPoint)){
 				break;
 			}
 
 			// check for trailing digits (can only be present if there is a decimal point)
-			if(token.num_info.hasDecimalPoint){
+			if(token.literal.numeric.num_info.hasDecimalPoint){
 				// check for trailing digits
 				while(isValidNumFromChar(numericToken->p[offset],base)){
-					token.num_info.hasTrailingDigits=true;
+					token.literal.numeric.num_info.hasTrailingDigits=true;
 					offset++;
 				}
 			}
 
 			// check for exponent
 			if(base!=16 && (numericToken->p[offset]=='e' || numericToken->p[offset]=='E')){
-				token.num_info.hasExponent=true;
+				token.literal.numeric.num_info.hasExponent=true;
 				offset++;
 				if(offset==numericToken->len)
 					break;
 			}
 
 			// check for exponent sign
-			if(token.num_info.hasExponent && (numericToken->p[offset]=='-' || numericToken->p[offset]=='+')){
-				token.num_info.hasExponentSign=true;
+			if(token.literal.numeric.num_info.hasExponent && (numericToken->p[offset]=='-' || numericToken->p[offset]=='+')){
+				token.literal.numeric.num_info.hasExponentSign=true;
 				offset++;
 				if(offset==numericToken->len)
 					break;
@@ -473,29 +546,29 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 
 			// check for exponent digits (exponent must have at least one digit, and be base10 integer)
 			while(isValidNumFromChar(numericToken->p[offset],base)){
-				token.num_info.hasExponentDigits=true;
+				token.literal.numeric.num_info.hasExponentDigits=true;
 				offset++;
 			}
 
 			// check for suffix, in 4 parts
 			// 1) f or F for float
 			if(numericToken->p[offset]=='f' || numericToken->p[offset]=='F'){
-				token.num_info.hasSuffix=true;
+				token.literal.numeric.num_info.hasSuffix=true;
 				offset++;
 			}
 			// 2) u or U for unsigned
 			if(numericToken->p[offset]=='u' || numericToken->p[offset]=='U'){
-				token.num_info.hasSuffix=true;
+				token.literal.numeric.num_info.hasSuffix=true;
 				offset++;
 			}
 			// 3) l or L for long
 			if(numericToken->p[offset]=='l' || numericToken->p[offset]=='L'){
-				token.num_info.hasSuffix=true;
+				token.literal.numeric.num_info.hasSuffix=true;
 				offset++;
 			}
 			// 4) ll or LL for long long (i.e. check for l/L again)
 			if(numericToken->p[offset]=='l' || numericToken->p[offset]=='L'){
-				token.num_info.hasSuffix=true;
+				token.literal.numeric.num_info.hasSuffix=true;
 				offset++;
 			}
 
@@ -503,7 +576,7 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 			if(offset<numericToken->len)
 				break;
 
-			if(token.num_info.hasExponent && !token.num_info.hasExponentDigits){
+			if(token.literal.numeric.num_info.hasExponent && !token.literal.numeric.num_info.hasExponentDigits){
 				fatal("invalid number literal");
 			}
 
@@ -512,10 +585,12 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 			numericToken->len=offset; // write back the adjusted length
 
 			// check for flags to determine number type
-			if(token.num_info.hasDecimalPoint || token.num_info.hasExponent){
-				numericToken->tag=TOKEN_TAG_LITERAL_FLOAT;
+			numericToken->tag=TOKEN_TAG_LITERAL;
+			numericToken->literal.tag=TOKEN_LITERAL_TAG_NUMERIC;
+			if(token.literal.numeric.num_info.hasDecimalPoint || token.literal.numeric.num_info.hasExponent){
+				numericToken->literal.numeric.tag=TOKEN_LITERAL_NUMERIC_TAG_FLOAT;
 			}else{
-				numericToken->tag=TOKEN_TAG_LITERAL_INTEGER;
+				numericToken->literal.numeric.tag=TOKEN_LITERAL_NUMERIC_TAG_INTEGER;
 			}
 
 			break;
@@ -638,6 +713,8 @@ int TokenIter_lastToken(struct TokenIter*iter,Token*out){
 	return true;
 }
 bool TokenIter_isEmpty(struct TokenIter*iter){
+	if(iter==nullptr)fatal("bug");
+	//if(iter->tokenizer==nullptr)fatal("bug");
 	return iter->next_token_index>=iter->tokenizer->num_tokens;
 }
 
@@ -653,17 +730,35 @@ char*Token_print(Token*token){
 		case TOKEN_TAG_KEYWORD:
 			token_tag_name="keyword";
 			break;
-		case TOKEN_TAG_LITERAL_INTEGER:
-			token_tag_name="integer";
-			break;
-		case TOKEN_TAG_LITERAL_FLOAT:
-			token_tag_name="float";
-			break;
-		case TOKEN_TAG_LITERAL_CHAR:
-			token_tag_name="char";
-			break;
-		case TOKEN_TAG_LITERAL_STRING:
-			token_tag_name="string";
+		case TOKEN_TAG_LITERAL:
+			switch(token->literal.tag){
+				case TOKEN_LITERAL_TAG_UNDEFINED:
+					token_tag_name="lit undefined";
+					break;
+				case TOKEN_LITERAL_TAG_STRING:
+					token_tag_name="lit string";
+					break;
+				case TOKEN_LITERAL_TAG_NUMERIC:
+					switch(token->literal.numeric.tag){
+						case TOKEN_LITERAL_NUMERIC_TAG_CHAR:
+							token_tag_name="lit char";
+							break;
+						case TOKEN_LITERAL_NUMERIC_TAG_WCHAR:
+							token_tag_name="lit wchar";
+							break;
+						case TOKEN_LITERAL_NUMERIC_TAG_INTEGER:
+							token_tag_name="lit int";
+							break;
+						case TOKEN_LITERAL_NUMERIC_TAG_FLOAT:
+							token_tag_name="lit float";
+							break;
+						default:
+							fatal("%d",token->literal.numeric.tag);
+							token_tag_name="lit unknown?";
+							break;
+					}
+					break;
+			}
 			break;
 		case TOKEN_TAG_COMMENT:
 			token_tag_name="comment";
@@ -730,4 +825,48 @@ void Tokenizer_print(Tokenizer*tokenizer){
 		}
 	}
 	printf("\n");
+}
+
+void TokenLiteral_getNumericValue(Token*token,uint64_t*u,int64_t*i,double*d){
+	if(token->tag!=TOKEN_TAG_LITERAL) fatal("not a literal token");
+	if(token->literal.tag!=TOKEN_LITERAL_TAG_NUMERIC) fatal("not a numeric literal token");
+	switch(token->literal.numeric.tag){
+		case TOKEN_LITERAL_NUMERIC_TAG_INTEGER:
+			*i=token->literal.numeric.value.int_;
+			return;
+		case TOKEN_LITERAL_NUMERIC_TAG_UNSIGNED:
+			*i=token->literal.numeric.value.uint;
+			return;
+		case TOKEN_LITERAL_NUMERIC_TAG_LONG:
+			*i=token->literal.numeric.value.long_;
+			return;
+		case TOKEN_LITERAL_NUMERIC_TAG_UNSIGNED_LONG:
+			*i=token->literal.numeric.value.ulong;
+			return;
+		case TOKEN_LITERAL_NUMERIC_TAG_LONG_LONG:
+			*i=token->literal.numeric.value.llong_;
+			return;
+		case TOKEN_LITERAL_NUMERIC_TAG_UNSIGNED_LONG_LONG:
+			*u=token->literal.numeric.value.ullong;
+			return;
+			
+		case TOKEN_LITERAL_NUMERIC_TAG_FLOAT:
+			*d=token->literal.numeric.value.float_;
+			return;
+		case TOKEN_LITERAL_NUMERIC_TAG_DOUBLE:
+			*d=token->literal.numeric.value.double_;
+			return;
+
+		case TOKEN_LITERAL_NUMERIC_TAG_CHAR:
+			*i=token->literal.numeric.value.char_;
+			return;
+		case TOKEN_LITERAL_NUMERIC_TAG_UNSIGNED_CHAR:
+			*i=token->literal.numeric.value.uchar;
+			return;
+		case TOKEN_LITERAL_NUMERIC_TAG_WCHAR:
+			*i=token->literal.numeric.value.wchar;
+			return;
+
+		default:fatal("unimplemented numeric tag %s",Token_print(token));
+	}
 }

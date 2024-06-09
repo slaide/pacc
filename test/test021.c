@@ -1,12 +1,10 @@
+#include<stdlib.h>
 int main(int argc, const char**argv){
 	if(!(argc==1)){
-		print_test_result("test1",test1());
-		print_test_result("test2",test2());
-
-		fatal("no input file given. aborting.");
+		exit(1);
 	}
 	if(2==~2)
-		fatal("this is literally impossible");
+		exit(2);
 	
 	return 0;
 }

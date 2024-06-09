@@ -1,11 +1,18 @@
-#include "parser/statement.h"
-#include <util/util.h>
-#include <parser/parser.h>
-#include<util/ansi_esc_codes.h>
+#include <stdio.h>
 
-void Module_print(Module*module){
-	for(int i=0;i<module->statements.len;i++){
-		Statement*statement=array_get(&module->statements,i);
-		println("statement %d is : %s",i,Statement_asString(statement));
+struct Statement{
+	int _padding;
+};
+const char*Statement_asString(struct Statement*statement){
+	return "statement";
+}
+struct Module{
+	int num_statements;
+	struct Statement*statements;
+};
+void Module_print(struct Module*module){
+	for(int i=0;i<module->num_statements;i++){
+		struct Statement*statement=&module->statements[i];
+		printf("statement %d is : %s\n",i,Statement_asString(statement));
 	}
 }

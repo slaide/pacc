@@ -1,15 +1,16 @@
-#include<file.h>
-
 #include<stdlib.h>
 #include<stdio.h>
 #include<string.h>
-
-#include<util/util.h>
-
+typedef struct File{
+	const char*filepath;
+	const char*contents;
+	int contents_len;
+}File;
 void File_read(const char*filepath,File*out){
 	FILE* file=fopen(filepath,"r");
 	if(!file){
-		fatal("could not open file %s",filepath);
+		fprintf(stderr,"could not open file %s",filepath);
+		exit(1);
 	}
 	fseek(file,0,SEEK_END);
 	int file_len=ftell(file);

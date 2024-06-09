@@ -1,11 +1,10 @@
-#include <parser/parser.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 int main(int argc, const char**argv){
 	if(argc<2){
-		print_test_result("test1",test1());
-		print_test_result("test2",test2());
-
-		fatal("no input file given. aborting.");
+		fprintf(stderr,"Usage: %s <file>\n",argv[0]);
+		exit(1);
 	}
 	
 	return 0;

@@ -686,49 +686,41 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 		/* first symbol to check for function definition*/
 		Symbol symbol=symbols[0].symbol;
 
-		switch(symbol.type->kind){
-			// parse function definition
-			case TYPE_KIND_FUNCTION:
-				{
-					if(numSymbols>1)fatal("function definition not allowed in declaration at %s",Token_print(&token));
-					Statement statement={};
+		// parse function definition
+		if(numSymbols==1 && symbol.type->kind==TYPE_KIND_FUNCTION){
+			if(Token_equalString(&token,"{")){
+				Statement statement={};
 
-					if(Token_equalString(&token,"{")){
+				TokenIter_nextToken(token_iter,&token);
+
+				statement.tag=STATEMENT_FUNCTION_DEFINITION;
+				statement.functionDef.symbol=symbol;
+
+				array_init(&statement.functionDef.bodyStatements,sizeof(Statement));
+				bool stopParsingFunctionBody=false;
+				while(!stopParsingFunctionBody){
+					if(Token_equalString(&token,"}")){
 						TokenIter_nextToken(token_iter,&token);
-
-						statement.tag=STATEMENT_FUNCTION_DEFINITION;
-						statement.functionDef.symbol=symbol;
-
-						array_init(&statement.functionDef.bodyStatements,sizeof(Statement));
-						bool stopParsingFunctionBody=false;
-						while(!stopParsingFunctionBody){
-							if(Token_equalString(&token,"}")){
-								TokenIter_nextToken(token_iter,&token);
-								break;
-							}
-
-							Statement functionBodyStatement={};
-							enum STATEMENT_PARSE_RESULT res=Statement_parse(module,&functionBodyStatement,token_iter);
-							TokenIter_lastToken(token_iter,&token);
-
-							switch(res){
-								case STATEMENT_PARSE_RESULT_INVALID:
-									stopParsingFunctionBody=true;
-									break;
-								case STATEMENT_PARSE_RESULT_PRESENT:
-									array_append(&statement.functionDef.bodyStatements,&functionBodyStatement);
-									break;
-							}
-						}
-					}else {
-						fatal("expected symbol after function declaration: line %d col %d %.*s",token.line,token.col,token.len,token.p);
+						break;
 					}
 
-					*out=statement;
-					goto STATEMENT_PARSE_RET_SUCCESS;
+					Statement functionBodyStatement={};
+					enum STATEMENT_PARSE_RESULT res=Statement_parse(module,&functionBodyStatement,token_iter);
+					TokenIter_lastToken(token_iter,&token);
+
+					switch(res){
+						case STATEMENT_PARSE_RESULT_INVALID:
+							stopParsingFunctionBody=true;
+							break;
+						case STATEMENT_PARSE_RESULT_PRESENT:
+							array_append(&statement.functionDef.bodyStatements,&functionBodyStatement);
+							break;
+					}
 				}
-				break;
-			default:;
+
+				*out=statement;
+				goto STATEMENT_PARSE_RET_SUCCESS;
+			}
 		}
 
 		Statement statement={

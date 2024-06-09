@@ -2,6 +2,7 @@
 
 #include<stdint.h>
 #include<file.h>
+#include<wchar.h>
 
 enum TOKEN_TAG{
 	TOKEN_TAG_UNDEFINED=0,
@@ -10,33 +11,91 @@ enum TOKEN_TAG{
 	
 	TOKEN_TAG_SYMBOL=3,
 
-	TOKEN_TAG_LITERAL_INTEGER=0x10,
-	TOKEN_TAG_LITERAL_FLOAT=0x11,
-	TOKEN_TAG_LITERAL_CHAR=0x12,
-	TOKEN_TAG_LITERAL_STRING=0x13,
+	TOKEN_TAG_LITERAL=4,
 
-	TOKEN_TAG_PREP_INCLUDE_ARGUMENT=0x20,
+	TOKEN_TAG_PREP_INCLUDE_ARGUMENT=5,
 };
+enum Token_LiteralTag{
+	TOKEN_LITERAL_TAG_UNDEFINED=0,
+	TOKEN_LITERAL_TAG_NUMERIC,
+	TOKEN_LITERAL_TAG_STRING,
+};
+enum Token_LiteralNumeric_Tag{
+	TOKEN_LITERAL_NUMERIC_TAG_UNDEFINED=0,
+
+	TOKEN_LITERAL_NUMERIC_TAG_INTEGER,
+	TOKEN_LITERAL_NUMERIC_TAG_UNSIGNED,
+	TOKEN_LITERAL_NUMERIC_TAG_LONG,
+	TOKEN_LITERAL_NUMERIC_TAG_UNSIGNED_LONG,
+	TOKEN_LITERAL_NUMERIC_TAG_LONG_LONG,
+	TOKEN_LITERAL_NUMERIC_TAG_UNSIGNED_LONG_LONG,
+
+	TOKEN_LITERAL_NUMERIC_TAG_FLOAT,
+	TOKEN_LITERAL_NUMERIC_TAG_DOUBLE,
+
+	TOKEN_LITERAL_NUMERIC_TAG_CHAR,
+	TOKEN_LITERAL_NUMERIC_TAG_UNSIGNED_CHAR,
+	TOKEN_LITERAL_NUMERIC_TAG_WCHAR,
+};
+
 typedef struct Token{
 	enum TOKEN_TAG tag;
-	const char* filename;
-	int line;
-	int col;
+
+	// token length
 	int len;
+	// token string (NOT zero terminated)
 	const char*p;
-	/// @brief for numeric literals, this contains some metainformation
+
+	/* name of file containing this char */
+	const char* filename;
+	// line number in file
+	int line;
+	// column number in file
+	int col;
+
 	struct{
-		bool hasLeadingSign;
-		uint8_t base;
-		bool hasPrefix;
-		bool hasLeadingDigits;
-		bool hasDecimalPoint;
-		bool hasTrailingDigits;
-		bool hasExponent;
-		bool hasExponentSign;
-		bool hasExponentDigits;
-		bool hasSuffix;
-	}num_info;
+		enum Token_LiteralTag tag;
+
+		union{
+			struct{
+				int len;
+				char*str;
+			}string;
+
+			// numeric literals (include integers, floats, chars of any size)
+			struct{
+				enum Token_LiteralNumeric_Tag tag;
+
+				union{
+					int int_;
+					unsigned int uint;
+					long long_;
+					unsigned long ulong;
+					long long llong_;
+					unsigned long long ullong;
+					float float_;
+					double double_;
+					char char_;
+					unsigned char uchar;
+					wchar_t wchar;
+				}value;
+
+				/// @brief for numeric literals, this contains some metainformation
+				struct{
+					bool hasLeadingSign;
+					uint8_t base;
+					bool hasPrefix;
+					bool hasLeadingDigits;
+					bool hasDecimalPoint;
+					bool hasTrailingDigits;
+					bool hasExponent;
+					bool hasExponentSign;
+					bool hasExponentDigits;
+					bool hasSuffix;
+				}num_info;
+			}numeric;
+		}/* data */;
+	}literal;
 }Token;
 
 /* return token location as null-terminated string */
@@ -130,3 +189,14 @@ static const char*KEYWORD_AMPERSAND="&";
 static int highlight_token_kind=-1;
 /// print tokenizer contents with appropriate spacing, and line number at start of each line
 void Tokenizer_print(Tokenizer*tokenizer);
+
+/*
+return value of numeric literal token at appropriate size
+
+if token is not a numeric literal, fatal
+
+only unsigned long long is returned into u
+all other non-float values are expanded into i
+all floating point values are expanded into d
+*/
+void TokenLiteral_getNumericValue(struct Token*token,uint64_t*u,int64_t*i,double*d);

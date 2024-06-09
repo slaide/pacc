@@ -1,7 +1,9 @@
-#include<stdio.h>
+int a(){
+    return 2;
+}
 int main(int argc,char**argv){
     for(int i=0;i<argc;i++){
-        printf("cli arg [%d]: \"%s\"\n",argv[i]);
+        a();
     }
     return 0;
 }

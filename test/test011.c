@@ -4,5 +4,9 @@ int main(){
     float c=-1.0;
     float d=-1.e4;
     int r=(int)a;
+    r++;
+    r--;
+    ++r;
+    --r;
     return r;
 }

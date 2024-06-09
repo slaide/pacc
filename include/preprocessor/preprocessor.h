@@ -25,6 +25,7 @@ enum PreprocessorExpressionTag{
 
 	PREPROCESSOR_EXPRESSION_TAG_TERNARY,
 
+	// specifically an integer literal
 	PREPROCESSOR_EXPRESSION_TAG_LITERAL,
 
 	PREPROCESSOR_EXPRESSION_TAG_ELSE,
@@ -38,60 +39,81 @@ struct PreprocessorExpression{
 		struct{
 			char* name;
 		}defined;
-		struct{
-			struct PreprocessorExpression*expr;
-		}not;
-		struct{
-			struct PreprocessorExpression*lhs;
-			struct PreprocessorExpression*rhs;
-		}and;
-		struct{
-			struct PreprocessorExpression*lhs;
-			struct PreprocessorExpression*rhs;
-		}or;
-		struct{
-			struct PreprocessorExpression*lhs;
-			struct PreprocessorExpression*rhs;
-		}subtract;
-		struct{
-			struct PreprocessorExpression*lhs;
-			struct PreprocessorExpression*rhs;
-		}add;
-		struct{
-			struct PreprocessorExpression*lhs;
-			struct PreprocessorExpression*rhs;
-		}equal;
-		struct{
-			struct PreprocessorExpression*lhs;
-			struct PreprocessorExpression*rhs;
-		}unequal;
-		struct{
-			struct PreprocessorExpression*lhs;
-			struct PreprocessorExpression*rhs;
-		}greater_than;
-		struct{
-			struct PreprocessorExpression*lhs;
-			struct PreprocessorExpression*rhs;
-		}greater_than_or_equal;
-		struct{
-			struct PreprocessorExpression*lhs;
-			struct PreprocessorExpression*rhs;
-		}lesser_than;
-		struct{
-			struct PreprocessorExpression*lhs;
-			struct PreprocessorExpression*rhs;
-		}lesser_than_or_equal;
+
+		/* unary operands */
+		union{
+			struct{
+				struct PreprocessorExpression*expr;
+			}unary_operand;
+			struct{
+				struct PreprocessorExpression*expr;
+			}not;
+		};
+
+		/* binary operands */
+		union{
+			struct{
+				struct PreprocessorExpression*lhs;
+				struct PreprocessorExpression*rhs;
+			}binary_operands;
+			struct{
+				struct PreprocessorExpression*lhs;
+				struct PreprocessorExpression*rhs;
+			}and;
+			struct{
+				struct PreprocessorExpression*lhs;
+				struct PreprocessorExpression*rhs;
+			}or;
+			struct{
+				struct PreprocessorExpression*lhs;
+				struct PreprocessorExpression*rhs;
+			}subtract;
+			struct{
+				struct PreprocessorExpression*lhs;
+				struct PreprocessorExpression*rhs;
+			}add;
+			struct{
+				struct PreprocessorExpression*lhs;
+				struct PreprocessorExpression*rhs;
+			}equal;
+			struct{
+				struct PreprocessorExpression*lhs;
+				struct PreprocessorExpression*rhs;
+			}unequal;
+			struct{
+				struct PreprocessorExpression*lhs;
+				struct PreprocessorExpression*rhs;
+			}greater_than;
+			struct{
+				struct PreprocessorExpression*lhs;
+				struct PreprocessorExpression*rhs;
+			}greater_than_or_equal;
+			struct{
+				struct PreprocessorExpression*lhs;
+				struct PreprocessorExpression*rhs;
+			}lesser_than;
+			struct{
+				struct PreprocessorExpression*lhs;
+				struct PreprocessorExpression*rhs;
+			}lesser_than_or_equal;
+		};
+
+		/* ternary operands */
+		union{
+			struct{
+				struct PreprocessorExpression*condition;
+				struct PreprocessorExpression*then;
+				struct PreprocessorExpression*else_;
+			}ternary;
+		};
+
 		struct{
 			int _reservedAndUnused;
 		}else_;
+
 		struct{
 			Token token;
 		}literal;
-		struct{
-			struct PreprocessorExpression*condition;
-			struct PreprocessorExpression*then;
-			struct PreprocessorExpression*else_;
-		}ternary;
 	};
 };
 /*

@@ -67,7 +67,7 @@ enum SYMBOL_PARSE_RESULT SymbolDefinition_parse(Module*module,int*num_symbol_def
 			if(Token_equalString(&token,"signed")){
 				if(base_type.is_unsigned)fatal("unsigned and signed cannot be combined at %s",Token_print(&token));
 				TokenIter_nextToken(token_iter,&token);
-				current_type->is_signed=true;
+				base_type.is_signed=true;
 				continue;
 			}
 			if(Token_equalString(&token,"short")){
@@ -82,6 +82,11 @@ enum SYMBOL_PARSE_RESULT SymbolDefinition_parse(Module*module,int*num_symbol_def
 				if(base_type.size_mod==2)fatal("long long long is not supported at %s",Token_print(&token));
 				TokenIter_nextToken(token_iter,&token);
 				base_type.size_mod+=1;
+				continue;
+			}
+			if(Token_equalString(&token,"_Noreturn")){
+				TokenIter_nextToken(token_iter,&token);
+				// TODO store this property
 				continue;
 			}
 
@@ -225,9 +230,10 @@ enum SYMBOL_PARSE_RESULT SymbolDefinition_parse(Module*module,int*num_symbol_def
 					// check if typename is float, double or int, which are the only types to which this can apply
 					if(type!=nullptr){
 						bool name_is_int=Token_equalString(type->name,"int");
+						bool name_is_char=Token_equalString(type->name,"char");
 						bool name_is_float=Token_equalString(type->name,"float");
 						bool name_is_double=Token_equalString(type->name,"double");
-						if(name_is_int || name_is_float || name_is_double){
+						if(name_is_int || name_is_char || name_is_float || name_is_double){
 							base_type.kind=TYPE_KIND_REFERENCE;
 							base_type.reference.ref=type;
 							TokenIter_nextToken(token_iter,&token);
