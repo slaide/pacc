@@ -114,7 +114,7 @@ if __name__=="__main__":
     ]
     final_bin=Link("bin/main",objs=objs).depends(bin_dir)
 
-    cmd_all.depends(final_bin,CompileShader("src/shader.frag","frag.spv"))
+    cmd_all.depends(final_bin)
 
     clean_target=Nop().depends(Remove("build"),Remove("bin"))
 
