@@ -1,0 +1,4 @@
+Checks: 'modernize*,readability*,performance*,bugprone*,clang-diagnostic-*,clang-analyzer-*,*,-altera-*,-concurrency-mt-unsafe,-readability-implicit-bool-conversion,-readability-function-cognitive-complexity,-misc-no-recursion,-*cpp'
+WarningsAsErrors: ''
+HeaderFilterRegex: ''
+FormatStyle:     none

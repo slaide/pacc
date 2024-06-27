@@ -1,0 +1,4 @@
+CompileFlags:
+  Add: [-std=c2x, -xc, -I./include]
+InlayHints:
+  BlockEnd: Yes
