@@ -1,11 +1,12 @@
 #include<parser/parser.h>
 #include<util/util.h>
 #include<tokenizer.h>
+#include<parser/statement.h>
 
 char*Statement_asString(Statement*statement,int depth){
 	char*ret=makeStringn(16000);
 	switch(statement->tag){
-		case STATEMENT_EMPTY:{
+		case STATEMENT_KIND_EMPTY:{
 			stringAppend(ret,"%s",ind(depth*4));
 			stringAppend(ret,"empty statement\n");
 			break;
@@ -19,12 +20,12 @@ char*Statement_asString(Statement*statement,int depth){
 			}
 			break;
 		}
-		case STATEMENT_FUNCTION_DEFINITION:{
+		case STATEMENT_KIND_FUNCTION_DEFINITION:{
 			stringAppend(ret,"%s",ind(depth*4));
 			stringAppend(ret,"defined function %.*s",statement->functionDef.symbol.name->len,statement->functionDef.symbol.name->p);
 			stringAppend(ret," of type %s",Type_asString(statement->functionDef.symbol.type));
-			for(int i=0;i<statement->functionDef.bodyStatements.len;i++){
-				Statement*bodyStatement=array_get(&statement->functionDef.bodyStatements,i);
+			for(int i=0;i<statement->functionDef.stack->statements.len;i++){
+				Statement*bodyStatement=array_get(&statement->functionDef.stack->statements,i);
 				stringAppend(ret,"\n-%s",Statement_asString(bodyStatement,depth+1));
 			}
 			break;
@@ -71,11 +72,14 @@ char*Statement_asString(Statement*statement,int depth){
 			else
 				stringAppend(ret,"step:\n%s","none");
 
-			stringAppend(ret,"%s",Statement_asString(statement->forLoop.body,depth+1));
+			for(int i=0;i<statement->forLoop.stack->statements.len;i++){
+				Statement*bodyStatement=array_get(&statement->forLoop.stack->statements,i);
+				stringAppend(ret,"%s",Statement_asString(bodyStatement,depth+1));
+			}
 
 			break;
 		}
-		case STATEMENT_VALUE:{
+		case STATEMENT_KIND_VALUE:{
 			stringAppend(ret,"%sval %s\n",ind(depth*4),Value_asString(statement->value.value));
 			break;
 		}
@@ -100,7 +104,7 @@ char*Statement_asString(Statement*statement,int depth){
 			stringAppend(ret,"%s",Statement_asString(statement->whileLoop.body,depth+1));
 			break;
 		}
-		case STATEMENT_SWITCH:{
+		case STATEMENT_KIND_SWITCH:{
 			stringAppend(ret,"%s",ind(depth*4));
 			stringAppend(ret,"switch %s",Value_asString(statement->switch_.condition));
 			for(int i=0;i<statement->switch_.body.len;i++){
@@ -110,54 +114,60 @@ char*Statement_asString(Statement*statement,int depth){
 			}
 			break;
 		}
-		case STATEMENT_DEFAULT:{
+		case STATEMENT_KIND_DEFAULT:{
 			stringAppend(ret,"%s",ind(depth*4));
 			stringAppend(ret, "default\n");
 			break;
 		}
-		case STATEMENT_BREAK:{
+		case STATEMENT_KIND_BREAK:{
 			stringAppend(ret,"%s",ind(depth*4));
 			stringAppend(ret, "break\n");
 			break;
 		}
-		case STATEMENT_CONTINUE:{
+		case STATEMENT_KIND_CONTINUE:{
 			stringAppend(ret,"%s",ind(depth*4));
 			stringAppend(ret, "continue\n");
 			break;
 		}
-		case STATEMENT_SWITCHCASE:{
+		case STATEMENT_KIND_SWITCHCASE:{
 			stringAppend(ret,"%s",ind(depth*4));
 			stringAppend(ret,"case %s:\n",Value_asString(statement->switchCase.value));
 			break;
 		}
-		case STATEMENT_BLOCK:{
+		case STATEMENT_KIND_BLOCK:{
 			stringAppend(ret,"%s",ind(depth*4));
 			stringAppend(ret,"block:\n");
-			for(int i=0;i<statement->block.body.len;i++){
-				Statement*bodyStatement=array_get(&statement->block.body,i);
+			for(int i=0;i<statement->block.stack->statements.len;i++){
+				Statement*bodyStatement=array_get(&statement->block.stack->statements,i);
 				stringAppend(ret,"%s",Statement_asString(bodyStatement,depth+1));
 			}
 			break;
 		}
-		case STATEMENT_LABEL:{
+		case STATEMENT_KIND_LABEL:{
 			stringAppend(ret,"%s",ind(depth*4));
 			stringAppend(ret,"label %.*s:\n",statement->labelDefinition.label->len,statement->labelDefinition.label->p);
 			break;
 		}
-		case STATEMENT_GOTO:{
+		case STATEMENT_KIND_GOTO:{
 			stringAppend(ret,"%s",ind(depth*4));
-			stringAppend(ret,"goto %s\n",Value_asString(statement->goto_.label));
+			switch(statement->goto_.variant){
+				case VALUE_GOTO_LABEL_VARIANT_LABEL:
+					stringAppend(ret,"goto %.*s\n",statement->goto_.labelName->len,statement->goto_.labelName->p);
+					break;
+				case VALUE_GOTO_LABEL_VARIANT_VALUE:
+					stringAppend(ret,"goto %s\n",Value_asString(statement->goto_.label));
+					break;
+			}
 			break;
 		}
-		case STATEMENT_TYPEDEF:{
+		case STATEMENT_KIND_TYPEDEF:{
 			stringAppend(ret,"%s",ind(depth*4));
-			if(statement->typedef_.symbol==nullptr){
-				stringAppend(ret,"typedef");
-			}else{
-				if(statement->typedef_.symbol->name==nullptr){
-					stringAppend(ret,"typedef %s",Type_asString(statement->typedef_.symbol->type));
+			for(int i=0;i<statement->typedef_.symbols.len;i++){
+				Symbol*sym=array_get(&statement->typedef_.symbols,i);
+				if(sym->name==nullptr){
+					stringAppend(ret,"typedef %s\n",Type_asString(sym->type));
 				}else{
-					stringAppend(ret,"typedef %.*s : %s",statement->typedef_.symbol->name->len,statement->typedef_.symbol->name->p,Type_asString(statement->typedef_.symbol->type));
+					stringAppend(ret,"typedef %.*s : %s\n",sym->name->len,sym->name->p,Type_asString(sym->type));
 				}
 			}
 			break;
@@ -168,7 +178,7 @@ char*Statement_asString(Statement*statement,int depth){
 	return ret;
 }
 
-enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct TokenIter*token_iter_in){
+enum STATEMENT_PARSE_RESULT Statement_parse(Stack*stack,Statement*out,struct TokenIter*token_iter_in){
 	struct TokenIter token_iter_copy=*token_iter_in;
 	struct TokenIter*token_iter=&token_iter_copy;
 
@@ -179,14 +189,14 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 
 	if(Token_equalString(&token,";")){
 		TokenIter_nextToken(token_iter,&token);
-		*out=(Statement){.tag=STATEMENT_EMPTY};
+		*out=(Statement){.tag=STATEMENT_KIND_EMPTY};
 		goto STATEMENT_PARSE_RET_SUCCESS;
 	}
 	if(Token_equalString(&token, "{")){
 		TokenIter_nextToken(token_iter,&token);
 
-		array body;
-		array_init(&body,sizeof(Statement));
+		Stack newStack={};
+		Stack_init(&newStack,stack);
 
 		bool stopParsingBody=false;
 		while(!stopParsingBody){
@@ -196,7 +206,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 			}
 
 			Statement bodyStatement={};
-			enum STATEMENT_PARSE_RESULT res=Statement_parse(module,&bodyStatement,token_iter);
+			enum STATEMENT_PARSE_RESULT res=Statement_parse(&newStack,&bodyStatement,token_iter);
 			TokenIter_lastToken(token_iter,&token);
 			switch(res){
 				case STATEMENT_PARSE_RESULT_INVALID:
@@ -204,15 +214,15 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 					stopParsingBody=true;
 					break;
 				case STATEMENT_PARSE_RESULT_PRESENT:
-					array_append(&body,&bodyStatement);
+					Stack_addStatement(&newStack, &bodyStatement);
 					break;
 			}
 		}
 
 		*out=(Statement){
-			.tag=STATEMENT_BLOCK,
+			.tag=STATEMENT_KIND_BLOCK,
 			.block={
-				.body=body,
+				.stack=allocAndCopy(sizeof(Stack),&newStack),
 			}
 		};
 
@@ -225,7 +235,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 		}
 		TokenIter_nextToken(token_iter,&token);
 
-		*out=(Statement){.tag=STATEMENT_DEFAULT};
+		*out=(Statement){.tag=STATEMENT_KIND_DEFAULT};
 		goto STATEMENT_PARSE_RET_SUCCESS;
 	}
 	if(Token_equalString(&token,"typedef")){
@@ -233,17 +243,19 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 
 		int numTypedefSymbols=0;
 		struct SymbolDefinition *typedefSymbols=nullptr;
-		enum SYMBOL_PARSE_RESULT res=SymbolDefinition_parse(module,&numTypedefSymbols,&typedefSymbols,token_iter,&(struct Symbol_parse_options){.forbid_multiple=false});
-		TokenIter_lastToken(token_iter,&token);
-		
-		if(numTypedefSymbols!=1)fatal("expected typedef after typedef but got instead %s",Token_print(&token));
-		Symbol typedefSymbol=typedefSymbols[0].symbol;
-
-		// it is legal to typedef nothing, or a type without a name, i.e. typedef; typedef int; typedef int a; are all legal
-		
-		*out=(Statement){.tag=STATEMENT_TYPEDEF,};
-		if(res!=SYMBOL_INVALID){
-			out->typedef_.symbol=allocAndCopy(sizeof(Symbol),&typedefSymbol);
+		enum SYMBOL_PARSE_RESULT res=SymbolDefinition_parse(stack,&numTypedefSymbols,&typedefSymbols,token_iter,&(struct Symbol_parse_options){.forbid_multiple=false});
+		// if valid symbol was parsed: check for semicolon
+		// if not valid symbol was parsed: still check for semicolon because "typedef;" is valid
+		// set .tag on out because failure here will be fatal anyway
+		*out=(Statement){.tag=STATEMENT_KIND_TYPEDEF,};
+		if(res==SYMBOL_PRESENT){
+			TokenIter_lastToken(token_iter,&token);
+			// it is legal to typedef nothing, or a type without a name, i.e. typedef; typedef int; typedef int a; or multiple at once, like typedef int A,*B; are all legal
+			
+			array_init(&out->typedef_.symbols,sizeof(Symbol));
+			for(int i=0;i<numTypedefSymbols;i++){
+				array_append(&out->typedef_.symbols,&typedefSymbols[i].symbol);
+			}
 		}
 
 		if(!Token_equalString(&token,";")){
@@ -257,7 +269,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 		TokenIter_nextToken(token_iter,&token);
 
 		Value caseValue={};
-		enum VALUE_PARSE_RESULT res=Value_parse(module,&caseValue,token_iter);
+		enum VALUE_PARSE_RESULT res=Value_parse(stack,&caseValue,token_iter);
 		if(res==VALUE_INVALID){
 			fatal("invalid case value at line %d col %d %.*s",token.line,token.col,token.len,token.p);
 		}
@@ -269,7 +281,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 		TokenIter_nextToken(token_iter,&token);
 
 		*out=(Statement){
-			.tag=STATEMENT_SWITCHCASE,
+			.tag=STATEMENT_KIND_SWITCHCASE,
 			.switchCase={
 				.value=allocAndCopy(sizeof(Value),&caseValue),
 			}
@@ -286,7 +298,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 		TokenIter_nextToken(token_iter,&token);
 
 		Value condition={};
-		enum VALUE_PARSE_RESULT valres=Value_parse(module,&condition,token_iter);
+		enum VALUE_PARSE_RESULT valres=Value_parse(stack,&condition,token_iter);
 		if(valres==VALUE_INVALID){
 			fatal("invalid condition in if statement at line %d col %d %.*s",token.line,token.col,token.len,token.p);
 		}
@@ -298,7 +310,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 		TokenIter_nextToken(token_iter,&token);
 
 		Statement ifBody={};
-		enum STATEMENT_PARSE_RESULT res=Statement_parse(module,&ifBody,token_iter);
+		enum STATEMENT_PARSE_RESULT res=Statement_parse(stack,&ifBody,token_iter);
 		TokenIter_lastToken(token_iter,&token);
 		if(res==STATEMENT_PARSE_RESULT_INVALID){
 			fatal("invalid statement in if body at line %d col %d %.*s",token.line,token.col,token.len,token.p);
@@ -317,7 +329,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 			TokenIter_nextToken(token_iter,&token);
 
 			Statement elseBody={};
-			res=Statement_parse(module,&elseBody,token_iter);
+			res=Statement_parse(stack,&elseBody,token_iter);
 			TokenIter_lastToken(token_iter,&token);
 
 			if(res==STATEMENT_PARSE_RESULT_PRESENT){
@@ -336,7 +348,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 		TokenIter_nextToken(token_iter,&token);
 
 		Value condition={};
-		enum VALUE_PARSE_RESULT valres=Value_parse(module,&condition,token_iter);
+		enum VALUE_PARSE_RESULT valres=Value_parse(stack,&condition,token_iter);
 		if(valres==VALUE_INVALID){
 			fatal("invalid condition in while statement at line %d col %d %.*s",token.line,token.col,token.len,token.p);
 		}
@@ -348,7 +360,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 		TokenIter_nextToken(token_iter,&token);
 
 		Statement whileBody={};
-		enum STATEMENT_PARSE_RESULT res=Statement_parse(module,&whileBody,token_iter);
+		enum STATEMENT_PARSE_RESULT res=Statement_parse(stack,&whileBody,token_iter);
 		TokenIter_lastToken(token_iter,&token);
 		if(res==STATEMENT_PARSE_RESULT_INVALID){
 			fatal("invalid statement in if body at line %d col %d %.*s",token.line,token.col,token.len,token.p);
@@ -368,7 +380,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 		TokenIter_nextToken(token_iter,&token);
 		
 		Statement whileBody={};
-		enum STATEMENT_PARSE_RESULT res=Statement_parse(module,&whileBody,token_iter);
+		enum STATEMENT_PARSE_RESULT res=Statement_parse(stack,&whileBody,token_iter);
 		TokenIter_lastToken(token_iter,&token);
 		if(res==STATEMENT_PARSE_RESULT_INVALID){
 			fatal("invalid statement in if body at line %d col %d %.*s",token.line,token.col,token.len,token.p);
@@ -386,7 +398,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 		TokenIter_nextToken(token_iter,&token);
 
 		Value condition={};
-		enum VALUE_PARSE_RESULT valres=Value_parse(module,&condition,token_iter);
+		enum VALUE_PARSE_RESULT valres=Value_parse(stack,&condition,token_iter);
 		if(valres==VALUE_INVALID){
 			fatal("invalid condition in do while statement at line %d col %d %.*s",token.line,token.col,token.len,token.p);
 		}
@@ -424,17 +436,22 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 
 		*out=(Statement){.tag=STATEMENT_KIND_FOR,.forLoop={}};
 
+		Stack forStack={};
+		Stack_init(&forStack,stack);
+
 		Statement init_statement={};
-		enum STATEMENT_PARSE_RESULT res=Statement_parse(module,&init_statement,token_iter);
+		enum STATEMENT_PARSE_RESULT res=Statement_parse(&forStack,&init_statement,token_iter);
 		if(res==STATEMENT_PARSE_RESULT_INVALID){
 			out->forLoop.init=nullptr;
 		}else{
 			TokenIter_lastToken(token_iter,&token);
 			out->forLoop.init=allocAndCopy(sizeof(Statement),&init_statement);
 		}
+		// TODO do this better
+		Stack_addStatement(&forStack,&init_statement);
 
 		Value condition={};
-		enum VALUE_PARSE_RESULT valres=Value_parse(module,&condition,token_iter);
+		enum VALUE_PARSE_RESULT valres=Value_parse(&forStack,&condition,token_iter);
 		if(valres==VALUE_INVALID){
 			out->forLoop.condition=nullptr;
 		}else{
@@ -449,7 +466,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 		TokenIter_nextToken(token_iter,&token);
 
 		Value post_expression={};
-		valres=Value_parse(module,&post_expression,token_iter);
+		valres=Value_parse(&forStack,&post_expression,token_iter);
 		if(valres==VALUE_INVALID){
 			out->forLoop.step=nullptr;
 		}else{
@@ -465,13 +482,13 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 		TokenIter_nextToken(token_iter,&token);
 
 		Statement forBody={};
-		res=Statement_parse(module,&forBody,token_iter);
+		res=Statement_parse(&forStack,&forBody,token_iter);
 		TokenIter_lastToken(token_iter,&token);
 		if(res==STATEMENT_PARSE_RESULT_INVALID){
 			fatal("invalid statement in if body at line %d col %d %.*s",token.line,token.col,token.len,token.p);
 		}
 
-		out->forLoop.body=allocAndCopy(sizeof(Statement),&forBody);
+		out->forLoop.stack=allocAndCopy(sizeof(Stack),&forStack);
 
 		goto STATEMENT_PARSE_RET_SUCCESS;
 	}
@@ -482,9 +499,10 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 		Value returnValue={};
 		*out=(Statement){.tag=STATEMENT_KIND_RETURN};
 
-		enum VALUE_PARSE_RESULT res=Value_parse(module,&returnValue,token_iter);
+		enum VALUE_PARSE_RESULT res=Value_parse(stack,&returnValue,token_iter);
 		TokenIter_lastToken(token_iter,&token);
 		switch(res){
+			case VALUE_SYMBOL_UNKNOWN:
 			case VALUE_INVALID:
 				break;
 			case VALUE_PRESENT:
@@ -501,7 +519,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 	}
 	if(Token_equalString(&token,"break")){
 		TokenIter_nextToken(token_iter,&token);
-		*out=(Statement){.tag=STATEMENT_BREAK};
+		*out=(Statement){.tag=STATEMENT_KIND_BREAK};
 		if(!Token_equalString(&token,";")){
 			fatal("expected semicolon after break statement: line %d col %d %.*s",token.line,token.col,token.len,token.p);
 		}
@@ -510,7 +528,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 	}
 	if(Token_equalString(&token,"continue")){
 		TokenIter_nextToken(token_iter,&token);
-		*out=(Statement){.tag=STATEMENT_CONTINUE};
+		*out=(Statement){.tag=STATEMENT_KIND_CONTINUE};
 		if(!Token_equalString(&token,";")){
 			fatal("expected semicolon after continue statement: line %d col %d %.*s",token.line,token.col,token.len,token.p);
 		}
@@ -520,27 +538,55 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 	if(Token_equalString(&token,"goto")){
 		TokenIter_nextToken(token_iter,&token);
 		Value label={};
-		enum VALUE_PARSE_RESULT res=Value_parse(module,&label,token_iter);
-		if(res==VALUE_INVALID){
-			fatal("invalid label in goto statement at line %d col %d %.*s",token.line,token.col,token.len,token.p);
-		}
-		TokenIter_lastToken(token_iter,&token);
-		if(!Token_equalString(&token,";")){
-			fatal("expected semicolon after goto statement: line %d col %d %.*s",token.line,token.col,token.len,token.p);
-		}
-		TokenIter_nextToken(token_iter,&token);
+		enum VALUE_PARSE_RESULT res=Value_parse(stack,&label,token_iter);
+		switch(res){
+			case VALUE_INVALID:
+			case VALUE_SYMBOL_UNKNOWN:{
+				// just check if next token is a valid identifier
+				TokenIter_lastToken(token_iter,&token);
+				if(!Token_isValidIdentifier(&token)){
+					fatal("expected identifier after goto statement at %s",Token_print(&token));
+				}
 
-		*out=(Statement){
-			.tag=STATEMENT_GOTO,
-			.goto_={
-				.label=allocAndCopy(sizeof(Value),&label)
+				Token gotoLabel=token;
+				TokenIter_nextToken(token_iter,&token);	
+
+				if(!Token_equalString(&token,KEYWORD_SEMICOLON)){
+					fatal("expected semicolon after goto statement at %s",Token_print(&token));
+				}
+				TokenIter_nextToken(token_iter,&token);
+
+				*out=(Statement){
+					.tag=STATEMENT_KIND_GOTO,
+					.goto_={
+						.variant=VALUE_GOTO_LABEL_VARIANT_LABEL,
+						.label=COPY_(&gotoLabel)
+					}
+				};
+				break;
 			}
-		};
+			case VALUE_PRESENT:{
+				TokenIter_lastToken(token_iter,&token);
+				if(!Token_equalString(&token,";")){
+					fatal("expected semicolon after goto statement: line %d col %d %.*s",token.line,token.col,token.len,token.p);
+				}
+				TokenIter_nextToken(token_iter,&token);
+
+				*out=(Statement){
+					.tag=STATEMENT_KIND_GOTO,
+					.goto_={
+						.variant=VALUE_GOTO_LABEL_VARIANT_VALUE,
+						.label=COPY_(&label)
+					}
+				};
+			}
+		}
+
 		goto STATEMENT_PARSE_RET_SUCCESS;
 	}
 	if(Token_equalString(&token,"switch")){
 		TokenIter_nextToken(token_iter,&token);
-		*out=(Statement){.tag=STATEMENT_SWITCH,.switch_={}};
+		*out=(Statement){.tag=STATEMENT_KIND_SWITCH,.switch_={}};
 
 		// check for (
 		if(!Token_equalString(&token,"(")){
@@ -549,7 +595,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 		TokenIter_nextToken(token_iter,&token);
 
 		Value switchValue={};
-		enum VALUE_PARSE_RESULT res=Value_parse(module,&switchValue,token_iter);
+		enum VALUE_PARSE_RESULT res=Value_parse(stack,&switchValue,token_iter);
 		if(res==VALUE_INVALID){
 			fatal("invalid switch value at line %d col %d %.*s",token.line,token.col,token.len,token.p);
 		}
@@ -576,7 +622,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 			}
 
 			Statement bodyStatement={};
-			enum STATEMENT_PARSE_RESULT res=Statement_parse(module,&bodyStatement,token_iter);
+			enum STATEMENT_PARSE_RESULT res=Statement_parse(stack,&bodyStatement,token_iter);
 			TokenIter_lastToken(token_iter,&token);
 			switch(res){
 				case STATEMENT_PARSE_RESULT_INVALID:
@@ -599,7 +645,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 	do{
 		int numSymbols=0;
 		struct SymbolDefinition *symbols=nullptr;
-		enum SYMBOL_PARSE_RESULT symbolParseResult=SymbolDefinition_parse(module,&numSymbols,&symbols,token_iter,&(struct Symbol_parse_options){.allow_initializers=true});
+		enum SYMBOL_PARSE_RESULT symbolParseResult=SymbolDefinition_parse(stack,&numSymbols,&symbols,token_iter,&(struct Symbol_parse_options){.allow_initializers=true});
 		if(symbolParseResult==SYMBOL_INVALID){
 			break;
 		}
@@ -610,42 +656,55 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 		Symbol symbol=symbols[0].symbol;
 
 		// parse function definition
-		if(numSymbols==1 && symbol.type->kind==TYPE_KIND_FUNCTION){
-			if(Token_equalString(&token,"{")){
-				Statement statement={};
+		if(numSymbols==1 && symbol.type->kind==TYPE_KIND_FUNCTION && Token_equalString(&token,"{")){
+			// TODO solve this better
+			// add function symbol to stack before parsing the body
+			Stack_addSymol(stack, &symbol);
 
-				TokenIter_nextToken(token_iter,&token);
+			Statement statement={};
 
-				statement.tag=STATEMENT_FUNCTION_DEFINITION;
-				statement.functionDef.symbol=symbol;
+			TokenIter_nextToken(token_iter,&token);
 
-				array_init(&statement.functionDef.bodyStatements,sizeof(Statement));
-				bool stopParsingFunctionBody=false;
-				while(!stopParsingFunctionBody){
-					if(Token_equalString(&token,"}")){
-						TokenIter_nextToken(token_iter,&token);
-						break;
-					}
+			statement.tag=STATEMENT_KIND_FUNCTION_DEFINITION;
+			statement.functionDef.symbol=symbol;
 
-					Statement functionBodyStatement={};
-					enum STATEMENT_PARSE_RESULT res=Statement_parse(module,&functionBodyStatement,token_iter);
-					TokenIter_lastToken(token_iter,&token);
+			Stack functionStack={};
+			Stack_init(&functionStack,stack);
 
-					switch(res){
-						case STATEMENT_PARSE_RESULT_INVALID:
-							stopParsingFunctionBody=true;
-							break;
-						case STATEMENT_PARSE_RESULT_PRESENT:
-							array_append(&statement.functionDef.bodyStatements,&functionBodyStatement);
-							break;
-					}
+			// add function arguments as symbols to functionStack
+			for(int i=0;i<symbol.type->function.args.len;i++){
+				Symbol *argSymbol=array_get(&symbol.type->function.args,i);
+				Stack_addSymol(&functionStack, argSymbol);
+			}
+
+			bool stopParsingFunctionBody=false;
+			while(!stopParsingFunctionBody){
+				if(Token_equalString(&token,"}")){
+					TokenIter_nextToken(token_iter,&token);
+					break;
 				}
 
-				*out=statement;
-				goto STATEMENT_PARSE_RET_SUCCESS;
+				Statement functionBodyStatement={};
+				enum STATEMENT_PARSE_RESULT res=Statement_parse(&functionStack,&functionBodyStatement,token_iter);
+				TokenIter_lastToken(token_iter,&token);
+
+				switch(res){
+					case STATEMENT_PARSE_RESULT_INVALID:
+						stopParsingFunctionBody=true;
+						break;
+					case STATEMENT_PARSE_RESULT_PRESENT:
+						Stack_addStatement(&functionStack, &functionBodyStatement);
+						break;
+				}
 			}
+
+			statement.functionDef.stack=allocAndCopy(sizeof(Stack),&functionStack);
+
+			*out=statement;
+			goto STATEMENT_PARSE_RET_SUCCESS;
 		}
 
+		// add symbol definitions
 		Statement statement={
 			.tag=STATEMENT_KIND_SYMBOL_DEFINITION,
 			.symbolDef={
@@ -669,13 +728,29 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 	// parse a value
 	do{
 		Value value;
-		enum VALUE_PARSE_RESULT res=Value_parse(module,&value,token_iter);
+		enum VALUE_PARSE_RESULT res=Value_parse(stack,&value,token_iter);
 		TokenIter_lastToken(token_iter,&token);
-		if(res==VALUE_INVALID){
+		if(res!=VALUE_PRESENT){
+			// if next token is a valid identifier, might be goto label
+			if(Token_isValidIdentifier(&token)){
+				struct TokenIter beforeTokenCheck=*token_iter;
+				TokenIter_nextToken(token_iter,&token);
+				if(Token_equalString(&token,":")){
+					*out=(Statement){
+						.tag=STATEMENT_KIND_LABEL,
+						.labelDefinition={
+							.label=COPY_(&token)
+						}
+					};
+					TokenIter_nextToken(token_iter,&token);
+					goto STATEMENT_PARSE_RET_SUCCESS;
+				}
+				*token_iter=beforeTokenCheck;
+			}
 			break;
 		}
 
-		out->tag=STATEMENT_VALUE;
+		out->tag=STATEMENT_KIND_VALUE;
 		out->value.value=allocAndCopy(sizeof(Value),&value);
 
 		// check for terminating ;
@@ -690,23 +765,6 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct T
 	return STATEMENT_PARSE_RESULT_INVALID;
 
 STATEMENT_PARSE_RET_SUCCESS:
-	switch(out->tag){
-		case STATEMENT_TYPEDEF:{
-			// append typedef to module
-			if(out->typedef_.symbol==nullptr)fatal("bug");
-			if(out->typedef_.symbol->type==nullptr)fatal("bug");
-			Type*t_copy=allocAndCopy(sizeof(Type),&(Type){
-				.name=out->typedef_.symbol->name,
-				.kind=TYPE_KIND_REFERENCE,
-				.reference={.ref=out->typedef_.symbol->type}
-			});
-			array_append(&module->types,&t_copy);
-			Token alias_name=*out->typedef_.symbol->name;
-			println("just copied type %s as %.*s",Type_asString(out->typedef_.symbol->type),alias_name.len,alias_name.p);
-			break;
-		}
-		default:;
-	}
 
 	*token_iter_in=*token_iter;
 	return STATEMENT_PARSE_RESULT_PRESENT;
@@ -718,21 +776,21 @@ bool Statement_equal(Statement*a,Statement*b){
 	}
 
 	switch(a->tag){
-		case STATEMENT_FUNCTION_DEFINITION:{
+		case STATEMENT_KIND_FUNCTION_DEFINITION:{
 			println("comparing function definitions");
 			if(!Symbol_equal(&a->functionDef.symbol,&b->functionDef.symbol)){
 				println("symbol mismatch");
 				return false;
 			}
 
-			if(a->functionDef.bodyStatements.len!=b->functionDef.bodyStatements.len){
-				println("body statement count mismatch %d %d",a->functionDef.bodyStatements.len,b->functionDef.bodyStatements.len);
+			if(a->functionDef.stack->statements.len!=b->functionDef.stack->statements.len){
+				println("body statement count mismatch %d %d",a->functionDef.stack->statements.len,b->functionDef.stack->statements.len);
 				return false;
 			}
 
-			for(int i=0;i<a->functionDef.bodyStatements.len;i++){
-				Statement*sa=array_get(&a->functionDef.bodyStatements,i);
-				Statement*sb=array_get(&b->functionDef.bodyStatements,i);
+			for(int i=0;i<a->functionDef.stack->statements.len;i++){
+				Statement*sa=array_get(&a->functionDef.stack->statements,i);
+				Statement*sb=array_get(&b->functionDef.stack->statements,i);
 				if(!Statement_equal(sa,sb)){
 					println("statement %d mismatch",i);
 					return false;
@@ -759,27 +817,27 @@ bool Statement_equal(Statement*a,Statement*b){
 
 const char* Statementkind_asString(enum STATEMENT_KIND kind){
 	switch(kind){
-		case STATEMENT_UNKNOWN:
+		case STATEMENT_KIND_UNKNOWN:
 			return("STATEMENT_UNKNOWN");
-		case STATEMENT_FUNCTION_DEFINITION:
+		case STATEMENT_KIND_FUNCTION_DEFINITION:
 			return("STATEMENT_FUNCTION_DEFINITION");
 		case STATEMENT_KIND_RETURN:
 			return("STATEMENT_KIND_RETURN");
 		case STATEMENT_KIND_IF:
 			return("STATEMENT_IF");
-		case STATEMENT_SWITCH:
+		case STATEMENT_KIND_SWITCH:
 			return("STATEMENT_SWITCH");
-		case STATEMENT_SWITCHCASE:
+		case STATEMENT_KIND_SWITCHCASE:
 			return("STATEMENT_SWITCHCASE");
-		case STATEMENT_BREAK:
+		case STATEMENT_KIND_BREAK:
 			return("STATEMENT_BREAK");
-		case STATEMENT_CONTINUE:
+		case STATEMENT_KIND_CONTINUE:
 			return("STATEMENT_CONTINUE");
-		case STATEMENT_DEFAULT:
+		case STATEMENT_KIND_DEFAULT:
 			return("STATEMENT_DEFAULT");
-		case STATEMENT_GOTO:
+		case STATEMENT_KIND_GOTO:
 			return("STATEMENT_GOTO");
-		case STATEMENT_LABEL:
+		case STATEMENT_KIND_LABEL:
 			return("STATEMENT_LABEL");
 		case STATEMENT_KIND_WHILE:
 			return("STATEMENT_KIND_WHILE");
@@ -787,13 +845,13 @@ const char* Statementkind_asString(enum STATEMENT_KIND kind){
 			return("STATEMENT_KIND_FOR");
 		case STATEMENT_KIND_SYMBOL_DEFINITION:
 			return("STATEMENT_KIND_SYMBOL_DEFINITION");
-		case STATEMENT_VALUE:
+		case STATEMENT_KIND_VALUE:
 			return("STATEMENT_VALUE");
-		case STATEMENT_BLOCK:
+		case STATEMENT_KIND_BLOCK:
 			return("STATEMENT_BLOCK");
-		case STATEMENT_EMPTY:
+		case STATEMENT_KIND_EMPTY:
 			return("STATEMENT_EMPTY");
-		case STATEMENT_TYPEDEF:
+		case STATEMENT_KIND_TYPEDEF:
 			return("STATEMENT_TYPEDEF");
 
 		default: fatal("unknown statement kind %d",kind);

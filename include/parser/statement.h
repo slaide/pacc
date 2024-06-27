@@ -3,50 +3,56 @@
 #include<util/array.h>
 #include<tokenizer.h>
 
+typedef struct Statement Statement;
+
 #include<parser/symbol.h>
 #include<parser/value.h>
+#include<parser/stack.h>
 
 enum STATEMENT_KIND{
-	STATEMENT_UNKNOWN=0,
+	STATEMENT_KIND_UNKNOWN=0,
 
 	/// e.g. just a semicolon
-	STATEMENT_EMPTY,
+	STATEMENT_KIND_EMPTY,
 
 	/// @brief function definition, e.g. int foo(int a, int b){ return a+b; }
-	STATEMENT_FUNCTION_DEFINITION,
+	STATEMENT_KIND_FUNCTION_DEFINITION,
 	/// @brief return statement, e.g. return 0;
 	STATEMENT_KIND_RETURN,
 	/// @brief if statement with body
 	STATEMENT_KIND_IF,
 	/// @brief switch statement with body (cases are regular statements in this body)
-	STATEMENT_SWITCH,
+	STATEMENT_KIND_SWITCH,
 	/// @brief a case statement, e.g. case 0:
-	STATEMENT_SWITCHCASE,
+	STATEMENT_KIND_SWITCHCASE,
 
 	/// @brief a break statement, e.g. break;
-	STATEMENT_BREAK,
+	STATEMENT_KIND_BREAK,
 	/// @brief a continue statement, e.g. continue;
-	STATEMENT_CONTINUE,
+	STATEMENT_KIND_CONTINUE,
 	/// @brief default label in switch case statement, e.g. default:
-	STATEMENT_DEFAULT,
+	STATEMENT_KIND_DEFAULT,
 	/// @brief goto statement, e.g. goto label;
-	STATEMENT_GOTO,
-	STATEMENT_LABEL,
+	STATEMENT_KIND_GOTO,
+	STATEMENT_KIND_LABEL,
 	STATEMENT_KIND_WHILE,
 	STATEMENT_KIND_FOR,
-	STATEMENT_TYPEDEF,
+	STATEMENT_KIND_TYPEDEF,
 
-	STATEMENT_BLOCK,
+	STATEMENT_KIND_BLOCK,
 	
-	STATEMENT_VALUE,
+	STATEMENT_KIND_VALUE,
 
 	STATEMENT_KIND_SYMBOL_DEFINITION,
 };
 const char* Statementkind_asString(enum STATEMENT_KIND kind);
 
-typedef struct Statement Statement;
-
 char*Statement_asString(Statement*statement,int indentDepth);
+
+enum VALUE_GOTO_LABEL_VARIANT{
+	VALUE_GOTO_LABEL_VARIANT_LABEL,
+	VALUE_GOTO_LABEL_VARIANT_VALUE,
+};
 
 struct Statement{
 	enum STATEMENT_KIND tag;
@@ -55,7 +61,7 @@ struct Statement{
 		/// also see STATEMENT_FUNCTION_DECLARATION
 		struct{
 			Symbol symbol;
-			array bodyStatements;
+			Stack*stack;
 		}functionDef;
 
 		struct{
@@ -73,7 +79,7 @@ struct Statement{
 		}value;
 
 		struct{
-			array body;
+			Stack*stack;
 		}block;
 
 		struct{
@@ -87,7 +93,7 @@ struct Statement{
 			Value* condition;
 			Value* step;
 
-			Statement* body;
+			Stack*stack;
 		}forLoop;
 
 		struct{
@@ -98,6 +104,7 @@ struct Statement{
 
 		struct{
 			Value* condition;
+			/* item type is Statement */
 			array body;
 		}switch_;
 
@@ -106,8 +113,12 @@ struct Statement{
 		}switchCase;
 
 		struct{
-			/// @brief label, which is value instead of token since C23 computed goto
-			Value*label;
+			enum VALUE_GOTO_LABEL_VARIANT variant;
+			union{
+				/// @brief value allows computed goto
+				Value*label;
+				Token*labelName;
+			};
 		}goto_;
 
 		struct{
@@ -115,16 +126,9 @@ struct Statement{
 		}labelDefinition;
 
 		struct{
-			Symbol*symbol;
+			/* item type is struct Symbol */
+			array symbols;
 		}typedef_;
 	};
 };
-
-enum STATEMENT_PARSE_RESULT{
-	/// @brief statement was parsed successfully
-	STATEMENT_PARSE_RESULT_PRESENT,
-	/// @brief statement was not parsed successfully (e.g. syntax error)
-	STATEMENT_PARSE_RESULT_INVALID,
-};
-enum STATEMENT_PARSE_RESULT Statement_parse(Module*module,Statement*out,struct TokenIter*token_iter);
 bool Statement_equal(Statement*a,Statement*b);

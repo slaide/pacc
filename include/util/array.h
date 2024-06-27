@@ -1,8 +1,5 @@
 #pragma once
 
-#include<stdlib.h>
-#include<string.h>
-
 typedef struct array{
     void*data;
     int elem_size;
@@ -18,7 +15,7 @@ enum ARRAY_APPEND_RESULT{
     ARRAY_APPEND_ALLOC_FAIL,
 };
 /* append element pointed to by elem to array */
-enum ARRAY_APPEND_RESULT array_append(array*a,void*elem);
+enum ARRAY_APPEND_RESULT array_append(array*a,const void*elem);
 
 void array_pop_front(array*a);
 void array_pop_back(array*a);

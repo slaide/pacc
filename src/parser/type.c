@@ -43,9 +43,9 @@ bool Type_equal(Type*a,Type*b){
 			}
 
 			for(int i=0;i<a->function.args.len;i++){
-				Symbol*sa=array_get(&a->function.args,i);
-				Symbol*sb=array_get(&b->function.args,i);
-				if(!Symbol_equal(sa,sb)){
+				Symbol*sym_a=array_get(&a->function.args,i);
+				Symbol*sym_b=array_get(&b->function.args,i);
+				if(!Symbol_equal(sym_a,sym_b)){
 					println("argument %d mismatch",i);
 					return false;
 				}
@@ -159,6 +159,7 @@ char* Type_asString(Type* type){
 				}else{
 					stringAppend(ret,"union %.*s",type_ref->union_.name->len,type_ref->union_.name->p);
 				}
+
 				for(int i=0;i<type_ref->union_.members.len;i++){
 					Symbol* member=array_get(&type_ref->union_.members,i);
 					if(member->name==nullptr){
@@ -176,9 +177,15 @@ char* Type_asString(Type* type){
 				}else{
 					stringAppend(ret,"enum %.*s",type_ref->enum_.name->len,type_ref->enum_.name->p);
 				}
-				for(int i=0;i<type_ref->enum_.members.len;i++){
-					Value* member=array_get(&type_ref->enum_.members,i);
-					stringAppend(ret,"\n  member %s",Value_asString(member));
+
+				for(int i=0;i<type_ref->union_.members.len;i++){
+					struct EnumVariant* member=array_get(&type_ref->enum_.members,i);
+					if(member->name==nullptr)fatal("bug");
+
+					stringAppend(ret,"\n  member %.*s ",member->name->len,member->name->p);
+					if(member->value){
+						stringAppend(ret,"= %s",Value_asString(member->value));
+					}
 				}
 
 				printing_done=true;
@@ -219,6 +226,8 @@ char* TypeKind_asString(enum TYPEKIND kind){
 		return "TYPE_KIND_ENUM";
 	case TYPE_KIND_PRIMITIVE:
 		return "TYPE_KIND_PRIMITIVE";
+	case TYPE_KIND_TYPE:
+		return "TYPE_KIND_TYPE";
 	default:
 		fatal("unimplemented %d",kind);
 	}

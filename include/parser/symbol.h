@@ -1,8 +1,8 @@
 #pragma once
 
 #include<tokenizer.h>
-#include<parser/module.h>
 
+typedef struct Symbol Symbol;
 #include<parser/type.h>
 
 enum SYMBOLKIND{
@@ -16,10 +16,9 @@ enum SYMBOLKIND{
 };
 const char* Symbolkind_asString(enum SYMBOLKIND kind);
 
-typedef struct Symbol Symbol;
 struct Symbol{
-	Token* name;
 	enum SYMBOLKIND kind;
+	Token* name;
 	Type* type;
 };
 struct SymbolDefinition{
@@ -36,11 +35,5 @@ struct Symbol_parse_options{
 	bool forbid_multiple;
 	bool allow_initializers;
 };
-/// @brief  type cannot be parsed separate from symbol, so we parse a symbol as combination of type and name parser
-/// @param module module that provides the context for parsing
-/// @param num_symbols number of symbols returned
-/// @param symbols_out pointer to number of symbols (to be freed by the caller)
-/// @param token_iter_in iterator over tokens to be consumed for symbol parsing, iterator is mutated only on success
-enum SYMBOL_PARSE_RESULT SymbolDefinition_parse(Module*module,int*num_symbol_defs,struct SymbolDefinition**symbols_out,struct TokenIter*token_iter_in,struct Symbol_parse_options*options);
 
 bool Symbol_equal(Symbol*a,Symbol*b);

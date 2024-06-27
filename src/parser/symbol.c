@@ -1,12 +1,8 @@
-#include "parser/symbol.h"
-#include "parser/module.h"
-#include "parser/type.h"
-#include "util/array.h"
 #include<parser/parser.h>
 #include<util/util.h>
 #include<tokenizer.h>
 
-enum SYMBOL_PARSE_RESULT SymbolDefinition_parse(Module*module,int*num_symbol_defs,struct SymbolDefinition**symbol_defs_out,struct TokenIter*token_iter_in,struct Symbol_parse_options*options){
+enum SYMBOL_PARSE_RESULT SymbolDefinition_parse(Stack*stack,int*num_symbol_defs,struct SymbolDefinition**symbol_defs_out,struct TokenIter*token_iter_in,struct Symbol_parse_options*options){
 	struct TokenIter this_iter=*token_iter_in;
 	struct TokenIter *token_iter=&this_iter;
 
@@ -124,7 +120,7 @@ enum SYMBOL_PARSE_RESULT SymbolDefinition_parse(Module*module,int*num_symbol_def
 						while(!Token_equalString(&token,"}")){
 							int num_members=0;
 							struct SymbolDefinition *members=nullptr;
-							enum SYMBOL_PARSE_RESULT symres=SymbolDefinition_parse(module,&num_members,&members,token_iter,&(struct Symbol_parse_options){});
+							enum SYMBOL_PARSE_RESULT symres=SymbolDefinition_parse(stack,&num_members,&members,token_iter,&(struct Symbol_parse_options){});
 							if(symres==SYMBOL_INVALID){
 								fatal("invalid symbol in struct at %s",Token_print(&token));
 							}
@@ -152,7 +148,7 @@ enum SYMBOL_PARSE_RESULT SymbolDefinition_parse(Module*module,int*num_symbol_def
 						while(!Token_equalString(&token,"}")){
 							int num_members=0;
 							struct SymbolDefinition *members=nullptr;
-							enum SYMBOL_PARSE_RESULT symres=SymbolDefinition_parse(module,&num_members,&members,token_iter,&(struct Symbol_parse_options){});
+							enum SYMBOL_PARSE_RESULT symres=SymbolDefinition_parse(stack,&num_members,&members,token_iter,&(struct Symbol_parse_options){});
 							if(symres==SYMBOL_INVALID){
 								fatal("invalid symbol in struct at %s",Token_print(&token));
 							}
@@ -174,23 +170,38 @@ enum SYMBOL_PARSE_RESULT SymbolDefinition_parse(Module*module,int*num_symbol_def
 						base_type.union_.members=unionMembers;
 					}else if(type_is_enum){
 						array enumMembers={};
-						array_init(&enumMembers,sizeof(Value));
+						array_init(&enumMembers,sizeof(struct EnumVariant));
 
 						// parse enum
 						while(!Token_equalString(&token,"}")){
-							Value member={};
-							enum VALUE_PARSE_RESULT valres=Value_parse(module,&member,token_iter);
-							if(valres==VALUE_INVALID){
-								fatal("invalid value in enum");
+							struct EnumVariant member={};
+							
+							if(!Token_isValidIdentifier(&token)){
+								fatal("expected identifier at %s",Token_print(&token));
 							}
+							member.name=COPY_(&token);
+							TokenIter_nextToken(token_iter,&token);
+							if(Token_equalString(&token,KEYWORD_EQUAL)){
+								TokenIter_nextToken(token_iter,&token);
+								Value value={};
+								enum VALUE_PARSE_RESULT res=Value_parse(stack,&value,token_iter);
+								if(res!=VALUE_PRESENT){
+									fatal("expected value at %s",Token_print(&token));
+								}
+								TokenIter_lastToken(token_iter,&token);
+								member.value=COPY_(&value);
+							}
+
 							array_append(&enumMembers,&member);
-							TokenIter_lastToken(token_iter,&token);
 							
 							// check for comma
 							if(!Token_equalString(&token,",")){
 								break;
 							}
 							TokenIter_nextToken(token_iter,&token);
+						}
+						if(!Token_equalString(&token,"}")){
+							fatal("expected } at %s",Token_print(&token));
 						}
 						TokenIter_nextToken(token_iter,&token);
 
@@ -225,7 +236,7 @@ enum SYMBOL_PARSE_RESULT SymbolDefinition_parse(Module*module,int*num_symbol_def
 			// if we do not have a type yet, i.e. base_type.kind==TYPE_KIND_UNKNOWN, we assume it is a type name
 			// but we check if it is a known type to confirm this
 			if(base_type.kind==TYPE_KIND_UNKNOWN){
-				Type*type=Module_findType(module,&nameToken);
+				Type*type=Stack_findType(stack,&nameToken);
 				if(type_name_can_be_implicit_numeric){
 					// check if typename is float, double or int, which are the only types to which this can apply
 					if(type!=nullptr){
@@ -242,7 +253,7 @@ enum SYMBOL_PARSE_RESULT SymbolDefinition_parse(Module*module,int*num_symbol_def
 					}
 
 					// if neither of these names is present, it is implicitely int
-					type=Module_findType(module,&(Token){.len=3,.p="int"});
+					type=Stack_findType(stack,&(Token){.len=3,.p="int"});
 					if(type==nullptr)fatal("bug");
 					base_type.kind=TYPE_KIND_REFERENCE;
 					base_type.reference.ref=type;
@@ -256,12 +267,6 @@ enum SYMBOL_PARSE_RESULT SymbolDefinition_parse(Module*module,int*num_symbol_def
 					TokenIter_nextToken(token_iter,&token);
 					continue;
 				}
-
-				// print all types in module
-				/*for(int i=0;i<module->types.len;i++){
-					Type*type=*(Type**)array_get(&module->types,i);
-					println("module type %d is %s",i,Type_asString(type));
-				}*/
 				
 				if(symbol_defs.len==0)
 					goto SYMBOL_PARSE_RET_FAILURE;
@@ -342,7 +347,7 @@ enum SYMBOL_PARSE_RESULT SymbolDefinition_parse(Module*module,int*num_symbol_def
 
 					int num_arguments=0;
 					struct SymbolDefinition *argument=nullptr;
-					enum SYMBOL_PARSE_RESULT symres=SymbolDefinition_parse(module,&num_arguments,&argument,token_iter,&(struct Symbol_parse_options){.forbid_multiple=true});
+					enum SYMBOL_PARSE_RESULT symres=SymbolDefinition_parse(stack,&num_arguments,&argument,token_iter,&(struct Symbol_parse_options){.forbid_multiple=true});
 					TokenIter_lastToken(token_iter,&token);
 					if(symres==SYMBOL_INVALID){
 						// check for varargs
@@ -350,7 +355,7 @@ enum SYMBOL_PARSE_RESULT SymbolDefinition_parse(Module*module,int*num_symbol_def
 							TokenIter_nextToken(token_iter,&token);
 							Symbol vararg_argument=(Symbol){
 								.kind=SYMBOL_KIND_VARARG,
-								.type=Module_findType(module, &(Token){.len=strlen("__builtin_va_list"),.p="__builtin_va_list"}),
+								.type=Stack_findType(stack, Token_fromString("__builtin_va_list")),
 							};
 							array_append(&args,&vararg_argument);
 
@@ -397,7 +402,7 @@ enum SYMBOL_PARSE_RESULT SymbolDefinition_parse(Module*module,int*num_symbol_def
 				}
 
 				Value array_len={};
-				enum VALUE_PARSE_RESULT res=Value_parse(module,&array_len,token_iter);
+				enum VALUE_PARSE_RESULT res=Value_parse(stack,&array_len,token_iter);
 				// if there is a value: dynamic array
 				// otherwise, value with some size (may be static or runtime determined)
 				Value*arrayLen=nullptr;
@@ -436,9 +441,10 @@ enum SYMBOL_PARSE_RESULT SymbolDefinition_parse(Module*module,int*num_symbol_def
 
 				TokenIter_nextToken(token_iter,&token);
 				Value value={};
-				enum VALUE_PARSE_RESULT res=Value_parse(module,&value,token_iter);
+				enum VALUE_PARSE_RESULT res=Value_parse(stack,&value,token_iter);
 				TokenIter_lastToken(token_iter,&token);
 				switch(res){
+					case VALUE_SYMBOL_UNKNOWN:
 					case VALUE_INVALID:
 						fatal("invalid value after assignment operator at %s",Token_print(&token));
 						break;

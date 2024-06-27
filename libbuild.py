@@ -342,7 +342,7 @@ class Command:
             exit(1)
 
 
-    def __init__(self,cmd:str,in_files:tp.List[str]=[],out_files:tp.List[str]=[],phony:bool=False,shell:bool=False):
+    def __init__(self,cmd:str,in_files:tp.List[str]=[],out_files:tp.List[str]=[],phony:bool=False,shell:bool=False,do_not_intercept_stdouterr:bool=False):
         self.in_files=in_files
         self.out_files=out_files
 
@@ -352,6 +352,7 @@ class Command:
         """ if true, the command is not cached """
 
         self.shell=shell
+        self.do_not_intercept_stdouterr=do_not_intercept_stdouterr
 
         self.depends_on:tp.Set[Command]=set()
         self.followed_by:tp.Set[Command]=set()
@@ -412,16 +413,22 @@ class Command:
             if len(split_args)==0:
                 return (0,"")
             
-            if self.shell:
-                p=subprocess.run(self.cmd,stdout=subprocess.PIPE,stderr=subprocess.PIPE,shell=True)
+            if self.do_not_intercept_stdouterr:
+                run_kwargs={}
             else:
-                p=subprocess.run(split_args,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+                run_kwargs={"stdout":subprocess.PIPE,"stderr":subprocess.PIPE}
+            
+            if self.shell:
+                p=subprocess.run(self.cmd,shell=True,**run_kwargs)
+            else:
+                p=subprocess.run(split_args,**run_kwargs)
 
             ret=""
             if p.returncode!=0:
                 ret+=f"running $ {self.cmd}\n"
-                ret+=p.stdout.decode()
-                ret+=p.stderr.decode()
+                if not self.do_not_intercept_stdouterr:
+                    ret+=p.stdout.decode()
+                    ret+=p.stderr.decode()
 
             return (p.returncode,ret)
             
@@ -432,3 +439,4 @@ class Command:
             self._future=s_fut
         else:
             self._future=Command.pool.submit(run)
+

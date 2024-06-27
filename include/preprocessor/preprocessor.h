@@ -1,4 +1,5 @@
 #include<util/array.h>
+
 #include<tokenizer.h>
 
 struct Preprocessor;
@@ -28,7 +29,7 @@ enum PreprocessorExpressionTag{
 	// specifically an integer literal
 	PREPROCESSOR_EXPRESSION_TAG_LITERAL,
 
-	PREPROCESSOR_EXPRESSION_TAG_ELSE,
+	PREPROCESSOR_EXPRESSION_TAG_ELSE
 };
 struct PreprocessorExpression{
 	enum PreprocessorExpressionTag tag;
@@ -202,8 +203,6 @@ struct Preprocessor{
 	
 	/* definitions, element type is struct PreprocessorDefine */
 	array defines;
-	/* temporary definitions, e.g. used for function-like macro expansion */
-	array temp_defines;
 	/* protect against double include with pragma once, the results of which are saved here, i.e. element is char* */
 	array already_included_files;
 

@@ -1,4 +1,3 @@
-#include "tokenizer.h"
 #include <libgen.h>
 #include <string.h>
 #include <unistd.h> // access
@@ -7,7 +6,9 @@
 
 #include<preprocessor/preprocessor.h>
 
-static const char*_PLACEHOLDER_FILENAME="unknownfile";
+static const char*const PLACEHOLDER_FILENAME="unknownfile";
+
+#define PREPROCESSOR_RECURSIVE 0
 
 void Preprocessor_init(struct Preprocessor*preprocessor){
 	*preprocessor=(struct Preprocessor){};
@@ -15,47 +16,54 @@ void Preprocessor_init(struct Preprocessor*preprocessor){
 	array_init(&preprocessor->include_paths,sizeof(char*));
 	array_init(&preprocessor->defines,sizeof(struct PreprocessorDefine));
 
+	array_init(&preprocessor->already_included_files,sizeof(char*));	
+
+	array_init(&preprocessor->stack,sizeof(struct PreprocessorIfStack));
+
+	// read all tokens into memory
+	array_init(&preprocessor->tokens_out,sizeof(Token));
+
 	// include some standard defined macros
-	array __FILE__tokens={};
-	array_init(&__FILE__tokens,sizeof(Token));
-	array_append(&__FILE__tokens,&(Token){
+	array a__FILE__tokens={};
+	array_init(&a__FILE__tokens,sizeof(Token));
+	array_append(&a__FILE__tokens,&(Token){
 		.tag=TOKEN_TAG_LITERAL,
-		.p=_PLACEHOLDER_FILENAME,
-		.len=strlen(_PLACEHOLDER_FILENAME),
+		.p=PLACEHOLDER_FILENAME,
+		.len=(int)strlen(PLACEHOLDER_FILENAME),
 		.literal={
 			.string={
-				.len=strlen(_PLACEHOLDER_FILENAME),
-				.str=allocAndCopy(strlen(_PLACEHOLDER_FILENAME)+1,_PLACEHOLDER_FILENAME),
+				.len=(int)strlen(PLACEHOLDER_FILENAME),
+				.str=allocAndCopy(strlen(PLACEHOLDER_FILENAME)+1,PLACEHOLDER_FILENAME),
 			}
 		}
 	});
 	array_append(&preprocessor->defines,&(struct PreprocessorDefine){
 		.name={ .tag=TOKEN_TAG_SYMBOL, .p="__FILE__", .len=strlen("__FILE__"), },
-		.tokens=__FILE__tokens,
+		.tokens=a__FILE__tokens,
 	});
 
-	array __LINE__tokens={};
-	array_init(&__LINE__tokens,sizeof(Token));
-	array_append(&__LINE__tokens,&(Token){
+	array a__LINE__tokens={};
+	array_init(&a__LINE__tokens,sizeof(Token));
+	array_append(&a__LINE__tokens,&(Token){
 		.tag=TOKEN_TAG_LITERAL,
 		.p="1",
 		.len=strlen("1"),
 	});
 	array_append(&preprocessor->defines,&(struct PreprocessorDefine){
 		.name={ .tag=TOKEN_TAG_SYMBOL, .p="__LINE__", .len=strlen("__LINE__"), },
-		.tokens=__LINE__tokens,
+		.tokens=a__LINE__tokens,
 	});
 
-	array __STDC__tokens={};
-	array_init(&__STDC__tokens,sizeof(Token));
-	array_append(&__STDC__tokens,&(Token){
+	array a__STDC__tokens={};
+	array_init(&a__STDC__tokens,sizeof(Token));
+	array_append(&a__STDC__tokens,&(Token){
 		.tag=TOKEN_TAG_SYMBOL,
 		.p="1",
 		.len=strlen("1"),
 	});
 	array_append(&preprocessor->defines,&(struct PreprocessorDefine){
 		.name={ .tag=TOKEN_TAG_SYMBOL, .p="__STDC__", .len=strlen("__STDC__"), },
-		.tokens=__STDC__tokens,
+		.tokens=a__STDC__tokens,
 	});
 
 	/* from https://gcc.gnu.org/onlinedocs/cpp/Standard-Predefined-Macros.html
@@ -67,38 +75,29 @@ void Preprocessor_init(struct Preprocessor*preprocessor){
 	201710L signifies the 2017 revision of the C standard
 	202311L is used for the experimental -std=c23 [...] modes <- we are aiming for this one
 	*/
-	array __STDC_VERSION__tokens={};
-	array_init(&__STDC_VERSION__tokens,sizeof(Token));
-	array_append(&__STDC_VERSION__tokens,&(Token){
+	array a__STDC_VERSION__tokens={};
+	array_init(&a__STDC_VERSION__tokens,sizeof(Token));
+	array_append(&a__STDC_VERSION__tokens,&(Token){
 		.tag=TOKEN_TAG_SYMBOL,
 		.p="202311L",
 		.len=strlen("202311L"),
 	});
 	array_append(&preprocessor->defines,&(struct PreprocessorDefine){
 		.name={ .tag=TOKEN_TAG_SYMBOL, .p="__STDC_VERSION__", .len=strlen("__STDC_VERSION__"), },
-		.tokens=__STDC_VERSION__tokens,
+		.tokens=a__STDC_VERSION__tokens,
 	});
 
-	array __STDC_HOSTED__tokens={};
-	array_init(&__STDC_HOSTED__tokens,sizeof(Token));
-	array_append(&__STDC_HOSTED__tokens,&(Token){
+	array a__STDC_HOSTED__tokens={};
+	array_init(&a__STDC_HOSTED__tokens,sizeof(Token));
+	array_append(&a__STDC_HOSTED__tokens,&(Token){
 		.tag=TOKEN_TAG_SYMBOL,
 		.p="1",
 		.len=strlen("1"),
 	});
 	array_append(&preprocessor->defines,&(struct PreprocessorDefine){
 		.name={ .tag=TOKEN_TAG_SYMBOL, .p="__STDC_HOSTED__", .len=strlen("__STDC_HOSTED__"), },
-		.tokens=__STDC_HOSTED__tokens,
+		.tokens=a__STDC_HOSTED__tokens,
 	});
-
-
-	array_init(&preprocessor->temp_defines,sizeof(struct PreprocessorDefine));
-	array_init(&preprocessor->already_included_files,sizeof(char*));	
-
-	array_init(&preprocessor->stack,sizeof(struct PreprocessorIfStack));
-
-	// read all tokens into memory
-	array_init(&preprocessor->tokens_out,sizeof(Token));
 }
 
 int Preprocessor_evalExpression(struct Preprocessor *preprocessor,struct PreprocessorExpression*expr){
@@ -181,7 +180,7 @@ void Preprocessor_processInclude(struct Preprocessor*preprocessor){
 	bool local_include_path=token.p[0]=='"';
 
 	char* include_path=calloc(token.len-1,1);
-	sprintf(include_path,"%.*s",token.len-2,token.p+1);
+	discard sprintf(include_path,"%.*s",token.len-2,token.p+1);
 	println("%s include path: %s",local_include_path?"local":"global",include_path);
 
 	ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
@@ -194,7 +193,7 @@ void Preprocessor_processInclude(struct Preprocessor*preprocessor){
 		for(int i=0-((int)local_include_path);i<preprocessor->include_paths.len;i++){
 			char* include_dir=nullptr;
 			if(i==-1){
-				int tok_filename_len=strlen(preprocessor->token_iter.tokenizer->token_src);
+				unsigned tok_filename_len=strlen(preprocessor->token_iter.tokenizer->token_src);
 				char*tok_filename=calloc(tok_filename_len+1,1);
 				strncpy(tok_filename, preprocessor->token_iter.tokenizer->token_src, tok_filename_len);
 				include_dir=dirname(tok_filename);
@@ -203,8 +202,9 @@ void Preprocessor_processInclude(struct Preprocessor*preprocessor){
 				include_dir=*(char**)array_get(&preprocessor->include_paths,i);
 			}
 
-			include_file_path=calloc(strlen(include_dir)+strlen(include_path)+20,1);
-			sprintf(include_file_path,"%s/%s",include_dir,include_path);
+			static const int num_extra_chars=2; // for slash and terminating zero
+			include_file_path=calloc(strlen(include_dir)+strlen(include_path)+num_extra_chars,1);
+			discard sprintf(include_file_path,"%s/%s",include_dir,include_path);
 
 			if(access(include_file_path,F_OK)!=-1){
 				println("resolved include path %s to %s",include_path,include_file_path);
@@ -250,7 +250,7 @@ void Preprocessor_processDefine(struct Preprocessor*preprocessor){
 	Token token;
 
 	// read define argument
-	int ntr=TokenIter_lastToken(&preprocessor->token_iter,&token);
+	bool ntr=TokenIter_lastToken(&preprocessor->token_iter,&token);
 	if(!ntr) fatal("");
 	if(token.tag!=TOKEN_TAG_SYMBOL){
 		fatal("expected symbol after #define directive but got instead %s",Token_print(&token));
@@ -269,25 +269,26 @@ void Preprocessor_processDefine(struct Preprocessor*preprocessor){
 			if(Token_equalString(&token,")") && !done_parsing_args){
 				done_parsing_args=true;
 				continue;
-			}else{
-				if(args==nullptr)
-					fatal("unexpected define directive format");
-
-				if(Token_equalString(&token,",")){
-					if(args->len<1)
-						fatal("unexpected , in define argument list before first argument");
-					continue;
-				}
-
-				//append token to args
-				struct PreprocessorDefineFunctionlikeArg new_arg={
-					.tag=PREPROCESSOR_DEFINE_FUNCTIONLIKE_ARG_TYPE_NAME,
-					.name={
-						.name=token,
-					},
-				};
-				array_append(args,&new_arg);
 			}
+
+			if(args==nullptr)
+				fatal("unexpected define directive format");
+
+			if(Token_equalString(&token,",")){
+				if(args->len<1)
+					fatal("unexpected , in define argument list before first argument");
+				continue;
+			}
+
+			//append token to args
+			struct PreprocessorDefineFunctionlikeArg new_arg={
+				.tag=PREPROCESSOR_DEFINE_FUNCTIONLIKE_ARG_TYPE_NAME,
+				.name={
+					.name=token,
+				},
+			};
+			array_append(args,&new_arg);
+
 			continue;
 		}
 		if(Token_equalString(&token,"(") && args==nullptr && token.col==define_name.len+define_name.col /* i.e. no whitespace between macro name and open paranthesis */){
@@ -315,8 +316,9 @@ void Preprocessor_processDefine(struct Preprocessor*preprocessor){
 					for(int i=0;i<args->len;i++){
 						struct PreprocessorDefineFunctionlikeArg* arg=array_get(args,i);
 						printf("%.*s",arg->name.name.len,arg->name.name.p);
-						if(i<args->len-1)
+						if(i<args->len-1){
 							printf(",");
+						}
 					}
 					printf(")");
 				}
@@ -353,7 +355,7 @@ void Preprocessor_processUndefine(struct Preprocessor*preprocessor){
 
 	// copy undef name to string
 	char* define_name=calloc(token.len+1,1);
-	sprintf(define_name,"%.*s",token.len,token.p);
+	discard sprintf(define_name,"%.*s",token.len,token.p);
 
 	// iter past undef argument
 	ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
@@ -363,7 +365,7 @@ void Preprocessor_processUndefine(struct Preprocessor*preprocessor){
 		for(int i=0;i<preprocessor->defines.len;i++){
 			Token* define_token=array_get(&preprocessor->defines,i);
 			if(Token_equalString(define_token,define_name)){
-				// TODO this needs a better solution, but the array api
+				// TODO(patrick): this needs a better solution, but the array api
 				// currently does not support removing elements from
 				// an arbitrary index
 				define_token->len=0;
@@ -381,8 +383,9 @@ void Preprocessor_processPragma(struct Preprocessor*preprocessor){
 		// read include argument
 		ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
 
-		if(preprocessor->doSkip)
+		if(preprocessor->doSkip){
 			return;
+		}
 
 		// add file to list of already included files
 		const char*include_path=preprocessor->token_iter.tokenizer->token_src;
@@ -407,8 +410,9 @@ void Preprocessor_processError(struct Preprocessor*preprocessor){
 	Token token={};
 	int ntr=TokenIter_lastToken(&preprocessor->token_iter,&token);
 	discard ntr;
-	if(preprocessor->doSkip)
+	if(preprocessor->doSkip){
 		return;
+	}
 
 	// this is genuinely an error during compilation
 	fatal("error: %s: ",Token_print(&token));
@@ -417,8 +421,9 @@ void Preprocessor_processWarning(struct Preprocessor*preprocessor){
 	Token token={};
 	int ntr=TokenIter_lastToken(&preprocessor->token_iter,&token);
 	discard ntr;
-	if(preprocessor->doSkip)
+	if(preprocessor->doSkip){
 		return;
+	}
 
 	// just print this message during compilation
 	print("warning: %s: ",Token_print(&token));
@@ -438,6 +443,28 @@ void Preprocessor_processWarning(struct Preprocessor*preprocessor){
 	}
 }
 
+enum PREPROCESSOR_MACRO_EXPANSION_ITEM_TAG{
+	// this item is an unexpanded token (i.e. will be emitted like this)
+	PREPROCESSOR_MACRO_EXPANSION_TOKEN_TAG_TOKEN,
+	// this item contains another list of tokens to be expanded
+	PREPROCESSOR_MACRO_EXPANSION_TOKEN_TAG_EXPANSION,
+};
+/*
+to handle token expansion, we need to keep track of the source of a token
+
+some rules/observations:
+- expansion takes place in steps: all tokens are iterated over at once, and each one is replaced if a match is found
+- then the new list of tokens is iterated over again, and so on, until no more replacements are made
+- function-like macros can have their name replaced, e.g. F2 may be "called" when #define F2 F1 // #define F1(arg) arg <- this works
+- function-like macro arguments cannot be expanded into an argument list, e.g. #define F1(a) (a) // #define F2 F1(1,2) <- this does not work
+- recursive expansion is not allowed, which makes it possible to have a macro with the same name as a function (the macro will be replaced once, emitting the same name again, but because of forbidden recursion, the name will not be recognized as another macro and hence not be expanded again)
+*/
+struct PreprocessorExpandedToken{
+	Token token;
+	/* names of macros that generated this token, i.e. item type is struct PreprocessorDefine* */
+	array generators;
+};
+
 /*
 expand tokens in tokens_in and append expanded tokens to tokens_out
 
@@ -450,62 +477,97 @@ void Preprocessor_expandMacros(struct Preprocessor*preprocessor,int num_tokens_i
 		return;
 	}
 
-	bool expanded_any=true;
+	// copy input arguments into expansion struct (PreprocessorExpandedToken)
+	array tokens_in_={};
+	array*tokens_in=&tokens_in_;
+	array_init(&tokens_in_,sizeof(struct PreprocessorExpandedToken));
 
-	// copy input arguments
-	int num_tokens_in=num_tokens_in_arg;
-	Token*tokens_in=malloc(sizeof(Token[num_tokens_in]));
-	memcpy(tokens_in,tokens_in_arg,sizeof(Token[num_tokens_in]));
+	for(int i=0;i<num_tokens_in_arg;i++){
+		/*tokens_in[i].token=tokens_in_arg[i];
+		array_init(&tokens_in[i].generators,sizeof(struct PreprocessorDefine));*/
+		struct PreprocessorExpandedToken token_in={
+			.token=tokens_in_arg[i],
+		};
+		array_init(&token_in.generators,sizeof(struct PreprocessorDefine*));
 
-	if(0){
-		for(int i=0;i<num_tokens_in_arg;i++){
-			printf("%.*s ",(tokens_in+i)->len,(tokens_in+i)->p);
-		}
-		printf("\n");
+		array_append(&tokens_in_,&token_in);
 	}
 
-	// set up temporary array for output tokens, and only flush it to tokens_out if expanded_any is false
+	/* write output into this array, which may be overwritten at any expansion level */
 	array tokens_out_={};
 	array*tokens_out=&tokens_out_;
-	array_init(tokens_out,sizeof(Token));
 
+	/* indicate if any token got expanded in current expansion level */
+	bool anyTokenGotExpanded=false;
+
+	int debug_expansion_level=0;
 	while(1){
-		expanded_any=false;
+		anyTokenGotExpanded=false;
 
-		for(int i=0;i<num_tokens_in;i++){
-			Token* token_in=tokens_in+i;
-			Token first_token=*token_in;
+		array_init(tokens_out,sizeof(struct PreprocessorExpandedToken));
 
-			switch(token_in->tag){
+		for(int i=0;i<tokens_in->len;i++){
+			struct PreprocessorExpandedToken* token_in=array_get(tokens_in,i);
+			/* token that is checked against macro names for expansion */
+			struct PreprocessorExpandedToken* expanded_token=token_in;
+
+			// only check symbols for expansion
+			switch(token_in->token.tag){
 				case TOKEN_TAG_SYMBOL:
 					break;
 				default:
-					array_append(tokens_out,token_in);
-					continue;
+					goto PREPROCESSOR_EXPANDMACROS_APPEND_TOKEN;
 			}
 
 			// check if token is a macro
-			bool was_expanded=false;
-			for(int j=0;j<(preprocessor->defines.len+preprocessor->temp_defines.len);j++){
-				struct PreprocessorDefine* define=nullptr;
-				if(j<preprocessor->defines.len)
-					define=array_get(&preprocessor->defines,j);
-				else
-					define=array_get(&preprocessor->temp_defines,j-preprocessor->defines.len);
+			bool current_token_was_expanded=false;
+			for(int j=0;(!current_token_was_expanded) && (j<preprocessor->defines.len);j++){
+				struct PreprocessorDefine* define=array_get(&preprocessor->defines,j);
 				
-				if(Token_equalToken(&define->name,token_in)){
-					/* num temp defines to pop off the stack afterwards */
-					int num_temp_defines=0;
+				if(Token_equalToken(&define->name,&token_in->token)){
+					// check if this macro was already expanded
+					bool already_expanded=false;
+					for(int k=0;k<token_in->generators.len;k++){
+						struct PreprocessorDefine* generator=*(struct PreprocessorDefine**)array_get(&token_in->generators,k);
+						if(generator==define){
+							already_expanded=true;
+							break;
+						}
+					}
+					if(already_expanded){
+						continue;
+					}
 
-					// check for function-like macro
+					current_token_was_expanded=true;
+
+					// append matched macro to list of generators for expanded_token
+					array_append(&expanded_token->generators,&define);
+
+					// print info about which token got expanded
+					if(1){
+						printf("expanding %.*s from (%s) to ",define->name.len,define->name.p,Token_print(&define->name));
+						for(int k=0;k<define->tokens.len;k++){
+							Token* token=array_get(&define->tokens,k);
+							printf("%.*s",token->len,token->p);
+						}
+						printf("\n");
+					}
+
+					// get input arguments, store them to allow expansion
+					// item type is struct PreprocessorDefine, since arguments and defines work essentially the same, only that arguments are only valid for one expansion step
+					array arguments={};
+					array_init(&arguments,sizeof(struct PreprocessorDefine));
+
+					// if the macro is function-like, parse and store arguments
 					if(define->args!=nullptr){
 						i++; // skip over macro name
 
 						// check for paranthesis
-						if(i>=num_tokens_in) fatal("expected argument list after function-like macro %s",Token_print(token_in));
-						token_in=tokens_in+i;
-						if(!Token_equalString(token_in, "("))
-							fatal("expected ( after function-like macro %.*s, but got instead %s",define->name.len,define->name.p,Token_print(token_in));
+						if(i>=tokens_in->len) fatal("expected argument list after function-like macro %s",Token_print(&token_in->token));
+						token_in=array_get(tokens_in,i);
+
+						if(!Token_equalString(&token_in->token, "("))
+							fatal("expected ( after function-like macro %.*s, but got instead %s",define->name.len,define->name.p,Token_print(&token_in->token));
 						i++; // skip over opening paranthesis
 
 						// handle macro arguments
@@ -521,27 +583,28 @@ void Preprocessor_expandMacros(struct Preprocessor*preprocessor,int num_tokens_i
 							array nested_char_stack={};
 							array_init(&nested_char_stack,sizeof(char));
 							while(1){
-								if(i>=num_tokens_in) fatal("expected argument list after function-like macro %s",Token_print(token_in));
-								Token* define_token=tokens_in+i;
+								if(i>=tokens_in->len) fatal("expected argument list after function-like macro %s",Token_print(&token_in->token));
+								struct PreprocessorExpandedToken* define_token=array_get(tokens_in,i);
 
 								// comma is allowed when nested
 								if(
-									Token_equalString(define_token,",")
+									Token_equalString(&define_token->token,",")
 									&& nested_char_stack.len==0
 								){
 									break;
 								}
-								if(Token_equalString(define_token,"(")){
+								if(Token_equalString(&define_token->token,"(")){
 									const char close_char=')';
 									array_append(&nested_char_stack,&close_char);
 								}
-								if(Token_equalString(define_token,")")){
-									if(nested_char_stack.len==0)
+								if(Token_equalString(&define_token->token,")")){
+									if(nested_char_stack.len==0){
 										break;
+									}
 
 									char close_char=*(char*)array_get(&nested_char_stack,nested_char_stack.len-1);
 									if(close_char!=')')
-										fatal("unexpected closing paranthesis %s",Token_print(define_token));
+										fatal("unexpected closing paranthesis %s",Token_print(&define_token->token));
 									array_pop_back(&nested_char_stack);
 								}
 								i+=1;
@@ -554,219 +617,230 @@ void Preprocessor_expandMacros(struct Preprocessor*preprocessor,int num_tokens_i
 								.args=nullptr
 							};
 							// 4) add define to preprocessor
-							array_append(&preprocessor->temp_defines,&arg_define);
-							num_temp_defines++;
+							array_append(&arguments,&arg_define);
 
 							// 5) if next token is closing paranthesis, break
-							if(Token_equalString(tokens_in+i,")")){
+							const Token token_in_token=((struct PreprocessorExpandedToken*)array_get(tokens_in,i))->token;
+							if(Token_equalString(&token_in_token,")")){
 								break;
 							}
 							// 6) if next token is comma, continue
-							if(Token_equalString(tokens_in+i,",")){
+							if(Token_equalString(&token_in_token,",")){
 								i+=1;
 								continue;
 							}
 							// 7) if next token is neither comma nor closing paranthesis, error
-							fatal("expected , or ) after argument in function-like macro %s after %s",Token_print(tokens_in+i),Token_print(array_get(&arg_tokens,arg_tokens.len-1)));
+							fatal("expected , or ) after argument in function-like macro %s after %s",Token_print(&token_in_token),Token_print(array_get(&arg_tokens,arg_tokens.len-1)));
 						}
 
 						// check for closing paranthesis
-						if(i>=num_tokens_in) fatal("expected argument list after function-like macro %s",Token_print(token_in));
-						token_in=tokens_in+i;
-						if(!Token_equalString(token_in, ")"))
-							fatal("expected ) after function-like macro %s",Token_print(token_in))
+						if(i>=tokens_in->len) fatal("expected argument list after function-like macro %s",Token_print(&token_in->token));
+						
+						token_in=array_get(tokens_in,i);
+						if(!Token_equalString(&token_in->token, ")"))
+							fatal("expected ) after function-like macro %s",Token_print(&token_in->token));
 						// do not skip over closing paranthesis (with i++) here because the loop step will do that
 					}
 
-					// splice in define tokens
+					// go through each token emitted by the macro, check if it matches the name of an argument, and replace it with the argument value if it does
 					array new_tokens_={};
 					array_init(&new_tokens_,sizeof(Token));
 					array*new_tokens=&new_tokens_;
-					for(int d=0;d<define->tokens.len;d++){
-						// check list of temporary defines for matches
-						Token define_token=*(Token*)array_get(&define->tokens,d);
-						// check for preprocessor operators
-						// 1) concatenation operator
-						if(new_tokens->len>=3
-							&& /* n-1 token is hash */ Token_equalString(array_get(new_tokens,new_tokens->len-1),"#")
-							&& /* n-2 token is hash */ Token_equalString(array_get(new_tokens,new_tokens->len-2),"#")
-						){
-							// get n-3 token
-							Token last_token=*(Token*)array_get(new_tokens,new_tokens->len-3);
+					for(int define_token_index=0;define_token_index<define->tokens.len;define_token_index++){
+						// this is the next token emitted by the macro
+						Token define_token=*(Token*)array_get(&define->tokens,define_token_index);
 
-							// pop last two tokens (hashes)
-							array_pop_back(new_tokens);
-							array_pop_back(new_tokens);
+						// go through arguments and replace token if it is found there
+						bool replaced=false;
+						for(int arg_index=0;arg_index<arguments.len;arg_index++){
+							struct PreprocessorDefine* arg_define=array_get(&arguments,arg_index);
+							if(Token_equalToken(&define_token,&arg_define->name)){
+								
+								// check for preprocessor operators, part 1/2: stringification operator, which is only allowed on macro arguments
+								if(new_tokens->len>=1
+									&& /* n-1 token is hash */ Token_equalString(array_get(new_tokens,new_tokens->len-1),"#")
+									&& !(new_tokens->len>=2 && /* n-2 token is not hash (i.e. this is not preceding a concatenation operator) */ Token_equalString(array_get(new_tokens,new_tokens->len-2),"#"))
+								){
+									// pop last token (hash)
+									Token hashToken=*(Token*)array_get(new_tokens,new_tokens->len-1);
+									array_pop_back(new_tokens);
 
-							// pop n-3 token
-							array_pop_back(new_tokens);
-
-							Token left=last_token;
-							Token right=define_token;
-
-							// expand macros on both, i.e. create new array to write expansion into, the expand, then read back from array
-							array left_tokens={};
-							array_init(&left_tokens,sizeof(Token));
-							array right_tokens={};
-							array_init(&right_tokens,sizeof(Token));
-							Preprocessor_expandMacros(preprocessor,1,&left,&left_tokens);
-							Preprocessor_expandMacros(preprocessor,1,&right,&right_tokens);
-							if(left_tokens.len!=1 || right_tokens.len!=1)
-								fatal("expected exactly one token after macro expansion");
-							left=*(Token*)array_get(&left_tokens,0);
-							right=*(Token*)array_get(&right_tokens,0);
-
-							// print debug info
-							if(0){
-								println("concatenating %.*s and %.*s",left.len,left.p,right.len,right.p);
-								// go through all entries in defines and temp_defines, and print them
-								for(int i=0;i<preprocessor->defines.len+preprocessor->temp_defines.len;i++){
-									struct PreprocessorDefine* define=nullptr;
-									if(i<preprocessor->defines.len)
-										define=array_get(&preprocessor->defines,i);
-									else
-										define=array_get(&preprocessor->temp_defines,i-preprocessor->defines.len);
-									printf("define %.*s: ",define->name.len,define->name.p);
-									for(int j=0;j<define->tokens.len;j++){
-										Token* define_token=array_get(&define->tokens,j);
-										printf("%.*s ",define_token->len,define_token->p);
+									// concatenate all tokens in arg_define to a single string
+									int total_str_len=0;
+									for(int j=0;j<arg_define->tokens.len;j++){
+										Token* arg_define_token=array_get(&arg_define->tokens,j);
+										total_str_len+=arg_define_token->len;
 									}
-									printf("\n");
+									char* arg_str=calloc(total_str_len+1,1);
+									int str_offset=0;
+									for(int j=0;j<arg_define->tokens.len;j++){
+										Token* arg_define_token=array_get(&arg_define->tokens,j);
+										strncpy(arg_str+str_offset,arg_define_token->p,arg_define_token->len);
+										str_offset+=arg_define_token->len;
+									}
+									println("stringified %.*s to %s",arg_define->name.len,arg_define->name.p,arg_str);
+
+									char* arg_str_out=calloc(1,total_str_len+3);
+									discard snprintf(arg_str_out,total_str_len+3,"\"%s\"",arg_str);
+									// replace last token in token_out with string literal
+									Token string_literal_token={
+										.tag=TOKEN_TAG_LITERAL,
+										.line=hashToken.line,
+										.col=hashToken.col,
+										.len=total_str_len+2,
+										.p=arg_str_out,
+										.literal={
+											.tag=TOKEN_LITERAL_TAG_STRING,
+											.string={
+												.len=total_str_len,
+												.str=arg_str,
+											}
+										}
+									};
+									array_append(new_tokens,&string_literal_token);
+
+									replaced=true;
+									current_token_was_expanded=true;
+									continue;
 								}
+
+								// expand argument by just copying all tokens in the argument to the output
+								for(int j=0;j<arg_define->tokens.len;j++){
+									Token* arg_define_token=array_get(&arg_define->tokens,j);
+									array_append(new_tokens,arg_define_token);
+								}
+								
+								replaced=true;
+								break;
 							}
-
-							// append current token to last_token
-							Token concatenated_token={
-								.tag=TOKEN_TAG_SYMBOL,
-								.line=left.line,
-								.col=left.col,
-								.len=left.len+right.len,
-								.p=calloc(left.len+right.len,1)
-							};
-							sprintf(concatenated_token.p,"%.*s%.*s",left.len,left.p,right.len,right.p);
-							array_append(new_tokens,&concatenated_token);
-							println("concatenated to %.*s",concatenated_token.len,concatenated_token.p);
-
-							continue;
 						}
-						// 2) stringification operator
-						else if(new_tokens->len>=1
-							&& /* n-1 token is hash */ Token_equalString(array_get(new_tokens,new_tokens->len-1),"#")
-							&& ! /* n-2 token is hash */ Token_equalString(&define_token,"#")
-						){
-							// pop last token (hash)
-							array_pop_back(new_tokens);
-
-							// expand define_token
-							array define_token_tokens={};
-							array_init(&define_token_tokens,sizeof(Token));
-							Preprocessor_expandMacros(preprocessor,1,&define_token,&define_token_tokens);
-							if(define_token_tokens.len==0)
-								fatal("expected at least one token after macro expansion");
-
-							// wrap string literal in quotes
-							int total_str_len=3;
-							for(int i=0;i<define_token_tokens.len;i++){
-								Token* define_token_token=array_get(&define_token_tokens,i);
-
-								// insert space before symbols
-								if(i>0 && define_token_token->tag==TOKEN_TAG_SYMBOL){
-									total_str_len+=1;
-								}
-
-								total_str_len+=define_token_token->len;
-							}
-							char* arg_str=calloc(1,total_str_len+3);
-							for(int i=0;i<define_token_tokens.len;i++){
-								Token* define_token_token=array_get(&define_token_tokens,i);
-								const char*padding_str="";
-								if(i>0 && define_token_token->tag==TOKEN_TAG_SYMBOL){
-									padding_str=" ";
-								}
-								snprintf(arg_str+strlen(arg_str),total_str_len-strlen(arg_str),"%s%.*s",padding_str,define_token_token->len,define_token_token->p);
-								println("arg_str: %s",arg_str);
-							}
-
-							char* arg_str_out=calloc(1,total_str_len+3);
-							snprintf(arg_str_out,total_str_len+3,"\"%s\"",arg_str);
-							// replace last token in token_out with string literal
-							Token string_literal_token={
-								.tag=TOKEN_TAG_LITERAL,
-								.line=define_token.line,
-								.col=define_token.col,
-								.len=total_str_len+2,
-								.p=arg_str_out,
-								.literal={
-									.tag=TOKEN_LITERAL_TAG_STRING,
-									.string={
-										.len=total_str_len,
-										.str=arg_str,
-									}
-								}
-							};
-							array_append(new_tokens,&string_literal_token);
-
+						if(replaced){
 							continue;
 						}
 
-						define_token.line=first_token.line;
+						// adjust source location of the output token
+						//define_token.line=first_token.line;
 						// offset col slightly to make it more readable
-						define_token.col=first_token.col+d*2;
+						//define_token.col=first_token.col+d*2;
 						array_append(new_tokens,&define_token);
 					}
 
-					// expand new tokens
-					Preprocessor_expandMacros(preprocessor,new_tokens->len,new_tokens->data,tokens_out);
+					// append new tokens in new_tokens to tokens_out
+					for(int j=0;j<new_tokens->len;j++){
+						Token* new_token=array_get(new_tokens,j);
 
-					/* pop new temp defines off the stack again */
-					for(;num_temp_defines>0;num_temp_defines--){
-						array_pop_back(&preprocessor->temp_defines);
+						// check for preprocessor operators, part 2/2: concatenation operator
+						if(j>=2){
+							struct PreprocessorExpandedToken *n_1_token=array_get(tokens_out,tokens_out->len-1);
+							struct PreprocessorExpandedToken *n_2_token=array_get(tokens_out,tokens_out->len-2);
+
+							if(
+								/* n-1 token is hash */ Token_equalString(&n_1_token->token,"#")
+								&& /* n-2 token is hash */ Token_equalString(&n_2_token->token,"#")
+							){
+								// get n-3 token
+								Token last_token=*(Token*)array_get(tokens_out,tokens_out->len-3);
+
+								// pop last two tokens (at n-1 and n-2, the hash characters)
+								array_pop_back(tokens_out);
+								array_pop_back(tokens_out);
+
+								// pop n-3 token
+								array_pop_back(tokens_out);
+
+								Token left=last_token;
+								Token right=*new_token;
+
+								// expand macros on both, i.e. create new array to write expansion into, the expand, then read back from array
+								array left_tokens={};
+								array_init(&left_tokens,sizeof(Token));
+								array right_tokens={};
+								array_init(&right_tokens,sizeof(Token));
+								Preprocessor_expandMacros(preprocessor,1,&left,&left_tokens);
+								Preprocessor_expandMacros(preprocessor,1,&right,&right_tokens);
+								if(left_tokens.len!=1 || right_tokens.len!=1)
+									fatal("expected exactly one token after macro expansion");
+								left=*(Token*)array_get(&left_tokens,0);
+								right=*(Token*)array_get(&right_tokens,0);
+
+								// append current token to last_token
+								char* concatenated_token_p=calloc(left.len+right.len+1/*+1 for zero termination*/,1);
+								Token concatenated_token={
+									.tag=TOKEN_TAG_SYMBOL,
+									.line=left.line,
+									.col=left.col,
+									.len=left.len+right.len,
+									.p=concatenated_token_p
+								};
+								discard sprintf(concatenated_token_p,"%.*s%.*s",left.len,left.p,right.len,right.p);
+
+								struct PreprocessorExpandedToken concatenated_token_expanded={
+									.token=concatenated_token,
+								};
+								array_init(&concatenated_token_expanded.generators,sizeof(struct PreprocessorDefine*));
+
+								array_append(tokens_out,&concatenated_token_expanded);
+								println("concatenated to %.*s",concatenated_token.len,concatenated_token.p);
+
+								continue;
+							}
+						}
+
+						struct PreprocessorExpandedToken new_expand_token={
+							.token=*new_token,
+						};
+						array_init(&new_expand_token.generators,sizeof(struct PreprocessorDefine*));
+						// copy generators from expanded_token to new_expand_token
+						for(int k=0;k<expanded_token->generators.len;k++){
+							struct PreprocessorDefine* generator=*(struct PreprocessorDefine**)array_get(&expanded_token->generators,k);
+							array_append(&new_expand_token.generators,&generator);
+							println("copied generator %.*s",generator->name.len,generator->name.p);
+						}
+						array_append(tokens_out,&new_expand_token);
 					}
-
-					was_expanded=true;
-					break;
 				}
 			}
 
-			expanded_any=expanded_any||was_expanded;
+
+			anyTokenGotExpanded|=current_token_was_expanded;
 
 			// if it's not a macro, append it to the output directly
-			if(!was_expanded){
+			if(!current_token_was_expanded){
+PREPROCESSOR_EXPANDMACROS_APPEND_TOKEN:
 				array_append(tokens_out,token_in);
 			}
 		}
 
-		if(expanded_any){
-			// print debug info
-			if(0){
-				println("expanded from:");
-				for(int i=0;i<num_tokens_in;i++){
-					Token* token_in=tokens_in+i;
-					printf("%.*s ",token_in->len,token_in->p);
-				}
-				printf("\n");
-				println("to:");
-				for(int i=0;i<tokens_out->len;i++){
-					Token* token_out=array_get(tokens_out,i);
-					printf("%.*s ",token_out->len,token_out->p);
-				}
-				printf("\n");
-			}
-
-			free(tokens_in);
-			// copy tokens_out to tokens_in
-			tokens_in=tokens_out->data;
-			num_tokens_in=tokens_out->len;
-			array_init(&tokens_out_,sizeof(Token));
-			continue;
+		if(!anyTokenGotExpanded){
+			break;
 		}
-		break;
+
+		// make output new input
+		// TODO(patrick) free resources of tokens_in
+		*tokens_in=*tokens_out;
+		*tokens_out=(array){};
+		debug_expansion_level++;
+		if(debug_expansion_level>10){
+			// print input and output tokens for comparison
+			println("input tokens:");
+			for(int i=0;i<tokens_in->len;i++){
+				struct PreprocessorExpandedToken* token_in=array_get(tokens_in,i);
+				println("%s",Token_print(&token_in->token));
+			}
+			println("output tokens:");
+			for(int i=0;i<tokens_out->len;i++){
+				struct PreprocessorExpandedToken* token_out=array_get(tokens_out,i);
+				println("%s",Token_print(&token_out->token));
+			}
+			fatal("expansion level exceeded 10");
+		}
 	}
 
 	// copy tokens_out to tokens_out_arg
 	for(int i=0;i<tokens_out->len;i++){
-		Token* token=array_get(tokens_out,i);
-		array_append(tokens_out_arg,token);
+		struct PreprocessorExpandedToken* expanded_token=array_get(tokens_out,i);
+
+		array_append(tokens_out_arg,&expanded_token->token);
 	}
 }
 
@@ -815,7 +889,36 @@ const char*PreprocessorExpression_print(struct PreprocessorExpression*expr){
 		case PREPROCESSOR_EXPRESSION_TAG_UNKNOWN:
 			stringAppend(ret,"unknown");
 			break;
-		default:
+
+		case PREPROCESSOR_EXPRESSION_TAG_EQUAL:
+			stringAppend(ret,"( %s ) == ( %s )",PreprocessorExpression_print(expr->equal.lhs),PreprocessorExpression_print(expr->equal.rhs));
+			break;
+		case PREPROCESSOR_EXPRESSION_TAG_UNEQUAL:
+			stringAppend(ret,"( %s ) != ( %s )",PreprocessorExpression_print(expr->equal.lhs),PreprocessorExpression_print(expr->equal.rhs));
+			break;
+		case PREPROCESSOR_EXPRESSION_TAG_GREATER_THAN:
+			stringAppend(ret,"( %s ) > ( %s )",PreprocessorExpression_print(expr->greater_than.lhs),PreprocessorExpression_print(expr->greater_than.rhs));
+			break;
+		case PREPROCESSOR_EXPRESSION_TAG_GREATER_THAN_OR_EQUAL:
+			stringAppend(ret,"( %s ) >= ( %s )",PreprocessorExpression_print(expr->greater_than_or_equal.lhs),PreprocessorExpression_print(expr->greater_than_or_equal.rhs));
+			break;
+		case PREPROCESSOR_EXPRESSION_TAG_LESSER_THAN:
+			stringAppend(ret,"( %s ) < ( %s )",PreprocessorExpression_print(expr->lesser_than.lhs),PreprocessorExpression_print(expr->lesser_than.rhs));
+			break;
+		case PREPROCESSOR_EXPRESSION_TAG_LESSER_THAN_OR_EQUAL:
+			stringAppend(ret,"( %s ) <= ( %s )",PreprocessorExpression_print(expr->lesser_than_or_equal.lhs),PreprocessorExpression_print(expr->lesser_than_or_equal.rhs));
+			break;
+
+		case PREPROCESSOR_EXPRESSION_TAG_SUBTRACT:
+			stringAppend(ret,"( %s ) - ( %s )",PreprocessorExpression_print(expr->subtract.lhs),PreprocessorExpression_print(expr->subtract.rhs));
+			break;
+		case PREPROCESSOR_EXPRESSION_TAG_ADD:
+			stringAppend(ret,"( %s ) + ( %s )",PreprocessorExpression_print(expr->add.lhs),PreprocessorExpression_print(expr->add.rhs));
+			break;
+
+		case PREPROCESSOR_EXPRESSION_TAG_DEFINED:
+		case PREPROCESSOR_EXPRESSION_TAG_TERNARY:
+		case PREPROCESSOR_EXPRESSION_TAG_ELSE:
 			fatal("unimplemented tag %d",expr->tag);
 	}
 
@@ -907,12 +1010,13 @@ void PreprocessorExpression_parse_processOperator(
 			};
 			return;
 		case 3:fatal("unimplemented");
+		default:fatal("unreachable");
 	}
 	fatal("unreachable");
 }
 
 #define PREPROCESSOR_EXPRESSION_PARSE_CHECK_PRECEDENCE(OPERATOR_PRECEDENCE) \
-	if(precedence<=OPERATOR_PRECEDENCE) \
+	if(precedence<=(OPERATOR_PRECEDENCE)) \
 		goto PREPROCESSOR_EXPRESSION_PARSE_RET_SUCCESS;
 
 /*
@@ -928,7 +1032,7 @@ int PreprocessorExpression_parse(
 ){
 	//print all tokens
 	if(0){
-		println("tokens:");
+		println("PreprocessorExpression_parse tokens:");
 		for(int i=0;i<if_expr_tokens.len;i++){
 			Token* token=array_get(&if_expr_tokens,i);
 			println("%s",Token_print(token));
@@ -954,9 +1058,9 @@ int PreprocessorExpression_parse(
 				if(nextToken->literal.tag!=TOKEN_LITERAL_TAG_NUMERIC)fatal("unexpected literal %s",Token_print(nextToken));
 
 				out->tag=PREPROCESSOR_EXPRESSION_TAG_LITERAL;
-				int64_t v=0;
-				TokenLiteral_getNumericValue(nextToken,nullptr,&v,nullptr);
-				out->value=v;
+				int64_t value=0;
+				TokenLiteral_getNumericValue(nextToken,nullptr,&value,nullptr);
+				out->value=(int)value;
 				break;
 			case TOKEN_TAG_SYMBOL:
 				{
@@ -975,8 +1079,10 @@ int PreprocessorExpression_parse(
 							out->tag=PREPROCESSOR_EXPRESSION_TAG_LITERAL;
 							// get value from define_token->p, which is a string of len define_token->len
 							char* value=calloc(define_token->len+1,1);
-							sprintf(value,"%.*s",define_token->len,define_token->p);
-							out->value=atoi(value);
+							discard sprintf(value,"%.*s",define_token->len,define_token->p);
+
+							static const int BASE_10=10;
+							out->value=(int)strtol(value,nullptr,BASE_10);
 							free(value);
 							break;
 						}
@@ -1035,23 +1141,29 @@ int PreprocessorExpression_parse(
 									discardOpenParanthesis++;
 								}else if(Token_equalString(nextToken,")")){
 									discardOpenParanthesis--;
-									if(discardOpenParanthesis==0) break;
+									if(discardOpenParanthesis==0){
+										break;
+									}
 								}
 							}
 							// out is already literal 0
 						}
 						break;
-					}else if(Token_equalString(nextToken,")")){
+					}
+					if(Token_equalString(nextToken,")")){
 						PREPROCESSOR_EXPRESSION_PARSE_CHECK_PRECEDENCE(PREPROCESSOR_OPERATOR_PRECEDENCE_CALL)
 
 						// if there are no open paranthesis, we may be inside a subexpression, hence return without consuming the token
-						if(openParanthesis==0) goto PREPROCESSOR_EXPRESSION_PARSE_RET_SUCCESS;
+						if(openParanthesis==0){
+							goto PREPROCESSOR_EXPRESSION_PARSE_RET_SUCCESS;
+						}
 
 						nextTokenIndex++;
 						openParanthesis--;
 
 						break;
-					}else if(Token_equalString(nextToken,"||")){
+					}
+					if(Token_equalString(nextToken,"||")){
 						PREPROCESSOR_EXPRESSION_PARSE_CHECK_PRECEDENCE(PREPROCESSOR_OPERATOR_PRECEDENCE_OR)
 
 						PreprocessorExpression_parse_processOperator(
@@ -1065,7 +1177,8 @@ int PreprocessorExpression_parse(
 							nextToken
 						);
 						break;
-					}else if(Token_equalString(nextToken,"&&")){
+					}
+					if(Token_equalString(nextToken,"&&")){
 						PREPROCESSOR_EXPRESSION_PARSE_CHECK_PRECEDENCE(PREPROCESSOR_OPERATOR_PRECEDENCE_AND)
 
 						PreprocessorExpression_parse_processOperator(
@@ -1079,7 +1192,8 @@ int PreprocessorExpression_parse(
 							nextToken
 						);
 						break;
-					}else if(Token_equalString(nextToken,">")){
+					}
+					if(Token_equalString(nextToken,">")){
 						PREPROCESSOR_EXPRESSION_PARSE_CHECK_PRECEDENCE(PREPROCESSOR_OPERATOR_PRECEDENCE_GREATER_THAN)
 
 						PreprocessorExpression_parse_processOperator(
@@ -1093,7 +1207,8 @@ int PreprocessorExpression_parse(
 							nextToken
 						);
 						break;
-					}else if(Token_equalString(nextToken,">=")){
+					}
+					if(Token_equalString(nextToken,">=")){
 						PREPROCESSOR_EXPRESSION_PARSE_CHECK_PRECEDENCE(PREPROCESSOR_OPERATOR_PRECEDENCE_GREATER_THAN_OR_EQUAL)
 
 						PreprocessorExpression_parse_processOperator(
@@ -1107,7 +1222,8 @@ int PreprocessorExpression_parse(
 							nextToken
 						);
 						break;
-					}else if(Token_equalString(nextToken,"<")){
+					}
+					if(Token_equalString(nextToken,"<")){
 						PREPROCESSOR_EXPRESSION_PARSE_CHECK_PRECEDENCE(PREPROCESSOR_OPERATOR_PRECEDENCE_LESSER_THAN)
 
 						PreprocessorExpression_parse_processOperator(
@@ -1121,7 +1237,8 @@ int PreprocessorExpression_parse(
 							nextToken
 						);
 						break;
-					}else if(Token_equalString(nextToken,"<=")){
+					}
+					if(Token_equalString(nextToken,"<=")){
 						PREPROCESSOR_EXPRESSION_PARSE_CHECK_PRECEDENCE(PREPROCESSOR_OPERATOR_PRECEDENCE_LESSER_THAN_OR_EQUAL)
 
 						PreprocessorExpression_parse_processOperator(
@@ -1135,7 +1252,8 @@ int PreprocessorExpression_parse(
 							nextToken
 						);
 						break;
-					}else if(Token_equalString(nextToken,"==")){
+					}
+					if(Token_equalString(nextToken,"==")){
 						PREPROCESSOR_EXPRESSION_PARSE_CHECK_PRECEDENCE(PREPROCESSOR_OPERATOR_PRECEDENCE_EQUAL)
 
 						PreprocessorExpression_parse_processOperator(
@@ -1149,7 +1267,8 @@ int PreprocessorExpression_parse(
 							nextToken
 						);
 						break;
-					}else if(Token_equalString(nextToken,"!=")){
+					}
+					if(Token_equalString(nextToken,"!=")){
 						PREPROCESSOR_EXPRESSION_PARSE_CHECK_PRECEDENCE(PREPROCESSOR_OPERATOR_PRECEDENCE_UNEQUAL)
 
 						PreprocessorExpression_parse_processOperator(
@@ -1163,7 +1282,8 @@ int PreprocessorExpression_parse(
 							nextToken
 						);
 						break;
-					}else if(Token_equalString(nextToken,"+")){
+					}
+					if(Token_equalString(nextToken,"+")){
 						PREPROCESSOR_EXPRESSION_PARSE_CHECK_PRECEDENCE(PREPROCESSOR_OPERATOR_PRECEDENCE_ADD)
 
 						PreprocessorExpression_parse_processOperator(
@@ -1177,7 +1297,8 @@ int PreprocessorExpression_parse(
 							nextToken
 						);
 						break;
-					}else if(Token_equalString(nextToken,"-")){
+					}
+					if(Token_equalString(nextToken,"-")){
 						PREPROCESSOR_EXPRESSION_PARSE_CHECK_PRECEDENCE(PREPROCESSOR_OPERATOR_PRECEDENCE_SUBTRACT)
 
 						PreprocessorExpression_parse_processOperator(
@@ -1191,7 +1312,8 @@ int PreprocessorExpression_parse(
 							nextToken
 						);
 						break;
-					}else if(Token_equalString(nextToken,"!")){
+					}
+					if(Token_equalString(nextToken,"!")){
 						//PREPROCESSOR_EXPRESSION_PARSE_CHECK_PRECEDENCE(PREPROCESSOR_OPERATOR_PRECEDENCE_NOT)
 
 						PreprocessorExpression_parse_processOperator(
@@ -1205,7 +1327,8 @@ int PreprocessorExpression_parse(
 							nextToken
 						);
 						break;
-					}else if(Token_equalString(nextToken,"?")){
+					}
+					if(Token_equalString(nextToken,"?")){
 						if(out->tag==0)fatal("unexpected token %s",Token_print(nextToken));
 						nextTokenIndex++;
 
@@ -1253,13 +1376,15 @@ int PreprocessorExpression_parse(
 							}
 						};
 						break;
-					}else if(Token_equalString(nextToken,":")){
+					}
+
+					if(Token_equalString(nextToken,":")){
 						PREPROCESSOR_EXPRESSION_PARSE_CHECK_PRECEDENCE(PREPROCESSOR_OPERATOR_PRECEDENCE_TERNARY)
 
-						fatal("unexpected token %s outside ternary expression",Token_print(nextToken));
-					}else{
-						fatal("unexpected keyword %s",Token_print(nextToken));
+						fatal("unexpected token %s",Token_print(nextToken));
 					}
+
+					fatal("unexpected keyword %s",Token_print(nextToken));
 				}
 				break;
 			default:
@@ -1392,9 +1517,11 @@ struct PreprocessorExpression* Preprocessor_parseExpression(struct Preprocessor*
 	}
 	PreprocessorExpression_parse(preprocessor,expanded_expr_tokens,&if_expr,PREPROCESSOR_OPERATOR_PRECEDENCE_MAX);
 	Preprocessor_evalExpression(preprocessor,&if_expr);
+	println("evaluated expression: %s=%d (at line %d)",PreprocessorExpression_print(&if_expr),if_expr.value,token.line);
 
 	return allocAndCopy(sizeof(struct PreprocessorExpression),&if_expr);
 }
+
 void Preprocessor_consume(struct Preprocessor *preprocessor, struct TokenIter *token_iter){
 	struct TokenIter old_token_iter=preprocessor->token_iter;
 	preprocessor->token_iter=*token_iter;
@@ -1440,12 +1567,13 @@ void Preprocessor_consume(struct Preprocessor *preprocessor, struct TokenIter *t
 				array_append(&new_if_stack.items,&item);
 
 				preprocessor->doSkip=new_if_stack.inherited_doSkip || new_if_stack.anyPathEvaluatedToTrue || !if_expr->value;
-				new_if_stack.anyPathEvaluatedToTrue|=if_expr->value;
+				new_if_stack.anyPathEvaluatedToTrue|=(bool)if_expr->value;
 
 				array_append(&preprocessor->stack,&new_if_stack);
 
 				continue;
-			}else if(Token_equalString(&token, "ifndef")){
+			}
+			if(Token_equalString(&token, "ifndef")){
 				Token ifToken=token;
 				// read define argument
 				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
@@ -1455,7 +1583,7 @@ void Preprocessor_consume(struct Preprocessor *preprocessor, struct TokenIter *t
 				}
 
 				char* define_name=calloc(token.len+1,1);
-				sprintf(define_name,"%.*s",token.len,token.p);
+				discard sprintf(define_name,"%.*s",token.len,token.p);
 
 				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
 				if(!ntr) fatal("");
@@ -1463,10 +1591,14 @@ void Preprocessor_consume(struct Preprocessor *preprocessor, struct TokenIter *t
 				// check if define is already defined
 				struct PreprocessorExpression if_expr={
 					.tag=PREPROCESSOR_EXPRESSION_TAG_NOT,
-					.not={.expr=allocAndCopy(sizeof(struct PreprocessorExpression),&(struct PreprocessorExpression){
-						.tag=PREPROCESSOR_EXPRESSION_TAG_DEFINED,
-						.defined={.name=define_name}
-					})}
+					.not={
+						.expr=allocAndCopy(sizeof(struct PreprocessorExpression),&(struct PreprocessorExpression){
+							.tag=PREPROCESSOR_EXPRESSION_TAG_DEFINED,
+							.defined={
+								.name=define_name
+							}
+						}
+					)}
 				};
 				Preprocessor_evalExpression(preprocessor,&if_expr);
 
@@ -1483,20 +1615,21 @@ void Preprocessor_consume(struct Preprocessor *preprocessor, struct TokenIter *t
 					.tag=PREPROCESSOR_STACK_ITEM_TYPE_IF,
 					.if_={
 						.if_token=ifToken,
-						.expr=&if_expr
+						.expr=allocAndCopy(sizeof(if_expr),&if_expr)
 					}
 				};
 				array_append(&new_if_stack.items,&item);
 
 				// update stack evaluation state
 				preprocessor->doSkip=new_if_stack.inherited_doSkip || new_if_stack.anyPathEvaluatedToTrue || !if_expr.value;
-				new_if_stack.anyPathEvaluatedToTrue|=if_expr.value;
+				new_if_stack.anyPathEvaluatedToTrue|=(bool)if_expr.value;
 
 				// push stack on stack list
 				array_append(&preprocessor->stack,&new_if_stack);
 
 				continue;
-			}else if(Token_equalString(&token,"ifdef")){
+			}
+			if(Token_equalString(&token,"ifdef")){
 				Token ifToken=token;
 				// read define argument
 				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
@@ -1506,7 +1639,7 @@ void Preprocessor_consume(struct Preprocessor *preprocessor, struct TokenIter *t
 				}
 
 				char* define_name=calloc(token.len+1,1);
-				sprintf(define_name,"%.*s",token.len,token.p);
+				discard sprintf(define_name,"%.*s",token.len,token.p);
 
 				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
 				if(!ntr) fatal("");
@@ -1528,14 +1661,14 @@ void Preprocessor_consume(struct Preprocessor *preprocessor, struct TokenIter *t
 
 				// update stack evaluation state
 				preprocessor->doSkip=new_if_stack.inherited_doSkip || new_if_stack.anyPathEvaluatedToTrue || !if_expr.value;
-				new_if_stack.anyPathEvaluatedToTrue|=if_expr.value;
+				new_if_stack.anyPathEvaluatedToTrue|=(bool)if_expr.value;
 
 				// push if statement on stack
 				struct PreprocessorIfStackItem item={
 					.tag=PREPROCESSOR_STACK_ITEM_TYPE_IF,
 					.if_={
 						.if_token=ifToken,
-						.expr=&if_expr
+						.expr=allocAndCopy(sizeof(if_expr),&if_expr)
 					}
 				};
 				array_append(&new_if_stack.items,&item);
@@ -1544,7 +1677,8 @@ void Preprocessor_consume(struct Preprocessor *preprocessor, struct TokenIter *t
 				array_append(&preprocessor->stack,&new_if_stack);
 
 				continue;
-			}else if(Token_equalString(&token,"elif")){
+			}
+			if(Token_equalString(&token,"elif")){
 				Token elifToken=token;
 				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
 				if(!ntr) fatal("");
@@ -1568,10 +1702,11 @@ void Preprocessor_consume(struct Preprocessor *preprocessor, struct TokenIter *t
 				array_append(&if_stack->items,&item);
 
 				preprocessor->doSkip=if_stack->inherited_doSkip || if_stack->anyPathEvaluatedToTrue || !if_expr->value;
-				if_stack->anyPathEvaluatedToTrue|=if_expr->value;
+				if_stack->anyPathEvaluatedToTrue|=(bool)if_expr->value;
 
 				continue;
-			}else if(Token_equalString(&token,"else")){
+			}
+			if(Token_equalString(&token,"else")){
 				Token elseToken=token;
 				TokenIter_nextToken(&preprocessor->token_iter,&token);
 
@@ -1595,7 +1730,8 @@ void Preprocessor_consume(struct Preprocessor *preprocessor, struct TokenIter *t
 				if_stack->anyPathEvaluatedToTrue=true; // superfluous, but for clarity
 
 				continue;
-			}else if(Token_equalString(&token,"endif")){
+			}
+			if(Token_equalString(&token,"endif")){
 				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
 
 				if(preprocessor->stack.len==0) fatal("endif without if");
@@ -1612,57 +1748,61 @@ void Preprocessor_consume(struct Preprocessor *preprocessor, struct TokenIter *t
 				
 				continue;
 			}
+
 			// free-standing preprocessor directives
-			else{
-				if(Token_equalString(&token,"include")){
-					ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
-					if(!ntr) fatal("no token after #include %s",Token_print(&token));
+			if(Token_equalString(&token,"include")){
+				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+				if(!ntr) fatal("no token after #include %s",Token_print(&token));
 
-					Preprocessor_processInclude(preprocessor);
-					ntr=TokenIter_lastToken(&preprocessor->token_iter,&token);
+				Preprocessor_processInclude(preprocessor);
+				ntr=TokenIter_lastToken(&preprocessor->token_iter,&token);
 
-					continue;
-				}else if(Token_equalString(&token,"define")){
-					ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
-					if(!ntr) fatal("no token after #define");
+				continue;
+			}
+			if(Token_equalString(&token,"define")){
+				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+				if(!ntr) fatal("no token after #define");
 
-					Preprocessor_processDefine(preprocessor);
-					ntr=TokenIter_lastToken(&preprocessor->token_iter,&token);
+				Preprocessor_processDefine(preprocessor);
+				ntr=TokenIter_lastToken(&preprocessor->token_iter,&token);
 
-					continue;
-				}else if(Token_equalString(&token,"undef")){
-					ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
-					if(!ntr) fatal("no token after #undef");
+				continue;
+			}
+			if(Token_equalString(&token,"undef")){
+				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+				if(!ntr) fatal("no token after #undef");
 
-					Preprocessor_processUndefine(preprocessor);
-					ntr=TokenIter_lastToken(&preprocessor->token_iter,&token);
+				Preprocessor_processUndefine(preprocessor);
+				ntr=TokenIter_lastToken(&preprocessor->token_iter,&token);
 
-					continue;
-				}else if(Token_equalString(&token, "pragma")){
-					ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
-					if(!ntr) fatal("no token after #pragma");
+				continue;
+			}
+			if(Token_equalString(&token, "pragma")){
+				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+				if(!ntr) fatal("no token after #pragma");
 
-					Preprocessor_processPragma(preprocessor);
-					ntr=TokenIter_lastToken(&preprocessor->token_iter,&token);
+				Preprocessor_processPragma(preprocessor);
+				ntr=TokenIter_lastToken(&preprocessor->token_iter,&token);
 
-					continue;
-				}else if(Token_equalString(&token,"error")){
-					ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
-					if(!ntr) fatal("no token after #error");
+				continue;
+			}
+			if(Token_equalString(&token,"error")){
+				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+				if(!ntr) fatal("no token after #error");
 
-					Preprocessor_processError(preprocessor);
-					ntr=TokenIter_lastToken(&preprocessor->token_iter,&token);
+				Preprocessor_processError(preprocessor);
+				ntr=TokenIter_lastToken(&preprocessor->token_iter,&token);
 
-					continue;
-				}else if(Token_equalString(&token,"warning")){
-					ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
-					if(!ntr) fatal("no token after #warning");
+				continue;
+			}
+			if(Token_equalString(&token,"warning")){
+				ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
+				if(!ntr) fatal("no token after #warning");
 
-					Preprocessor_processWarning(preprocessor);
-					ntr=TokenIter_lastToken(&preprocessor->token_iter,&token);
+				Preprocessor_processWarning(preprocessor);
+				ntr=TokenIter_lastToken(&preprocessor->token_iter,&token);
 
-					continue;
-				}
+				continue;
 			}
 
 			fatal("unknown preprocessor directive %s",Token_print(&token));
@@ -1676,14 +1816,16 @@ void Preprocessor_consume(struct Preprocessor *preprocessor, struct TokenIter *t
 				array_append(&new_tokens,&token);
 			}
 
-			if(TokenIter_isEmpty(&preprocessor->token_iter))
+			if(TokenIter_isEmpty(&preprocessor->token_iter)){
 				break;
+			}
 
 			ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
 			if(!ntr) fatal("");
 
-			if(Token_equalString(&token,"#"))
+			if(Token_equalString(&token,"#")){
 				break;
+			}
 		}
 
 		if(!preprocessor->doSkip){
@@ -1691,12 +1833,11 @@ void Preprocessor_consume(struct Preprocessor *preprocessor, struct TokenIter *t
 			Preprocessor_expandMacros(preprocessor,new_tokens.len,new_tokens.data,&preprocessor->tokens_out);
 		}
 
-		if(TokenIter_isEmpty(&preprocessor->token_iter))
+		if(TokenIter_isEmpty(&preprocessor->token_iter)){
 			break;
+		}
 	}
 
 	// restore old token iter
 	preprocessor->token_iter=old_token_iter;
-
-	return;	
 }

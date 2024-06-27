@@ -5,8 +5,8 @@
 
 typedef struct Value Value;
 
-#include<parser/module.h>
 #include<parser/type.h>
+#include<parser/symbol.h>
 
 enum VALUE_KIND{
 	VALUE_KIND_UNKNOWN,
@@ -116,7 +116,7 @@ struct Value{
 	enum VALUE_KIND kind;
 	union{
 		/// @brief VALUE_KIND_SYMBOL_REFERENCE reference to a symbol
-		Token*symbol;
+		Symbol*symbol;
 
 		/// @brief VALUE_KIND_STATIC_VALUE static value
 		struct{
@@ -188,11 +188,4 @@ struct Value{
 	};
 };
 
-enum VALUE_PARSE_RESULT{
-	/// @brief  value was parsed successfully
-	VALUE_PRESENT,
-	/// @brief  value was not parsed successfully (e.g. syntax error)
-	VALUE_INVALID,
-};
-enum VALUE_PARSE_RESULT Value_parse(Module*module,Value*value,struct TokenIter*token_iter);
 bool Value_equal(Value*a,Value*b);

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import subprocess as sp
 import typing as tp
 from pathlib import Path
-import os
+import os, sys
 from tqdm import tqdm
 import shlex
 
@@ -55,16 +55,40 @@ class Test:
             print(f"{BOLD}Running test: '{self.file}'{RESET}")
 
         command=f"bin/main {self.flags or ''} {self.file}"
+        run_with_valgrind=False
+        while True:
+            myenv=os.environ.copy()
+            myenv["ASAN_OPTIONS"]="detect_leaks=0" # run with ASAN_OPTIONS=detect_leaks=0 # run with 
+            if run_with_valgrind:
+                #command=f"valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes {command}"
+                popen_kwargs={
 
-        # exec command
-        proc=sp.Popen(shlex.split(command), stdout=sp.PIPE, stderr=sp.PIPE) # do not use shell=True because killing will not work
-        try:
-            proc.wait(timeout=timeout)
-        except sp.TimeoutExpired:
-            proc.kill() # make sure the timed out process is terminated
-            print(f"{BOLD}{RED}Error: test '{self.file}' timed out{RESET}")
-            self.result=TestResult.TIMEOUT
-            return
+                }
+            else:
+                popen_kwargs={
+                    #"stdout":sp.PIPE,
+                    #"stderr":sp.PIPE
+                }
+
+            # exec command
+            proc=sp.Popen(shlex.split(command), env=myenv, **popen_kwargs) # do not use shell=True because killing will not work
+            try:
+                if run_with_valgrind:
+                    proc.wait(timeout=10)
+                else:
+                    proc.wait(timeout=timeout)
+            except sp.TimeoutExpired:
+                proc.kill() # make sure the timed out process is terminated
+                if not run_with_valgrind:
+                    run_with_valgrind=True
+                    continue
+                print(f"{BOLD}{RED}Error: test '{self.file}' timed out{RESET}")
+                print(f"$ {command}")
+                sys.exit(1)
+                self.result=TestResult.TIMEOUT
+                return
+            
+            break
 
         did_fail=proc.returncode!=0
 
@@ -158,6 +182,10 @@ TEST_FILES=[
     Test(file="test/test056.c", goal="compound symbol definitions"),
     Test(file="test/test057.c", goal="compound symbol definitions with initializer"),
     Test(file="test/test058.c", goal="signed char type use"),
+    Test(file="test/test059.c", goal=""),
+
+    Test(file="test/test060.c", goal=""),
+    Test(file="test/test061.c", goal="adjacent string literal concatenation (phase 6)"),
 ]
 
 def set_flags(t:Test,flags:str)->Test:

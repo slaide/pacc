@@ -1,8 +1,9 @@
 #pragma once
 
 #include<stdint.h>
-#include<file.h>
 #include<wchar.h>
+
+#include"file.h"
 
 enum TOKEN_TAG{
 	TOKEN_TAG_UNDEFINED=0,
@@ -53,6 +54,9 @@ typedef struct Token{
 	// column number in file
 	int col;
 
+	// slightly out of place indicator if this token has already been expanded by the preprocessor and hence should not be expanded again
+	bool alreadyExpanded;
+
 	struct{
 		enum Token_LiteralTag tag;
 
@@ -83,14 +87,18 @@ typedef struct Token{
 				/// @brief for numeric literals, this contains some metainformation
 				struct{
 					bool hasLeadingSign;
+
 					uint8_t base;
+
 					bool hasPrefix;
 					bool hasLeadingDigits;
 					bool hasDecimalPoint;
 					bool hasTrailingDigits;
+
 					bool hasExponent;
 					bool hasExponentSign;
 					bool hasExponentDigits;
+					
 					bool hasSuffix;
 				}num_info;
 			}numeric;
@@ -99,13 +107,14 @@ typedef struct Token{
 }Token;
 
 /* return token location as null-terminated string */
-char*Token_loc(Token*token);
+char*Token_loc(const Token*token);
 /* return token (incl. location) as null-terminated string */
-char*Token_print(Token*token);
+char*Token_print(const Token*token);
+Token*Token_fromString(const char*str);
 
 // check of two tokens point to strings with the same content
-bool Token_equalToken(Token*,Token*);
-bool Token_equalString(Token*,char*);
+bool Token_equalToken(const Token*,const Token*);
+bool Token_equalString(const Token*,const char*);
 
 typedef struct Tokenizer{
 	int num_tokens;
@@ -113,7 +122,7 @@ typedef struct Tokenizer{
 	const char*token_src;
 }Tokenizer;
 
-int Tokenizer_init(Tokenizer*tokenizer,File*file);
+int Tokenizer_init(Tokenizer*tokenizer,const File*file);
 
 struct TokenIter{
     Tokenizer*tokenizer;
@@ -125,14 +134,15 @@ struct TokenIter{
 };
 void TokenIter_init(struct TokenIter*token_iter,Tokenizer*tokenizer,struct TokenIterConfig config);
 // returns true if token was returned
-int TokenIter_nextToken(struct TokenIter*iter,Token*out);
+bool TokenIter_nextToken(struct TokenIter*iter,Token*out);
 // returns true if there are tokens left, i.e. next token index is within valid range of token indices
-bool TokenIter_isEmpty(struct TokenIter*iter);
+bool TokenIter_isEmpty(const struct TokenIter*iter);
 // returns true if token was returned
-int TokenIter_lastToken(struct TokenIter*iter,Token*out);
+bool TokenIter_lastToken(const struct TokenIter*iter,Token*out);
 
 /// @brief map token to keyword
 void Token_map(Token*token);
+
 static const char*KEYWORD_SWITCH="switch";
 static const char*KEYWORD_CASE="case";
 static const char*KEYWORD_RETURN="return";

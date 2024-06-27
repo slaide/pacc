@@ -32,6 +32,7 @@ file_paths=[
     "src/parser/type.c",
     "src/parser/value.c",
     "src/parser/module.c",
+    "src/parser/stack.c",
 
     "src/preprocessor/preprocessor.c",
 
@@ -40,7 +41,7 @@ file_paths=[
     "src/main.c",
 ]
 
-CC_CMD=f"{args.get('cc')} -g -O0 -std=c2x -I./include -Wall -Wextra -Wpedantic -fsanitize=undefined -fno-omit-frame-pointer -fno-common"+("-fsanitize=address " if 0 else "")
+CC_CMD=f"{args.get('cc')} -g -O0 -fPIC -std=c2x -I./include -Wall -Wextra -Wpedantic -Werror=switch -Werror=incompatible-pointer-types -Wno-incompatible-pointer-types-discards-qualifiers -fsanitize=undefined -fno-omit-frame-pointer -fno-common "+("-fsanitize=address " if 1 else "")
 
 class CompileFile(Command):
     " compile a single file "
@@ -91,7 +92,7 @@ class Remove(Command):
 class AnyCmd(Command):
     " run any command "
     def __init__(self,cmd:str):
-        super().__init__(cmd=cmd,phony=True,shell=True)
+        super().__init__(cmd=cmd,phony=True,shell=True,do_not_intercept_stdouterr=True)
 
 num_worker_threads=args.get("num_threads")
 if num_worker_threads is not None:
@@ -128,6 +129,6 @@ if __name__=="__main__":
         # for debugging purposes, build only the test target (which may be changed to any other file)
         # this mostly serves to store the command somewhere
         case "test_target":
-            Command.build(AnyCmd("bin/main -I$(pwd)/musl/include test/test057.c -p -a ; exit 1").depends(final_bin))
+            Command.build(AnyCmd("bin/main -I$(pwd)/musl/include test/test011.c -p -a").depends(final_bin))
 
     print("done")

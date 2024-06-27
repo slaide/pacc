@@ -1,9 +1,10 @@
-#include "parser/value.h"
+#include <stdint.h>
+
 #include<parser/parser.h>
 #include<util/util.h>
 #include<tokenizer.h>
 
-enum VALUE_PARSE_RESULT Value_parse(Module*module,Value*value,struct TokenIter*token_iter_in){
+enum VALUE_PARSE_RESULT Value_parse(Stack*stack,Value*value,struct TokenIter*token_iter_in){
 	struct TokenIter token_iter_=*token_iter_in;
 	struct TokenIter *token_iter=&token_iter_;
 
@@ -70,17 +71,29 @@ enum VALUE_PARSE_RESULT Value_parse(Module*module,Value*value,struct TokenIter*t
 			TokenIter_nextToken(token_iter,&token);
 
 			value->kind=VALUE_KIND_SYMBOL_REFERENCE;
-			value->symbol=allocAndCopy(sizeof(Token),&nameToken);
+			Symbol*symbol=Stack_findSymbol(stack, &nameToken);
+			if(symbol==nullptr){
+				// check if nameToken refers to a type
+				Type*type=Stack_findType(stack,&nameToken);
+				if(type!=nullptr){
+					value->kind=VALUE_KIND_TYPEREF;
+					value->typeref.type=type;
+					break;
+				}
+				println("symbol not found %.*s",nameToken.len,nameToken.p);
+				goto VALUE_PARSE_SYMBOL_NOT_FOUND;
+			}
+			value->symbol=symbol;
 
 			break;
 		}
 
 		case TOKEN_TAG_KEYWORD:{
-			if(token.p==KEYWORD_ASTERISK){
+			if(Token_equalString(&token,KEYWORD_ASTERISK)){
 				TokenIter_nextToken(token_iter,&token);
 
 				Value dereferencedValue={};
-				enum VALUE_PARSE_RESULT res=Value_parse(module,&dereferencedValue,token_iter);
+				enum VALUE_PARSE_RESULT res=Value_parse(stack,&dereferencedValue,token_iter);
 				if(res==VALUE_INVALID){
 					fatal("invalid value after *");
 				}
@@ -93,45 +106,53 @@ enum VALUE_PARSE_RESULT Value_parse(Module*module,Value*value,struct TokenIter*t
 				};
 				
 				break;
-			}else if(token.p==KEYWORD_AMPERSAND){
+			}else if(Token_equalString(&token,KEYWORD_AMPERSAND)){
 				TokenIter_nextToken(token_iter,&token);
 
 				Value addressedValue={};
-				enum VALUE_PARSE_RESULT res=Value_parse(module,&addressedValue,token_iter);
+				enum VALUE_PARSE_RESULT res=Value_parse(stack,&addressedValue,token_iter);
 				if(res==VALUE_INVALID){
 					fatal("invalid value after &");
+				}else{
+					println("taking address of")
 				}
 
 				*value=(Value){
 					.kind=VALUE_KIND_ADDRESS_OF,
-					.addrOf.addressedValue=allocAndCopy(sizeof(Value), &addressedValue),
+					.addrOf={
+						.addressedValue=allocAndCopy(sizeof(Value), &addressedValue)
+					},
 				};
 
 				break;
-			}else if(token.p==KEYWORD_PARENS_OPEN){
+			}else if(Token_equalString(&token,KEYWORD_PARENS_OPEN)){
 				TokenIter_nextToken(token_iter,&token);
 
 				// try parsing type first, assuming this is a type cast
 				// if type parsing fails, attempt parsing value
 				bool foundValue=false;
 				do{
-					struct TokenIter castTestIter=*token_iter;
-
 					int numCastTypeSymbols=0;
 					struct SymbolDefinition*symbols=nullptr;
-					enum SYMBOL_PARSE_RESULT res=SymbolDefinition_parse(module,&numCastTypeSymbols,&symbols,&castTestIter,&(struct Symbol_parse_options){.forbid_multiple=true});
-					if(numCastTypeSymbols!=1)fatal("expected exactly one symbol but got %d at %s",numCastTypeSymbols,Token_print(&token));
-					Symbol castTypeSymbol=symbols[0].symbol;
+					enum SYMBOL_PARSE_RESULT res=SymbolDefinition_parse(stack,&numCastTypeSymbols,&symbols,token_iter,&(struct Symbol_parse_options){.forbid_multiple=true});
 
 					switch(res){
 						case SYMBOL_INVALID:
 							// fallthrough outer switch to parse value 
 							break;
 						
-						case SYMBOL_PRESENT:
+						case SYMBOL_PRESENT:{
+							if(numCastTypeSymbols==0){
+								break;
+							}
+							if(numCastTypeSymbols>1){
+								fatal("expected exactly one symbol but got %d at %s",numCastTypeSymbols,Token_print(&token));
+							}
+
+							Symbol castTypeSymbol=symbols[0].symbol;
 							if(castTypeSymbol.name==nullptr){
 								// print next token
-								TokenIter_lastToken(&castTestIter, &token);
+								TokenIter_lastToken(token_iter, &token);
 								// if symbol is present, assume this is a type cast and continue parsing value
 
 								// make sure there is no symbol name though
@@ -141,31 +162,34 @@ enum VALUE_PARSE_RESULT Value_parse(Module*module,Value*value,struct TokenIter*t
 								}
 
 								// check for closing )
-								TokenIter_lastToken(&castTestIter, &token);
-								if(token.p!=KEYWORD_PARENS_CLOSE){
+								TokenIter_lastToken(token_iter, &token);
+								if(!Token_equalString(&token,KEYWORD_PARENS_CLOSE)){
+									println("parens not closed, got instead %s",Token_print(&token));
 									// not a casting operation
 									break;
 								}
-								TokenIter_nextToken(&castTestIter, &token);
+								TokenIter_nextToken(token_iter, &token);
 
 								Value castValue={};
-								enum VALUE_PARSE_RESULT res=Value_parse(module,&castValue,&castTestIter);
+								enum VALUE_PARSE_RESULT res=Value_parse(stack,&castValue,token_iter);
 								if(res==VALUE_INVALID){
 									fatal("invalid value after cast");
 								}
 
-								*token_iter=castTestIter;
 								TokenIter_lastToken(token_iter, &token);
 								*value=(Value){
 									.kind=VALUE_KIND_CAST,
 									.cast={
 										.castTo=castTypeSymbol.type,
-										.value=allocAndCopy(sizeof(Value),&castValue),
+										.value=COPY_(&castValue),
 									}
 								};
 								foundValue=true;
-								break;
-							}else fatal("cannot cast to named symbol");
+							}else{
+								fatal("cannot cast to named symbol");
+							}
+							break;
+						}
 					}
 				}while(0);
 				if(foundValue){
@@ -173,12 +197,12 @@ enum VALUE_PARSE_RESULT Value_parse(Module*module,Value*value,struct TokenIter*t
 				}
 
 				Value innerValue={};
-				enum VALUE_PARSE_RESULT res=Value_parse(module,&innerValue,token_iter);
+				enum VALUE_PARSE_RESULT res=Value_parse(stack,&innerValue,token_iter);
 				if(res==VALUE_INVALID){
-					fatal("invalid value after (");
+					fatal("invalid value after ( at %s",Token_print(&token));
 				}
 				TokenIter_lastToken(token_iter, &token);
-				if(token.p!=KEYWORD_PARENS_CLOSE){
+				if(!Token_equalString(&token,KEYWORD_PARENS_CLOSE)){
 					println("got value %s",Value_asString(&innerValue));
 					fatal("expected ) after (, instead got %.*s",token.len,token.p);
 				}
@@ -188,6 +212,29 @@ enum VALUE_PARSE_RESULT Value_parse(Module*module,Value*value,struct TokenIter*t
 				// 1) operator precendence override, e.g. (a+b)*c
 				// 2) value cast, e.g. (int)2.3f
 
+				// check for casting operator first, then fall back to precedence override otherwise
+				if(innerValue.kind==VALUE_KIND_TYPEREF){
+					println("attempting cast");
+					// this is a type cast
+					Value castValue={};
+					res=Value_parse(stack,&castValue,token_iter);
+					if(res==VALUE_INVALID){
+						fatal("invalid value after cast");
+					}else{
+						println("cast to %s",Type_asString(innerValue.typeref.type));
+					}
+					TokenIter_lastToken(token_iter, &token);
+
+					*value=(Value){
+						.kind=VALUE_KIND_CAST,
+						.cast={
+							.castTo=innerValue.typeref.type,
+							.value=COPY_(&castValue),
+						}
+					};
+					break;
+				}
+
 				*value=(Value){
 					.kind=VALUE_KIND_PARENS_WRAPPED,
 					.parens_wrapped={
@@ -196,7 +243,7 @@ enum VALUE_PARSE_RESULT Value_parse(Module*module,Value*value,struct TokenIter*t
 				};
 
 				break;
-			}else if(token.p==KEYWORD_CURLY_BRACES_OPEN){
+			}else if(Token_equalString(&token,KEYWORD_CURLY_BRACES_OPEN)){
 				// parse struct/array initializer
 				TokenIter_nextToken(token_iter, &token);
 
@@ -208,16 +255,18 @@ enum VALUE_PARSE_RESULT Value_parse(Module*module,Value*value,struct TokenIter*t
 					}
 
 					struct FieldInitializer field={};
-					array_init(&field.fieldNameSegments,sizeof(Token));
+					array_init(&field.fieldNameSegments,sizeof(struct FieldInitializerSegment));
 
 					// if next token is dot, parse field name followed by assignment symbol
 					while(1){
 						if(Token_equalString(&token,KEYWORD_DOT)){
 							TokenIter_nextToken(token_iter,&token);
-							array_append(&field.fieldNameSegments,allocAndCopy(sizeof(struct FieldInitializerSegment),&(struct FieldInitializerSegment){
+							
+							struct FieldInitializerSegment newSegment={
 								.kind=FIELD_INITIALIZER_SEGMENT_FIELD,
 								.field=allocAndCopy(sizeof(Token),&token),
-							}));
+							};
+							array_append(&field.fieldNameSegments,&newSegment);
 							TokenIter_nextToken(token_iter,&token);
 						}else if(Token_equalString(&token,KEYWORD_SQUARE_BRACKETS_OPEN)){
 							TokenIter_nextToken(token_iter,&token);
@@ -225,10 +274,11 @@ enum VALUE_PARSE_RESULT Value_parse(Module*module,Value*value,struct TokenIter*t
 							if(!(token.tag==TOKEN_TAG_LITERAL && token.literal.tag==TOKEN_LITERAL_TAG_NUMERIC)){
 								fatal("expected integer literal after [ in field name at line %d col %d",token.line,token.col);
 							}
-							array_append(&field.fieldNameSegments,allocAndCopy(sizeof(struct FieldInitializerSegment),&(struct FieldInitializerSegment){
+							struct FieldInitializerSegment newSegment={
 								.kind=FIELD_INITIALIZER_SEGMENT_INDEX,
 								.index=allocAndCopy(sizeof(Token),&token),
-							}));
+							};
+							array_append(&field.fieldNameSegments,&newSegment);
 							TokenIter_nextToken(token_iter,&token);
 							if(!Token_equalString(&token,KEYWORD_SQUARE_BRACKETS_CLOSE)){
 								fatal("expected ] after [ in field name at line %d col %d",token.line,token.col);
@@ -246,7 +296,7 @@ enum VALUE_PARSE_RESULT Value_parse(Module*module,Value*value,struct TokenIter*t
 					}
 
 					Value fieldValue={};
-					enum VALUE_PARSE_RESULT res=Value_parse(module,&fieldValue,token_iter);
+					enum VALUE_PARSE_RESULT res=Value_parse(stack,&fieldValue,token_iter);
 					TokenIter_lastToken(token_iter, &token);
 					if(res==VALUE_INVALID){
 						fatal("invalid value in struct initializer");
@@ -277,11 +327,11 @@ enum VALUE_PARSE_RESULT Value_parse(Module*module,Value*value,struct TokenIter*t
 				};
 
 				break;
-			}else if(token.p==KEYWORD_BANG){
+			}else if(Token_equalString(&token,KEYWORD_BANG)){
 				TokenIter_nextToken(token_iter,&token);
 
 				Value innerValue={};
-				enum VALUE_PARSE_RESULT res=Value_parse(module,&innerValue,token_iter);
+				enum VALUE_PARSE_RESULT res=Value_parse(stack,&innerValue,token_iter);
 				if(res==VALUE_INVALID){
 					fatal("invalid value after %s",KEYWORD_BANG);
 				}
@@ -295,11 +345,11 @@ enum VALUE_PARSE_RESULT Value_parse(Module*module,Value*value,struct TokenIter*t
 				};
 
 				break;
-			}else if(token.p==KEYWORD_PLUS){
+			}else if(Token_equalString(&token,KEYWORD_PLUS)){
 				TokenIter_nextToken(token_iter,&token);
 
 				Value innerValue={};
-				enum VALUE_PARSE_RESULT res=Value_parse(module,&innerValue,token_iter);
+				enum VALUE_PARSE_RESULT res=Value_parse(stack,&innerValue,token_iter);
 				if(res==VALUE_INVALID){
 					fatal("invalid value after %s",KEYWORD_PLUS);
 				}
@@ -313,11 +363,11 @@ enum VALUE_PARSE_RESULT Value_parse(Module*module,Value*value,struct TokenIter*t
 				};
 
 				break;
-			}else if(token.p==KEYWORD_MINUS){
+			}else if(Token_equalString(&token,KEYWORD_MINUS)){
 				TokenIter_nextToken(token_iter,&token);
 
 				Value innerValue={};
-				enum VALUE_PARSE_RESULT res=Value_parse(module,&innerValue,token_iter);
+				enum VALUE_PARSE_RESULT res=Value_parse(stack,&innerValue,token_iter);
 				if(res==VALUE_INVALID){
 					fatal("invalid value after %s",KEYWORD_MINUS);
 				}
@@ -331,11 +381,11 @@ enum VALUE_PARSE_RESULT Value_parse(Module*module,Value*value,struct TokenIter*t
 				};
 
 				break;
-			}else if(token.p==KEYWORD_TILDE){
+			}else if(Token_equalString(&token,KEYWORD_TILDE)){
 				TokenIter_nextToken(token_iter,&token);
 
 				Value innerValue={};
-				enum VALUE_PARSE_RESULT res=Value_parse(module,&innerValue,token_iter);
+				enum VALUE_PARSE_RESULT res=Value_parse(stack,&innerValue,token_iter);
 				if(res==VALUE_INVALID){
 					fatal("invalid value after %s",KEYWORD_TILDE);
 				}
@@ -353,7 +403,7 @@ enum VALUE_PARSE_RESULT Value_parse(Module*module,Value*value,struct TokenIter*t
 				TokenIter_nextToken(token_iter,&token);
 
 				Value innerValue={};
-				enum VALUE_PARSE_RESULT res=Value_parse(module,&innerValue,token_iter);
+				enum VALUE_PARSE_RESULT res=Value_parse(stack,&innerValue,token_iter);
 				if(res==VALUE_INVALID){
 					fatal("invalid value after ++");
 				}
@@ -371,7 +421,7 @@ enum VALUE_PARSE_RESULT Value_parse(Module*module,Value*value,struct TokenIter*t
 				TokenIter_nextToken(token_iter,&token);
 
 				Value innerValue={};
-				enum VALUE_PARSE_RESULT res=Value_parse(module,&innerValue,token_iter);
+				enum VALUE_PARSE_RESULT res=Value_parse(stack,&innerValue,token_iter);
 				if(res==VALUE_INVALID){
 					fatal("invalid value after --");
 				}
@@ -396,9 +446,10 @@ enum VALUE_PARSE_RESULT Value_parse(Module*module,Value*value,struct TokenIter*t
 				{
 					int numTypeSymbols=0;
 					struct SymbolDefinition*typeSymbols=nullptr;
-					enum SYMBOL_PARSE_RESULT res=SymbolDefinition_parse(module,&numTypeSymbols,&typeSymbols,token_iter,&(struct Symbol_parse_options){.forbid_multiple=true});
+					enum SYMBOL_PARSE_RESULT res=SymbolDefinition_parse(stack,&numTypeSymbols,&typeSymbols,token_iter,&(struct Symbol_parse_options){.forbid_multiple=true});
 					TokenIter_lastToken(token_iter,&token);
-					if(res!=SYMBOL_PRESENT || numTypeSymbols!=1)fatal("expected exactly one symbol but got %d at %s",numTypeSymbols,Token_print(&token));
+					if(res!=SYMBOL_PRESENT || numTypeSymbols==0)goto VALUE_PARSE_RET_FAILURE;
+					if(numTypeSymbols>1)fatal("expected exactly one symbol but got %d at %s",numTypeSymbols,Token_print(&token));
 					Symbol typeSymbol=typeSymbols[0].symbol;
 					
 					// only if symbol has no name (i.e. just type) and is not a reference (i.e. not just a token that might be a value)
@@ -500,36 +551,12 @@ enum VALUE_PARSE_RESULT Value_parse(Module*module,Value*value,struct TokenIter*t
 			op=VALUE_OPERATOR_CONDITIONAL;
 		}
 
-		// else block for nested if above is this block, which catches some
+		// catch invalid operators
 		if(op==VALUE_OPERATOR_UNKNOWN && value->kind!=VALUE_KIND_UNKNOWN){
-			bool gotOperator=false;
-			// check if next token is numeric, where an operator may have been interpreted as a unary operator or a sign
-			/*if(token.tag==TOKEN_TAG_LITERAL_INTEGER){
-				if(token.num_info.hasLeadingSign){
-					switch(token.p[0]){
-						case '+':
-							op=VALUE_OPERATOR_ADD;
-							break;
-						case '-':
-							op=VALUE_OPERATOR_SUB;
-							break;
-						default:
-							fatal("invalid sign %c",token.p[0]);
-					}
-					token.num_info.hasLeadingSign=false;
-					token.p++;
-					token.len--;
-					gotOperator=true;
-				}
-			}*/
-
-			if(!gotOperator)
-				goto VALUE_PARSE_RET_SUCCESS;
-
-			// do not retrieve new token since current token contained sign for operator plus a value as second operand
-		}else{
-			TokenIter_nextToken(token_iter,&token);
+			goto VALUE_PARSE_RET_SUCCESS;
 		}
+
+		TokenIter_nextToken(token_iter,&token);
 
 		bool requiresSecondOperand=false;
 		switch(op){
@@ -578,7 +605,7 @@ enum VALUE_PARSE_RESULT Value_parse(Module*module,Value*value,struct TokenIter*t
 
 			case VALUE_OPERATOR_CONDITIONAL:{
 				Value trueValue={};
-				enum VALUE_PARSE_RESULT resTrue=Value_parse(module,&trueValue,token_iter);
+				enum VALUE_PARSE_RESULT resTrue=Value_parse(stack,&trueValue,token_iter);
 				if(resTrue==VALUE_INVALID){
 					fatal("invalid onTrue value in conditional");
 				}
@@ -589,9 +616,13 @@ enum VALUE_PARSE_RESULT Value_parse(Module*module,Value*value,struct TokenIter*t
 				TokenIter_nextToken(token_iter,&token);
 
 				Value falseValue={};
-				enum VALUE_PARSE_RESULT resFalse=Value_parse(module,&falseValue,token_iter);
+				enum VALUE_PARSE_RESULT resFalse=Value_parse(stack,&falseValue,token_iter);
 				if(resFalse==VALUE_INVALID){
 					fatal("invalid onFalse value in conditional");
+				}
+
+				if(value->kind==VALUE_KIND_UNKNOWN){
+					fatal("conditional operator must be the first operator in an expression");
 				}
 
 				*value=(Value){
@@ -647,11 +678,34 @@ enum VALUE_PARSE_RESULT Value_parse(Module*module,Value*value,struct TokenIter*t
 					}
 
 					Value arg={};
-					enum VALUE_PARSE_RESULT res=Value_parse(module,&arg,token_iter);
+					enum VALUE_PARSE_RESULT res=Value_parse(stack,&arg,token_iter);
 					TokenIter_lastToken(token_iter,&token);
 					switch(res){
+						case VALUE_SYMBOL_UNKNOWN:
 						case VALUE_INVALID:
-							fatal("invalid value in function call, got instead %.*s at %d:%d",token.len,token.p,token.line,token.col);
+							{
+								// try parsing a symbol instead
+								int num_symbols=0;
+								struct SymbolDefinition*symbols=nullptr;
+								enum SYMBOL_PARSE_RESULT res=SymbolDefinition_parse(stack,&num_symbols,&symbols,token_iter,&(struct Symbol_parse_options){.forbid_multiple=true});
+								TokenIter_lastToken(token_iter,&token);
+								switch(res){
+									case SYMBOL_INVALID:
+										fatal("invalid value in function call");
+									case SYMBOL_PRESENT:
+										if(num_symbols!=1){
+											fatal("expected exactly one symbol but got %d at %s",num_symbols,Token_print(&token));
+										}
+										if(symbols[0].symbol.name!=nullptr){
+											println("symbol name %.*s",symbols[0].symbol.name->len,symbols[0].symbol.name->p);
+											fatal("expected value in function call, got symbol instead, at %s",Token_print(&token));
+										}
+										arg.kind=VALUE_KIND_TYPEREF;
+										arg.typeref.type=symbols[0].symbol.type;
+										break;
+									default:fatal("unreachable");
+								}
+							}
 							break;
 						case VALUE_PRESENT:
 							array_append(&values,&arg);
@@ -677,12 +731,13 @@ enum VALUE_PARSE_RESULT Value_parse(Module*module,Value*value,struct TokenIter*t
 				if(requiresSecondOperand){
 					ret.op.right=malloc(sizeof(Value));
 
-					enum VALUE_PARSE_RESULT res=Value_parse(module,ret.op.right,token_iter);
+					enum VALUE_PARSE_RESULT res=Value_parse(stack,ret.op.right,token_iter);
 					switch(res){
+						case VALUE_SYMBOL_UNKNOWN:
 						case VALUE_INVALID:
 							// print next token
-							println("next token is: line %d col %d %.*s",token.line,token.col,token.len,token.p);
-							fatal("invalid value after operator at line %d col %d",token.line,token.col);
+							println("next token is %s",Token_print(&token));
+							fatal("invalid value after operator");
 							break;
 						case VALUE_PRESENT:
 							TokenIter_lastToken(token_iter,&token);
@@ -706,7 +761,11 @@ enum VALUE_PARSE_RESULT Value_parse(Module*module,Value*value,struct TokenIter*t
 
 VALUE_PARSE_RET_SUCCESS:
 	*token_iter_in=*token_iter;
+	println("returning value %s",Value_asString(value));
 	return VALUE_PRESENT;
+
+VALUE_PARSE_SYMBOL_NOT_FOUND:
+	return VALUE_SYMBOL_UNKNOWN;
 
 VALUE_PARSE_RET_FAILURE:
 	return VALUE_INVALID;
@@ -868,7 +927,13 @@ char*Value_asString(Value*value){
 			break;
 		}
 		case VALUE_KIND_SYMBOL_REFERENCE:{
-			stringAppend(ret,"%.*s",value->symbol->len,value->symbol->p);
+			if(value->symbol==nullptr)fatal("");
+			if(value->symbol->name==nullptr)fatal("");
+			if((uintptr_t)value->symbol->name%8!=0){
+				stringAppend(ret,"symbol <unaligned> : %s",Type_asString(value->symbol->type));
+			}else{
+				stringAppend(ret,"symbol %.*s : %s",value->symbol->name->len,value->symbol->name->p,Type_asString(value->symbol->type));
+			}
 			break;
 		}
 		case VALUE_KIND_FUNCTION_CALL:{

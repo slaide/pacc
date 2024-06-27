@@ -7,8 +7,8 @@
 
 #define EOFc (char)-1
 
-#define fprint(F,...) {fprintf(F,"%s:%d | ",__FILE__,__LINE__); fprintf(F,__VA_ARGS__);}
-#define fprintln(F,...) {fprint(F,__VA_ARGS__); fprintf(F,"\n");}
+#define fprint(F,...) {discard fprintf(F,"%s:%d | ",__FILE__,__LINE__); discard fprintf(F,__VA_ARGS__);}
+#define fprintln(F,...) {fprint(F,__VA_ARGS__); discard fprintf(F,"\n");}
 #define println(...) fprintln(stdout,__VA_ARGS__)
 #define print(...) fprint(stdout,__VA_ARGS__)
 #define fatal(...) {fprintln(stderr,__VA_ARGS__);exit(-1);}
@@ -34,8 +34,9 @@ typedef struct String{
 	int str_len;
 }String;
 
+#define COPY_(V) (allocAndCopy(sizeof(*(V)),(V)))
 /// @brief allocates size bytes memory and copies bytes memory from src into it
-void* allocAndCopy(size_t size,void*src);
+void* allocAndCopy(size_t size,const void*src);
 
 char* makeStringn(int len);
 char* makeString();

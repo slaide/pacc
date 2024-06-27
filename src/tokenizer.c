@@ -7,7 +7,21 @@
 #include<stdlib.h>
 #include<string.h>
 
-bool Token_equalToken(Token* a,Token*b){
+Token*Token_fromString(const char*str){
+	Token*ret=malloc(sizeof(Token));
+	*ret=(Token){
+		.filename=nullptr,
+		.line=0,
+		.col=0,
+		.tag=TOKEN_TAG_UNDEFINED,
+		.len=strlen(str),
+		.p=strdup(str),
+	};
+	return ret;
+
+}
+
+bool Token_equalToken(const Token* a,const Token*b){
 	if(a==b){
 		return true;
 	}
@@ -20,14 +34,14 @@ bool Token_equalToken(Token* a,Token*b){
 
 	return strncmp(a->p,b->p,a->len)==0;
 }
-bool Token_equalString(Token* a,char* b){
+bool Token_equalString(const Token* a,const char* b){
 	int blen=strlen(b);
 	if(a->len!=blen)
 		return false;
 
 	return strncmp(a->p,b,a->len)==0;
 }
-bool isValidNumFromChar(char c,int base){
+bool isValidNumFromChar(const char c,const int base){
 	switch(base){
 		case 2:
 			return c>='0' && c<='1';
@@ -110,7 +124,7 @@ void Token_map(Token*token){
 	}
 }
 
-bool char_is_token(char c){
+bool char_is_token(const char c){
 	static const char*CHAR_TOKENS="()[]{},;.:-+*~#'\"\\/!?%&=<>|";
 	for(int i=0;i<strlen(CHAR_TOKENS);i++){
 		if(CHAR_TOKENS[i]==c){
@@ -122,7 +136,7 @@ bool char_is_token(char c){
 
 /* tab character width in terms of spaces */
 #define TAB_WIDTH 1
-int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
+int Tokenizer_init(Tokenizer tokenizer[static 1],const File file[static 1]){
 	*tokenizer=(Tokenizer){
 		.token_src=file->filepath,
 		.num_tokens=0,
@@ -329,7 +343,10 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 				last_token->literal.tag=TOKEN_LITERAL_TAG_NUMERIC;
 				// copy tag and value
 				last_token->literal.numeric=token.literal.numeric;
+			}
 
+			// continue only for wchar because it extends an existing token from the prefix
+			if(is_wchar){
 				continue;
 			}
 		}
@@ -593,6 +610,33 @@ int Tokenizer_init(Tokenizer tokenizer[static 1],File file[static 1]){
 				numericToken->literal.numeric.tag=TOKEN_LITERAL_NUMERIC_TAG_INTEGER;
 			}
 
+			// calculate numerical value
+			switch(numericToken->literal.numeric.tag){
+				case TOKEN_LITERAL_NUMERIC_TAG_INTEGER:
+					{
+						// parse number
+						char*endptr=nullptr;
+						int val=strtol(numericToken->p,&endptr,base);
+						if(numericToken->p+numericToken->len!=(numericToken->p+numericToken->len)){
+							fatal("expected parsing %d digits, but only parsed %ld",numericToken->len,endptr-numericToken->p)
+						}
+						numericToken->literal.numeric.value.int_=val;
+					}
+					break;
+				case TOKEN_LITERAL_NUMERIC_TAG_FLOAT:
+					{
+						char*endptr=nullptr;
+						float val=strtof(numericToken->p,&endptr);
+						if(numericToken->p+numericToken->len!=(numericToken->p+numericToken->len)){
+							fatal("expected parsing %d digits, but only parsed %ld",numericToken->len,endptr-numericToken->p)
+						}
+						numericToken->literal.numeric.value.float_=val;
+					}
+					break;
+				default:
+					fatal("unimplemented numeric tag %s",Token_print(numericToken));
+			}
+
 			break;
 		}
 
@@ -680,7 +724,7 @@ void TokenIter_init(
 
     token_iter->next_token_index=0;
 }
-int TokenIter_nextToken(struct TokenIter*iter,Token*out){
+bool TokenIter_nextToken(struct TokenIter*iter,Token*out){
 	// if we have exhausted all tokens, there is no next token to fetch
 	// increase index nevertheless to indicate that we have attempted to fetch a token past the end
     if(iter->next_token_index==iter->tokenizer->num_tokens){
@@ -692,12 +736,13 @@ int TokenIter_nextToken(struct TokenIter*iter,Token*out){
 
     *out=iter->tokenizer->tokens[iter->next_token_index++];
 
-    if(iter->config.skip_comments && out->tag==TOKEN_TAG_COMMENT)
+    if(iter->config.skip_comments && out->tag==TOKEN_TAG_COMMENT){
         return TokenIter_nextToken(iter,out);
+	}
 
     return true;
 }
-int TokenIter_lastToken(struct TokenIter*iter,Token*out){
+bool TokenIter_lastToken(const struct TokenIter*iter,Token*out){
 	// if we are still pointing at the first token (i.e. no tokens have been returned yet)
 	// there is no last/previous token
 	if(iter->next_token_index<=0){
@@ -712,13 +757,13 @@ int TokenIter_lastToken(struct TokenIter*iter,Token*out){
 
 	return true;
 }
-bool TokenIter_isEmpty(struct TokenIter*iter){
+bool TokenIter_isEmpty(const struct TokenIter*iter){
 	if(iter==nullptr)fatal("bug");
 	//if(iter->tokenizer==nullptr)fatal("bug");
 	return iter->next_token_index>=iter->tokenizer->num_tokens;
 }
 
-char*Token_print(Token*token){
+char*Token_print(const Token*token){
 	const char*token_tag_name=nullptr;
 	switch(token->tag){
 		case TOKEN_TAG_UNDEFINED:
@@ -778,7 +823,7 @@ char*Token_print(Token*token){
 	
 	return ret;
 }
-char*Token_loc(Token*token){
+char*Token_loc(const Token*token){
 	char* filename="<anon file>";
 	if(token->filename!=nullptr){
 		filename=token->filename;
@@ -808,7 +853,7 @@ void Tokenizer_print(Tokenizer*tokenizer){
 		}
 
 		for(;(last_line<token.line);last_line++){
-			printf("\n%*d: ",5,last_line+line_offset);
+			printf("\n%*d: ",5,1+last_line+line_offset);
 			last_col=0;
 		}
 		if(token.col>last_col){

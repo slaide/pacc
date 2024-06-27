@@ -19,7 +19,15 @@ enum TYPEKIND{
 	TYPE_KIND_UNION,
 	TYPE_KIND_ENUM,
 
+	TYPE_KIND_TYPE,
+
 	TYPE_KIND_PRIMITIVE,
+};
+struct EnumVariant{
+	// name of the variant, must be present
+	Token*name;
+	// value is optional
+	Value*value;
 };
 char* TypeKind_asString(enum TYPEKIND kind);
 
@@ -72,9 +80,16 @@ struct Type{
 		}union_;
 		struct{
 			Token*name;
-			/// @brief array of struct members, which are Values (e.g. symbol ref, or assignment for "ENUM_MEMBER=2", etc.)
+			/*
+			array of enum variants
+			
+			item type is struct EnumVariant
+			*/
 			array members;
 		}enum_;
+		struct{
+			Type*type;
+		}type;
 	};
 };
 char* Type_asString(Type* type);
