@@ -287,6 +287,17 @@ void Preprocessor_processDefine(struct Preprocessor*preprocessor){
 					.name=token,
 				},
 			};
+			
+			if(Token_equalString(&token,"...")){
+				// token indicates vararg
+				new_arg=(struct PreprocessorDefineFunctionlikeArg){
+					.tag=PREPROCESSOR_DEFINE_FUNCTIONLIKE_ARG_TYPE_VARARGS,
+					.name={
+						.name=*Token_fromString("__VA_ARGS__")
+					}
+				};
+			}
+			
 			array_append(args,&new_arg);
 
 			continue;
@@ -571,12 +582,7 @@ void Preprocessor_expandMacros(struct Preprocessor*preprocessor,int num_tokens_i
 						i++; // skip over opening paranthesis
 
 						// handle macro arguments
-						for(int arg_index=0;arg_index<define->args->len;arg_index++){
-							// handle arg as temporary define
-							// 1) get arg name for name of define
-							struct PreprocessorDefineFunctionlikeArg arg=*(struct PreprocessorDefineFunctionlikeArg*)array_get(define->args,arg_index);
-							Token arg_name=arg.name.name;
-							// 2) gather args, i.e. all tokens until next comma or closing paranthesis ( TODO handle nesting, e.g. (a,(b,c),d) as single argument )
+						while(1){
 							array arg_tokens={};
 							array_init(&arg_tokens,sizeof(Token));
 							/* list of chars to close nested statements, though only () qualify, others, e.g. curly braces, do not have to be closed */
@@ -612,7 +618,7 @@ void Preprocessor_expandMacros(struct Preprocessor*preprocessor,int num_tokens_i
 							}
 							// 3) create temporary define
 							struct PreprocessorDefine arg_define={
-								.name=arg_name,
+								.name={},
 								.tokens=arg_tokens,
 								.args=nullptr
 							};
@@ -631,6 +637,63 @@ void Preprocessor_expandMacros(struct Preprocessor*preprocessor,int num_tokens_i
 							}
 							// 7) if next token is neither comma nor closing paranthesis, error
 							fatal("expected , or ) after argument in function-like macro %s after %s",Token_print(&token_in_token),Token_print(array_get(&arg_tokens,arg_tokens.len-1)));
+						}
+
+						bool macro_has_vararg_argument=false;
+						if(define->args->len>0){
+							// check last arg tag for vararg
+							struct PreprocessorDefineFunctionlikeArg *arg=array_get(define->args,define->args->len-1);
+							// tag can be:
+							//PREPROCESSOR_DEFINE_FUNCTIONLIKE_ARG_TYPE_NAME,
+							//PREPROCESSOR_DEFINE_FUNCTIONLIKE_ARG_TYPE_VARARGS
+							if(arg->tag==PREPROCESSOR_DEFINE_FUNCTIONLIKE_ARG_TYPE_VARARGS){
+								macro_has_vararg_argument=true;
+							}
+						}
+
+						int min_number_of_args=define->args->len-(int)macro_has_vararg_argument;
+						if(arguments.len<min_number_of_args){
+							fatal("not enough arguments at %s",Token_print(&expanded_token->token));
+						}
+						if(arguments.len>min_number_of_args && !macro_has_vararg_argument){
+							fatal("too many arguments at %s",Token_print(&expanded_token->token));
+						}
+
+						// combine trailing arguments into __VA_ARGS__ argument
+						if(macro_has_vararg_argument){
+							array args={};
+							array_init(&args,sizeof(Token));
+
+							int num_args_to_pop=0;
+							for(int i=min_number_of_args;i<define->args->len;i++){
+								num_args_to_pop++;
+								struct PreprocessorDefine *arg=array_get(&arguments,i);
+								for(int a=0;a<arg->tokens.len;a++){
+									Token*tok=array_get(&arg->tokens,a);
+									array_append(&args,tok);
+								}
+							}
+
+							println("vararg arg got %d tokens",args.len);
+							struct PreprocessorDefine vararg={
+								.name=*Token_fromString("__VA_ARGS__"),
+								.tokens=args,
+							};
+
+							// pop trailing args
+							while(num_args_to_pop--) array_pop_back(&arguments);
+							// append vararg
+							array_append(&arguments,&vararg);
+						}
+
+						for(int arg_index=0;arg_index<define->args->len;arg_index++){
+							// handle arg as temporary define
+							// 1) get arg name for name of define
+							struct PreprocessorDefineFunctionlikeArg *arg=array_get(define->args,arg_index);
+							Token arg_name=arg->name.name;
+
+							struct PreprocessorDefine*arg_val=array_get(&arguments,arg_index);
+							arg_val->name=arg_name;
 						}
 
 						// check for closing paranthesis
