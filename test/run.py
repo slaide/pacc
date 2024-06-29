@@ -186,7 +186,8 @@ TEST_FILES=[
 
     Test(file="test/test060.c", goal=""),
     Test(file="test/test061.c", goal="adjacent string literal concatenation (phase 6)"),
-    Test(file="test/test062.c", goal="preprocessor macro vararg expansion"),
+    Test(file="test/test062.c", goal="adjacent string literal concatenation (phase 6)"),
+    Test(file="test/test063.c", goal="preprocessor __VA_ARGS__ expansion"),
 ]
 
 def set_flags(t:Test,flags:str)->Test:

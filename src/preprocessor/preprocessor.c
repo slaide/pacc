@@ -10,6 +10,8 @@ static const char*const PLACEHOLDER_FILENAME="unknownfile";
 
 #define PREPROCESSOR_RECURSIVE 0
 
+#define DEBUG_PRINTS false
+
 void Preprocessor_init(struct Preprocessor*preprocessor){
 	*preprocessor=(struct Preprocessor){};
 
@@ -319,7 +321,7 @@ void Preprocessor_processDefine(struct Preprocessor*preprocessor){
 
 	if(!preprocessor->doSkip){
 		// debug print
-		if(0){
+		if(DEBUG_PRINTS){
 			print("defined %.*s",define_name.len,define_name.p);
 			if(define_value.len>0 || args!=nullptr){
 				if(args!=nullptr){
@@ -555,7 +557,7 @@ void Preprocessor_expandMacros(struct Preprocessor*preprocessor,int num_tokens_i
 					array_append(&expanded_token->generators,&define);
 
 					// print info about which token got expanded
-					if(1){
+					if(DEBUG_PRINTS){
 						printf("expanding %.*s from (%s) to ",define->name.len,define->name.p,Token_print(&define->name));
 						for(int k=0;k<define->tokens.len;k++){
 							Token* token=array_get(&define->tokens,k);
@@ -664,9 +666,17 @@ void Preprocessor_expandMacros(struct Preprocessor*preprocessor,int num_tokens_i
 							array args={};
 							array_init(&args,sizeof(Token));
 
+							// count number of items to pop from macro invocation argument list
 							int num_args_to_pop=0;
-							for(int i=min_number_of_args;i<define->args->len;i++){
+							for(int i=min_number_of_args;i<arguments.len;i++){
 								num_args_to_pop++;
+
+								// vararg is expanded as argument list, i.e. commas between arguments need to be preserved
+								if(i>min_number_of_args){ // on all iterations except the first one
+									array_append(&args,Token_fromString(","));
+								}
+
+								// append tokens from arg
 								struct PreprocessorDefine *arg=array_get(&arguments,i);
 								for(int a=0;a<arg->tokens.len;a++){
 									Token*tok=array_get(&arg->tokens,a);
@@ -674,14 +684,17 @@ void Preprocessor_expandMacros(struct Preprocessor*preprocessor,int num_tokens_i
 								}
 							}
 
-							println("vararg arg got %d tokens",args.len);
 							struct PreprocessorDefine vararg={
 								.name=*Token_fromString("__VA_ARGS__"),
 								.tokens=args,
 							};
 
 							// pop trailing args
-							while(num_args_to_pop--) array_pop_back(&arguments);
+							while(num_args_to_pop>0){
+								num_args_to_pop-=1;
+								array_pop_back(&arguments);
+							}
+
 							// append vararg
 							array_append(&arguments,&vararg);
 						}
@@ -857,7 +870,6 @@ void Preprocessor_expandMacros(struct Preprocessor*preprocessor,int num_tokens_i
 						for(int k=0;k<expanded_token->generators.len;k++){
 							struct PreprocessorDefine* generator=*(struct PreprocessorDefine**)array_get(&expanded_token->generators,k);
 							array_append(&new_expand_token.generators,&generator);
-							println("copied generator %.*s",generator->name.len,generator->name.p);
 						}
 						array_append(tokens_out,&new_expand_token);
 					}
@@ -1094,7 +1106,7 @@ int PreprocessorExpression_parse(
 	int precedence
 ){
 	//print all tokens
-	if(0){
+	if(DEBUG_PRINTS){
 		println("PreprocessorExpression_parse tokens:");
 		for(int i=0;i<if_expr_tokens.len;i++){
 			Token* token=array_get(&if_expr_tokens,i);
@@ -1571,7 +1583,7 @@ struct PreprocessorExpression* Preprocessor_parseExpression(struct Preprocessor*
 	// parse expression from tokens
 	struct PreprocessorExpression if_expr={};
 	// print expanded_expr_tokens
-	if(0){
+	if(DEBUG_PRINTS){
 		println("expanded expression:");
 		for(int i=0;i<expanded_expr_tokens.len;i++){
 			Token* token=array_get(&expanded_expr_tokens,i);
