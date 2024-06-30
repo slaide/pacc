@@ -183,7 +183,6 @@ void Preprocessor_processInclude(struct Preprocessor*preprocessor){
 
 	char* include_path=calloc(token.len-1,1);
 	discard sprintf(include_path,"%.*s",token.len-2,token.p+1);
-	println("%s include path: %s",local_include_path?"local":"global",include_path);
 
 	ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
 	// we just consume the token, we don't use it in the rest of the function body
@@ -1592,7 +1591,6 @@ struct PreprocessorExpression* Preprocessor_parseExpression(struct Preprocessor*
 	}
 	PreprocessorExpression_parse(preprocessor,expanded_expr_tokens,&if_expr,PREPROCESSOR_OPERATOR_PRECEDENCE_MAX);
 	Preprocessor_evalExpression(preprocessor,&if_expr);
-	println("evaluated expression: %s=%d (at line %d)",PreprocessorExpression_print(&if_expr),if_expr.value,token.line);
 
 	return allocAndCopy(sizeof(struct PreprocessorExpression),&if_expr);
 }
