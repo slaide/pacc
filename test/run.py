@@ -7,6 +7,7 @@ from pathlib import Path
 import os, sys
 from tqdm import tqdm
 import shlex
+import threading
 
 # ensure project root directory
 os.chdir(Path(__file__).parent.parent)
@@ -55,44 +56,67 @@ class Test:
             print(f"{BOLD}Running test: '{self.file}'{RESET}")
 
         command=f"bin/main {self.flags or ''} {self.file}"
+        cmd_timed_out=False
         run_with_valgrind=False
         while True:
             myenv=os.environ.copy()
             myenv["ASAN_OPTIONS"]="detect_leaks=0" # run with ASAN_OPTIONS=detect_leaks=0 # run with 
+            myenv["MallocNanoZone"]="0" # macos specific https://stackoverflow.com/questions/64126942/malloc-nano-zone-abandoned-due-to-inability-to-preallocate-reserved-vm-space
             if run_with_valgrind:
                 #command=f"valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes {command}"
-                popen_kwargs={
+                pass
 
-                }
-            else:
-                popen_kwargs={
-                    #"stdout":sp.PIPE,
-                    #"stderr":sp.PIPE
-                }
+            popen_kwargs={
+                "stdout":sp.PIPE,
+                "stderr":sp.PIPE
+            }
+
+            # read stdout and stderr from pipe into buffer
+            stdout_buffer=[]
+            stderr_buffer=[]
+
+            def read_stream(stream, storage):
+                while True:
+                    data = stream.read(1024)
+                    if not data:
+                        break
+                    storage.append(data.decode())
+                stream.close()
 
             # exec command
             proc=sp.Popen(shlex.split(command), env=myenv, **popen_kwargs) # do not use shell=True because killing will not work
+
+            stdout_thread = threading.Thread(target=read_stream, args=(proc.stdout, stdout_buffer))
+            stderr_thread = threading.Thread(target=read_stream, args=(proc.stderr, stderr_buffer))
+            
+            stdout_thread.start()
+            stderr_thread.start()
+
             try:
-                if run_with_valgrind:
-                    proc.wait(timeout=10)
-                else:
-                    proc.wait(timeout=timeout)
+                proc.wait(timeout=timeout)
             except sp.TimeoutExpired:
                 proc.kill() # make sure the timed out process is terminated
+                cmd_timed_out=True
+            except Error as e:
+                proc.kill()
+                print(f"exception in command:\n{e}")
+            
+            if cmd_timed_out:
                 if not run_with_valgrind:
                     run_with_valgrind=True
                     continue
-                print(f"{BOLD}{RED}Error: test '{self.file}' timed out{RESET}")
-                print(f"$ {command}")
-                sys.exit(1)
+
                 self.result=TestResult.TIMEOUT
-                return
-            
+
+            stdout_thread.join()
+            stderr_thread.join()
+
             break
 
         did_fail=proc.returncode!=0
 
-        if (not did_fail and not self.should_fail) or (did_fail and self.should_fail):
+        test_succeeded=((not did_fail and not self.should_fail) or (did_fail and self.should_fail)) and not cmd_timed_out
+        if test_succeeded:
             if print_info:
                 print(f"{BOLD}{GREEN}Success: '{self.file}'{RESET}")
 
@@ -102,18 +126,38 @@ class Test:
             global NUM_TEST_FAILURES_SO_FAR
             NUM_TEST_FAILURES_SO_FAR+=1
             if NUM_TEST_FAILURES_SO_FAR<=NUM_TEST_FAILURES_TO_PRINT:
-                print(f"{BOLD}{RED}Error: test '{self.file}' failed{RESET}")
-                print(f"$ {command}")
-                print(f"Goal: {self.goal}")
-                if self.should_fail:
-                    print(f"Expected to fail, but succeeded")
-                else:
-                    print(f"Expected to succeed, but failed with code {proc.returncode}")
+                def print_info():
+                    print(f"{BOLD}{RED}Error: test '{self.file}' failed{RESET}")
+                    print(f"$ {command}")
+                    print(f"Goal: {self.goal}")
+                    if cmd_timed_out:
+                        print(f"timed out after {timeout:.2f}s")
+                    else:
+                        if self.should_fail:
+                            print(f"Expected to fail, but succeeded")
+                        else:
+                            print(f"Expected to succeed, but failed with code {proc.returncode}")
 
                 assert proc.stdout is not None
                 assert proc.stderr is not None
-                print("stdout: ---- \n",proc.stdout.read().decode("utf-8"))
-                print("stderr: ---- \n",proc.stderr.read().decode("utf-8"))
+
+                stdout_txt = ''.join(stdout_buffer)
+                stderr_txt = ''.join(stderr_buffer)
+
+                # print info once before stdout/stderr
+                print_info()
+
+                if len(stdout_txt)>0:
+                    print("stdout: ---- \n",stdout_txt)
+                else:
+                    print("stdout: [empty]")
+                if len(stderr_txt)>0:
+                    print("stderr: ---- \n",stderr_txt)
+                else:
+                    print("stderr: [empty]")
+
+                # print again after stdout/stderr
+                print_info()
             
         self.result=TestResult.FAILURE
 
@@ -205,7 +249,7 @@ print(f"{BOLD}running tests...{RESET}")
 # run all tests
 results={res:0 for res in TestResult}
 for test in tqdm(tests):
-    test.run(print_info=False,timeout=0.5)
+    test.run(print_info=False,timeout=1.0)
     assert test.result is not None
     results[test.result]+=1
 
