@@ -97,9 +97,10 @@ class Test:
             except sp.TimeoutExpired:
                 proc.kill() # make sure the timed out process is terminated
                 cmd_timed_out=True
-            except Error as e:
+            except Exception as e:
+                # catch other exceptions to ensure the process is killed
                 proc.kill()
-                print(f"exception in command:\n{e}")
+                raise RuntimeError(f"exception in command $ {command}:\n{e}")
             
             if cmd_timed_out:
                 if not run_with_valgrind:
