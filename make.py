@@ -11,6 +11,8 @@ argparser=ArgParser("build the pacc compiler")
 argparser.add(name="--target",short="-t",help="target to build",key="build_target",arg_store_op=ArgStore.store_value,default="all",options=["all","clean","test_target"])
 argparser.add(name="--num-threads",short="-j",help="number of compilation threads",key="num_threads",arg_store_op=ArgStore.store_value,default=1,type=int)
 argparser.add(name="--cc",help="compiler to use",key="cc",default="clang-17",arg_store_op=ArgStore.store_value)
+argparser.add(name="--opt",short="-o",help="optimization level",key="opt",default="0",options=["0","1","2","3","s"],arg_store_op=ArgStore.store_value)
+argparser.add(name="--sanitize",help="enable ubsan and addrsan",key="enable_sanitizers",default=False,arg_store_op=ArgStore.presence_flag)
 argparser.add(name="--print-cmds",help="print commands that are run",key="show_cmds",default=False,arg_store_op=ArgStore.presence_flag)
 argparser.add(name="--force-rebuild",short="-f",help="force rebuild, i.e. do not read cache, but still build it",key="force_rebuild",arg_store_op=ArgStore.presence_flag)
 
@@ -41,7 +43,7 @@ file_paths=[
     "src/main.c",
 ]
 
-CC_CMD=f"{args.get('cc')} -g -O0 -fPIC -std=c2x -I./include -Wall -Wextra -Wpedantic -Werror=switch -Werror=incompatible-pointer-types -Wno-incompatible-pointer-types-discards-qualifiers -fsanitize=undefined -fno-omit-frame-pointer -fno-common "+("-fsanitize=address " if 1 else "")
+CC_CMD=f"{args.get('cc')} -g -O{args.get('opt')} -fPIC -std=c2x -I./include -Wall -Wextra -Wpedantic -Werror=switch -Werror=incompatible-pointer-types -Wno-incompatible-pointer-types-discards-qualifiers -fno-omit-frame-pointer -fno-common "+("-fsanitize=undefined -fsanitize=address " if args.get('enable_sanitizers') else "")
 
 class CompileFile(Command):
     " compile a single file "
