@@ -216,14 +216,15 @@ TEST_FILES=[
     Test(file="test/test056.c", level=TestLevel.PARSE, goal="compound symbol definitions"),
     Test(file="test/test057.c", level=TestLevel.PARSE, goal="compound symbol definitions with initializer"),
     Test(file="test/test058.c", level=TestLevel.PARSE, goal="signed char type use"),
-    Test(file="test/test059.c", level=TestLevel.PARSE, goal=""),
+    Test(file="test/test059.c", level=TestLevel.PARSE, goal="recursive macro expansion"),
 
-    Test(file="test/test060.c", level=TestLevel.PARSE, goal=""),
+    Test(file="test/test060.c", level=TestLevel.PARSE, goal="nested macro expansion"),
     Test(file="test/test061.c", level=TestLevel.PARSE, goal="adjacent string literal concatenation (phase 6)"),
     Test(file="test/test062.c", level=TestLevel.PARSE, goal="adjacent string literal concatenation (phase 6)"),
     Test(file="test/test063.c", level=TestLevel.PARSE, goal="preprocessor __VA_ARGS__ expansion"),
 
-    Test(file="test/test064.c", level=TestLevel.PARSE, goal="", should_fail=True),
+    Test(file="test/test064.c", level=TestLevel.PARSE, goal="function argument has incompatible type", should_fail=True),
+    Test(file="test/test065.c", level=TestLevel.PARSE, goal="accessing non-existent field on a struct", should_fail=True),
 ]
 
 tests=[
