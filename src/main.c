@@ -70,7 +70,6 @@ int main(int argc, const char**argv){
 			char*include_path=calloc(1,strlen(argv[i])-2+1);
 			strncpy(include_path,argv[i]+2,strlen(argv[i])-2);
 			array_append(&include_paths,&include_path);
-			println("cli include path: %s",include_path);
 			continue;
 		}
 

@@ -128,7 +128,6 @@ enum STACK_PARSE_RESULT Stack_parse(Stack*stack,struct TokenIter*token_iter_in){
 				fatal("invalid statement at line %d col %d",token.line,token.col);
 				break;
 			case STATEMENT_PARSE_RESULT_PRESENT:
-                println("adding statement to stack %d %s",statement.tag,Statement_asString(&statement,0));
                 Stack_addStatement(stack, &statement);
 				continue;
 		}
