@@ -1894,7 +1894,9 @@ void Preprocessor_consume(struct Preprocessor *preprocessor, struct TokenIter *t
 			}
 
 			ntr=TokenIter_nextToken(&preprocessor->token_iter,&token);
-			if(!ntr) fatal("");
+			if(!ntr){
+				break;
+			}
 
 			if(Token_equalString(&token,"#")){
 				break;
