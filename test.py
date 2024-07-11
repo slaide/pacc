@@ -8,13 +8,14 @@ import os, sys
 from tqdm import tqdm
 import shlex
 import threading
+from concurrent import futures as fut
 
 from libbuild import *
 
 argparser=ArgParser("run tests on the pacc compiler")
 
 argparser.add(name="--target",short="-t",help="run specific target",key="target",arg_store_op=ArgStore.store_value,type=str)
-
+argparser.add(name="--num-threads",short="-j",help="number of compilation threads",key="num_threads",arg_store_op=ArgStore.store_value,default=1,type=int)
 argparser.add(name="--help",short="-h",help="Prints this help message",key="show_help",arg_store_op=ArgStore.presence_flag)
 
 args=argparser.parse(sys.argv[1:])
@@ -52,7 +53,7 @@ class TestLevel(int,Enum):
     " linking may fail e.g. due to unresolved symbols"
     EXECUTE=10
 
-@dataclass
+@dataclass(unsafe_hash=True,order=True)
 class Test:
     file: str
     level:TestLevel
@@ -239,15 +240,57 @@ if test_target is not None:
 
     tests=[test for i,test in enumerate(tests) if i==int(test_target)]
 
+num_test_workers=args.get("num_threads") or get_num_cores()
+if num_test_workers>1:
+    threadpool=fut.ThreadPoolExecutor(max_workers=num_test_workers)
+
 print(f"{BOLD}running tests...{RESET}")
 
 failed_tests:tp.List[Test]=[]
 timeout_tests:tp.List[Test]=[]
 
-# run all tests
 results={res:0 for res in TestResult}
-for test in tqdm(tests):
-    test.run(timeout=1.0)
+
+# run all tests
+if num_test_workers>1:
+    test_future_handles:tp.List[tp.Optional[tp.Tuple[Test,fut.Future]]]=[None for _ in range(len(tests))]
+    for i,test in enumerate(tests):
+        test_future=threadpool.submit(lambda test:test.run(timeout=1.0),test)
+        assert test_future is not None
+        assert test not in test_future_handles
+        test_future_handles[i]=(test,test_future)
+
+    test_progress=tqdm(total=len(tests),desc="running tests",unit="test")
+    while True:
+        done=True
+
+        for i,val in enumerate(test_future_handles):
+            if val is None:
+                continue
+
+            test,test_future=val
+            if not test_future.done():
+                done=False
+                break
+
+            test_future_handles[i]=None
+            test_progress.update(1)
+
+        # wait for a short time for tests to run in the background
+        time.sleep(5e-3)
+
+        if done:
+            break
+
+    test_progress.close()
+
+    threadpool.shutdown(wait=True)
+
+else:
+    for test in tqdm(tests):
+        test.run(timeout=1.0)
+
+for test in tests:
     assert test.result is not None
     if test.result==TestResult.FAILURE:
         failed_tests.append(test)

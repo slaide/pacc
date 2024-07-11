@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 def get_num_cores()->int:
     """
-    get number of logical cores on the host system, minus 1
+    get number of logical cores on the host system
 
     returns at least 1
     """
@@ -37,8 +37,7 @@ def get_num_cores()->int:
     if max_num_cores==1:
         return 1
     
-    # leave 1 core for the system
-    return max_num_cores - 1
+    return max_num_cores
 
 class ArgStore(str,Enum):
     presence_flag="presence_flag"
