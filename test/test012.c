@@ -3,7 +3,7 @@ struct Person{
 	char* name;
 };
 typedef struct Person Person;
-int func(int a,char* b){
+int func(int a,Person* b){
 	return 0;
 }
 bool test1(){

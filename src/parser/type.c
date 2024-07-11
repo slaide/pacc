@@ -232,3 +232,82 @@ char* TypeKind_asString(enum TYPEKIND kind){
 		fatal("unimplemented %d",kind);
 	}
 }
+
+bool Type_isNumeric(Type*a){
+	switch(a->kind){
+		case TYPE_KIND_PRIMITIVE:
+			switch(a->primitive){
+				case TYPE_PRIMITIVE_KIND_UNKNOWN:
+					fatal("unknown primitive type");
+				case TYPE_PRIMITIVE_KIND_BOOL:
+				case TYPE_PRIMITIVE_KIND_I8:
+				case TYPE_PRIMITIVE_KIND_I16:
+				case TYPE_PRIMITIVE_KIND_I32:
+				case TYPE_PRIMITIVE_KIND_I64:
+				case TYPE_PRIMITIVE_KIND_U8:
+				case TYPE_PRIMITIVE_KIND_U16:
+				case TYPE_PRIMITIVE_KIND_U32:
+				case TYPE_PRIMITIVE_KIND_U64:
+				case TYPE_PRIMITIVE_KIND_F32:
+				case TYPE_PRIMITIVE_KIND_F64:
+					return true;
+				case TYPE_PRIMITIVE_KIND_VOID:
+				default:
+					return false;
+			}
+			return false;
+		case TYPE_KIND_ENUM:
+			return true;
+		default:
+			return false;
+	}
+}
+
+bool Type_convertibleTo(Type*a,Type*b){
+	if(a==nullptr)fatal("unreachable");
+	if(b==nullptr)fatal("unreachable");
+
+	if(a==b){
+		return true;
+	}
+
+	if(a->kind==TYPE_KIND_REFERENCE){
+		return Type_convertibleTo(a->reference.ref,b);
+	}
+
+	if(b->kind==TYPE_KIND_REFERENCE){
+		return Type_convertibleTo(a,b->reference.ref);
+	}
+
+	// can assign anything to vararg, except types
+	if(b->kind==TYPE_KIND_PRIMITIVE && b->primitive==Type_VA_LIST.primitive){
+		if(a->kind==TYPE_KIND_PRIMITIVE && a->primitive==TYPE_PRIMITIVE_KIND_ANY){
+			return false;
+		}
+		
+		return true;
+	}
+
+	// can assign anything to __any
+	if(b->kind==TYPE_KIND_PRIMITIVE && b->primitive==TYPE_PRIMITIVE_KIND_ANY){
+		return true;
+	}
+
+	if(Type_isNumeric(a) && Type_isNumeric(b)){
+		return true;
+	}
+
+	if(
+		   a->kind==TYPE_KIND_PRIMITIVE
+		&& b->kind==TYPE_KIND_PRIMITIVE
+		&& a->primitive==b->primitive
+	){
+		return true;
+	}
+
+	if(a->kind==TYPE_KIND_POINTER && b->kind==TYPE_KIND_POINTER){
+		return true;
+	}
+
+	return false;
+}

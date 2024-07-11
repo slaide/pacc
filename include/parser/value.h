@@ -132,7 +132,7 @@ struct Value{
 
 		/// @brief VALUE_KIND_FUNCTION_CALL function call
 		struct{
-			Token*name;
+			Value*function;
 			array args;
 		}function_call;
 
@@ -189,3 +189,5 @@ struct Value{
 };
 
 bool Value_equal(Value*a,Value*b);
+/// @brief get the type of a value
+Type*Value_getType(Value*value);

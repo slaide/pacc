@@ -42,6 +42,8 @@ class Test:
 
     result:tp.Optional[TestResult]=None
 
+    command:tp.Optional[str]=None
+
     def copy(self)->"Test":
         return Test(
             file=self.file,
@@ -56,6 +58,7 @@ class Test:
             print(f"{BOLD}Running test: '{self.file}'{RESET}")
 
         command=f"bin/main {self.flags or ''} {self.file}"
+        self.command=command
         cmd_timed_out=False
         run_with_valgrind=False
         while True:
@@ -118,47 +121,44 @@ class Test:
 
         test_succeeded=((not did_fail and not self.should_fail) or (did_fail and self.should_fail)) and not cmd_timed_out
         if test_succeeded:
-            if print_info:
-                print(f"{BOLD}{GREEN}Success: '{self.file}'{RESET}")
-
             self.result=TestResult.SUCCESS
             return
-        else:
-            global NUM_TEST_FAILURES_SO_FAR
-            NUM_TEST_FAILURES_SO_FAR+=1
-            if NUM_TEST_FAILURES_SO_FAR<=NUM_TEST_FAILURES_TO_PRINT:
-                def print_info():
-                    print(f"{BOLD}{RED}Error: test '{self.file}' failed{RESET}")
-                    print(f"$ {command}")
-                    print(f"Goal: {self.goal}")
-                    if cmd_timed_out:
-                        print(f"timed out after {timeout:.2f}s")
+        
+        global NUM_TEST_FAILURES_SO_FAR
+        NUM_TEST_FAILURES_SO_FAR+=1
+        if NUM_TEST_FAILURES_SO_FAR<=NUM_TEST_FAILURES_TO_PRINT:
+            def print_info():
+                print(f"{BOLD}{RED}Error: test '{self.file}' failed{RESET}")
+                print(f"$ {command}")
+                print(f"Goal: {self.goal}")
+                if cmd_timed_out:
+                    print(f"timed out after {timeout:.2f}s")
+                else:
+                    if self.should_fail:
+                        print(f"Expected to fail, but succeeded")
                     else:
-                        if self.should_fail:
-                            print(f"Expected to fail, but succeeded")
-                        else:
-                            print(f"Expected to succeed, but failed with code {proc.returncode}")
+                        print(f"Expected to succeed, but failed with code {proc.returncode}")
 
-                assert proc.stdout is not None
-                assert proc.stderr is not None
+            assert proc.stdout is not None
+            assert proc.stderr is not None
 
-                stdout_txt = ''.join(stdout_buffer)
-                stderr_txt = ''.join(stderr_buffer)
+            stdout_txt = ''.join(stdout_buffer)
+            stderr_txt = ''.join(stderr_buffer)
 
-                # print info once before stdout/stderr
-                print_info()
+            # print info once before stdout/stderr
+            print_info()
 
-                if len(stdout_txt)>0:
-                    print("stdout: ---- \n",stdout_txt)
-                else:
-                    print("stdout: [empty]")
-                if len(stderr_txt)>0:
-                    print("stderr: ---- \n",stderr_txt)
-                else:
-                    print("stderr: [empty]")
+            if len(stdout_txt)>0:
+                print("stdout: ---- \n",stdout_txt)
+            else:
+                print("stdout: [empty]")
+            if len(stderr_txt)>0:
+                print("stderr: ---- \n",stderr_txt)
+            else:
+                print("stderr: [empty]")
 
-                # print again after stdout/stderr
-                print_info()
+            # print again after stdout/stderr
+            print_info()
             
         self.result=TestResult.FAILURE
 
@@ -233,6 +233,8 @@ TEST_FILES=[
     Test(file="test/test061.c", goal="adjacent string literal concatenation (phase 6)"),
     Test(file="test/test062.c", goal="adjacent string literal concatenation (phase 6)"),
     Test(file="test/test063.c", goal="preprocessor __VA_ARGS__ expansion"),
+
+    Test(file="test/test064.c", goal="", should_fail=True),
 ]
 
 def set_flags(t:Test,flags:str)->Test:
@@ -247,11 +249,16 @@ tests=[
 
 print(f"{BOLD}running tests...{RESET}")
 
+failed_tests:tp.List[Test]=[]
+
 # run all tests
 results={res:0 for res in TestResult}
 for test in tqdm(tests):
-    test.run(print_info=False,timeout=1.0)
+    test.run(print_info=True,timeout=1.0)
     assert test.result is not None
+    if test.result!=TestResult.SUCCESS:
+        print(f"{RED}Test failed: '{test.file}'{RESET}")
+        failed_tests.append(test)
     results[test.result]+=1
 
 num_total=len(tests)
@@ -278,4 +285,6 @@ perc_failed_str=pad_to(perc_failed,6,fmt_str="{s:.2f}")
 perc_timed_out_str=pad_to(perc_timed_out,6,fmt_str="{s:.2f}")
 print(f"{GREEN  }Succeeded : {num_succeeded_str} ({perc_success_str  } %){RESET}")
 print(f"{RED    }Failed    : {num_failed_str   } ({perc_failed_str   } %){RESET}")
+for test in failed_tests:
+    print(f"{RED}Failed test: '{test.command}'{RESET}")
 print(f"{ORANGE }Timed out : {num_timed_out_str} ({perc_timed_out_str} %){RESET}")

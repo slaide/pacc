@@ -112,9 +112,7 @@ enum VALUE_PARSE_RESULT Value_parse(Stack*stack,Value*value,struct TokenIter*tok
 				Value addressedValue={};
 				enum VALUE_PARSE_RESULT res=Value_parse(stack,&addressedValue,token_iter);
 				if(res==VALUE_INVALID){
-					fatal("invalid value after &");
-				}else{
-					println("taking address of")
+					fatal("invalid value after & at %s",Token_print(&token));
 				}
 
 				*value=(Value){
@@ -665,6 +663,7 @@ enum VALUE_PARSE_RESULT Value_parse(Stack*stack,Value*value,struct TokenIter*tok
 				continue;
 			}
 			case VALUE_OPERATOR_CALL:{
+				// parse arguments
 				array values;
 				array_init(&values,sizeof(Value));
 				while(1){
@@ -702,6 +701,8 @@ enum VALUE_PARSE_RESULT Value_parse(Stack*stack,Value*value,struct TokenIter*tok
 										}
 										arg.kind=VALUE_KIND_TYPEREF;
 										arg.typeref.type=symbols[0].symbol.type;
+										if(arg.typeref.type==nullptr)fatal("unreachable");
+										array_append(&values,&arg);
 										break;
 									default:fatal("unreachable");
 								}
@@ -713,9 +714,59 @@ enum VALUE_PARSE_RESULT Value_parse(Stack*stack,Value*value,struct TokenIter*tok
 					}
 				}
 
+				if(value->kind==VALUE_KIND_UNKNOWN) fatal("unreachable");
+				Type*value_type=Value_getType(value);
+
+				if(value_type->kind!=TYPE_KIND_FUNCTION){
+					fatal("cannot call non-function type %s",Type_asString(value->typeref.type));
+				}
+
+				Value*function=allocAndCopy(sizeof(Value),value);
+				Type*function_type=value_type;
+				*value=(Value){};
+
+				bool func_has_vararg=false;
+				// check if last arg is vararg
+				if(function_type->function.args.len>0){
+					Symbol*last_arg=array_get(&function_type->function.args,function_type->function.args.len-1);
+					func_has_vararg=last_arg->kind==SYMBOL_KIND_VARARG;
+				}
+				if(func_has_vararg){
+					if(function_type->function.args.len-1 > values.len){
+						fatal("expected at least %d arguments but got %d at %s",function_type->function.args.len-1,values.len,Token_print(&token));
+					}
+				}else{
+					if(function_type->function.args.len!=values.len){
+						fatal("expected %d arguments but got %d at %s",function_type->function.args.len,values.len,Token_print(&token));
+					}
+				}
+
+				// check argument types
+				for(int i=0;i<values.len;i++){
+					Value*arg_value=array_get(&values,i);
+					// get func arg
+					Symbol*func_arg=nullptr;
+					if(i<function_type->function.args.len){
+						func_arg=array_get(&function_type->function.args,i);
+					}else{
+						if(!func_has_vararg){
+							// should be unreachable
+							fatal("unreachable");
+						}
+						func_arg=array_get(&function_type->function.args,function_type->function.args.len-1);
+					}
+
+					if(func_arg->type==nullptr)fatal("unreachable");
+					if(Value_getType(arg_value)==nullptr)fatal("unreachable %d",i);
+					bool can_assign=Type_convertibleTo(Value_getType(arg_value),func_arg->type);
+					if(!can_assign){
+						fatal("cannot assign %s to %s in function call at %s",Type_asString(Value_getType(arg_value)),Type_asString(func_arg->type),Token_print(&token));
+					}
+				}
+
 				value->kind=VALUE_KIND_FUNCTION_CALL;
-				value->function_call.name=allocAndCopy(sizeof(Token),&nameToken);
-				value->function_call.args=values;			
+				value->function_call.function=function;
+				value->function_call.args=values;
 
 				continue;
 			}
@@ -761,7 +812,6 @@ enum VALUE_PARSE_RESULT Value_parse(Stack*stack,Value*value,struct TokenIter*tok
 
 VALUE_PARSE_RET_SUCCESS:
 	*token_iter_in=*token_iter;
-	println("returning value %s",Value_asString(value));
 	return VALUE_PRESENT;
 
 VALUE_PARSE_SYMBOL_NOT_FOUND:
@@ -771,6 +821,191 @@ VALUE_PARSE_RET_FAILURE:
 	return VALUE_INVALID;
 
 }
+
+Type*Value_getType(Value*value){
+	if(value==nullptr)fatal("unreachable");
+	switch(value->kind){
+		case VALUE_KIND_SYMBOL_REFERENCE:{
+			return value->symbol->type;
+		}
+		case VALUE_KIND_STATIC_VALUE:{
+			switch(value->static_value.value_repr->tag){
+				case TOKEN_TAG_LITERAL:{
+					switch(value->static_value.value_repr->literal.tag){
+						case TOKEN_LITERAL_TAG_NUMERIC:{
+							switch(value->static_value.value_repr->literal.numeric.tag){
+								case TOKEN_LITERAL_NUMERIC_TAG_CHAR:{
+									return &Type_CHAR;
+								}
+								case TOKEN_LITERAL_NUMERIC_TAG_INTEGER:{
+									return &Type_INT;
+								}
+								case TOKEN_LITERAL_NUMERIC_TAG_FLOAT:{
+									return &Type_F32;
+								}
+								default:fatal("unreachable");
+							}
+						}
+						case TOKEN_LITERAL_TAG_STRING:{
+							return &Type_STRING;
+						}
+						default:fatal("unreachable");
+					}
+				}
+				default:fatal("unreachable");
+			}
+		}
+		case VALUE_KIND_FUNCTION_CALL:{
+			// calling a function, which is a value containing a symbol, which has a type, this type is the function type, returning some value
+			// -> calling the function returns a value of the return type of the function
+			return value->function_call.function->symbol->type->function.ret;
+		}
+		case VALUE_KIND_TYPEREF:{
+			return &Type_TYPE;
+		}
+		case VALUE_KIND_ADDRESS_OF:{
+			Type pointerToInnerType={
+				.kind=TYPE_KIND_POINTER,
+				.pointer={
+					.base=Value_getType(value->addrOf.addressedValue),
+				}
+			};
+			return COPY_(&pointerToInnerType);
+		}
+		case VALUE_KIND_CAST:{
+			return value->cast.castTo;
+		}
+		case VALUE_KIND_PARENS_WRAPPED:{
+			return Value_getType(value->parens_wrapped.innerValue);
+		}
+		case VALUE_KIND_OPERATOR:{
+			switch(value->op.op){
+				case VALUE_OPERATOR_ADD:
+					// can be int-like, float-like, pointer or array
+					Type*left_type=Value_getType(value->op.left);
+					while(left_type->kind==TYPE_KIND_REFERENCE)left_type=left_type->reference.ref;
+
+					switch(left_type->kind){
+						case TYPE_KIND_PRIMITIVE:{
+							switch(left_type->primitive){
+								case TYPE_PRIMITIVE_KIND_I32:
+									return &Type_I32;
+								case TYPE_PRIMITIVE_KIND_F32:
+									return &Type_F32;
+								case TYPE_PRIMITIVE_KIND_F64:
+									return &Type_F64;
+								default:
+									fatal("unreachable");
+							}
+						}
+						case TYPE_KIND_POINTER:
+						case TYPE_KIND_ARRAY:
+							return left_type;
+						default:
+							fatal("unreachable %s",Type_asString(left_type));
+					}
+				case VALUE_OPERATOR_SUB:
+					fatal("unimplemented");
+				case VALUE_OPERATOR_MULT:
+					fatal("unimplemented");
+				case VALUE_OPERATOR_DIV:
+					fatal("unimplemented");
+				case VALUE_OPERATOR_MODULO:
+					fatal("unimplemented");
+				
+				case VALUE_OPERATOR_ADD_ASSIGN:
+					fatal("unimplemented");
+				case VALUE_OPERATOR_SUB_ASSIGN:
+					fatal("unimplemented");
+				case VALUE_OPERATOR_MULT_ASSIGN:
+					fatal("unimplemented");
+				case VALUE_OPERATOR_DIV_ASSIGN:
+					fatal("unimplemented");
+				case VALUE_OPERATOR_MODULO_ASSIGN:
+					fatal("unimplemented");
+				case VALUE_OPERATOR_BITWISE_AND_ASSIGN:
+					fatal("unimplemented");
+				case VALUE_OPERATOR_BITWISE_OR_ASSIGN:
+					fatal("unimplemented");
+				case VALUE_OPERATOR_BITWISE_XOR_ASSIGN:
+					fatal("unimplemented");
+				case VALUE_OPERATOR_LESS_THAN:
+					fatal("unimplemented");
+				case VALUE_OPERATOR_GREATER_THAN:
+					fatal("unimplemented");
+				case VALUE_OPERATOR_LESS_THAN_OR_EQUAL:
+					fatal("unimplemented");
+				case VALUE_OPERATOR_GREATER_THAN_OR_EQUAL:
+					fatal("unimplemented");
+				case VALUE_OPERATOR_INDEX:
+					switch(Value_getType(value->op.left)->kind){
+						case TYPE_KIND_ARRAY:
+							return Value_getType(value->op.left)->array.base;
+						case TYPE_KIND_POINTER:
+							return Value_getType(value->op.left)->pointer.base;
+						default:
+							fatal("unreachable");
+					}
+				case VALUE_OPERATOR_LOGICAL_AND:
+					fatal("unimplemented");
+				case VALUE_OPERATOR_LOGICAL_OR:
+					fatal("unimplemented");
+				case VALUE_OPERATOR_BITWISE_AND:
+					fatal("unimplemented");
+				case VALUE_OPERATOR_BITWISE_OR:
+					fatal("unimplemented");
+				case VALUE_OPERATOR_NOT_EQUAL:
+					fatal("unimplemented");
+				case VALUE_OPERATOR_EQUAL:
+					fatal("unimplemented");
+				case VALUE_OPERATOR_DOT:
+					fatal("unimplemented");
+				case VALUE_OPERATOR_ARROW:
+					fatal("unimplemented");
+				case VALUE_OPERATOR_CALL:
+					fatal("unimplemented");
+				case VALUE_OPERATOR_CONDITIONAL:
+					fatal("unimplemented");
+				case VALUE_OPERATOR_LEFT_SHIFT_ASSIGN:
+					fatal("unimplemented");
+				case VALUE_OPERATOR_RIGHT_SHIFT_ASSIGN:
+					fatal("unimplemented");
+				case VALUE_OPERATOR_DEREFERENCE:
+					fatal("unimplemented");
+
+				case VALUE_OPERATOR_ASSIGNMENT:
+
+				case VALUE_OPERATOR_POSTFIX_INCREMENT:
+				case VALUE_OPERATOR_POSTFIX_DECREMENT:
+				case VALUE_OPERATOR_PREFIX_INCREMENT:
+				case VALUE_OPERATOR_PREFIX_DECREMENT:
+				case VALUE_OPERATOR_UNARY_PLUS:
+				case VALUE_OPERATOR_UNARY_MINUS:
+				case VALUE_OPERATOR_LOGICAL_NOT:
+				case VALUE_OPERATOR_BITWISE_NOT:
+					return Value_getType(value->op.left);
+
+				case VALUE_OPERATOR_UNKNOWN:
+					fatal("unreachable");
+			}
+		}
+		case VALUE_KIND_CONDITIONAL:{
+			if(!Type_convertibleTo(Value_getType(value->conditional.onTrue),Value_getType(value->conditional.onFalse))){
+				fatal("cannot convert %s to %s in conditional",Type_asString(Value_getType(value->conditional.onTrue)),Type_asString(Value_getType(value->conditional.onFalse)));
+			}
+			return Value_getType(value->conditional.onTrue);
+		}
+		case VALUE_KIND_ARROW:{
+			fatal("unimplemented");
+		}
+		case VALUE_KIND_DOT:{
+			fatal("unimplemented");
+		}
+		default:
+			fatal("unimplemented %s",ValueKind_asString(value->kind));
+	}
+}
+
 char*Value_asString(Value*value){
 	char*ret=makeString();
 	switch(value->kind){
@@ -937,7 +1172,7 @@ char*Value_asString(Value*value){
 			break;
 		}
 		case VALUE_KIND_FUNCTION_CALL:{
-			stringAppend(ret,"calling function %.*s with %d arguments (",value->function_call.name->len,value->function_call.name->p,value->function_call.args.len);
+			stringAppend(ret,"calling function %s with %d arguments (",Value_asString(value->function_call.function),value->function_call.args.len);
 			for(int i=0;i<value->function_call.args.len;i++){
 				Value*arg=array_get(&value->function_call.args,i);
 				char*arg_str=Value_asString(arg);
@@ -1001,14 +1236,31 @@ const char* ValueKind_asString(enum VALUE_KIND kind){
 	switch(kind){
 		case VALUE_KIND_STATIC_VALUE:
 			return "VALUE_KIND_STATIC_VALUE";
+
 		case VALUE_KIND_OPERATOR:
-			return "VALUE_KIND_STATIC_VALUE";
+			return "VALUE_KIND_OPERATOR";
+			
 		case VALUE_KIND_SYMBOL_REFERENCE:
-			return "VALUE_KIND_STATIC_VALUE";
-		case VALUE_KIND_TYPEREF:
-			return "VALUE_KIND_STATIC_VALUE";
+			return "VALUE_KIND_SYMBOL_REFERENCE";
+		case VALUE_KIND_FUNCTION_CALL:
+			return "VALUE_KIND_FUNCTION_CALL";
+		case VALUE_KIND_ARROW:
+			return "VALUE_KIND_ARROW";
+		case VALUE_KIND_DOT:
+			return "VALUE_KIND_DOT";
+		case VALUE_KIND_ADDRESS_OF:
+			return "VALUE_KIND_ADDRESS_OF";
+		case VALUE_KIND_STRUCT_INITIALIZER:
+			return "VALUE_KIND_STRUCT_INITIALIZER";
+		case VALUE_KIND_CAST:
+			return "VALUE_KIND_CAST";
+
 		case VALUE_KIND_CONDITIONAL:
-			return "VALUE_KIND_STATIC_VALUE";
+			return "VALUE_KIND_CONDITIONAL";
+
+		case VALUE_KIND_TYPEREF:
+			return "VALUE_KIND_TYPEREF";
+
 		default:
 			fatal("unknown value kind %d",kind);
 	}

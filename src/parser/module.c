@@ -6,33 +6,53 @@ void Module_init(Module*module){
 	Stack_init(&module->stack,nullptr);
 
 	// add basic types
-	static const char* basicTypes[]={
-		"int",
-		"char",
-		"bool",
-		"void",
-		"float",
-		"double",
-		"nullptr_t",
+
+	{ // int
+		Type*newtype=&Type_INT;
+		array_append(&module->stack.types,&newtype);
+	}
+	{ // char
+		Type*newtype=&Type_CHAR;
+		array_append(&module->stack.types,&newtype);
+	}
+	{ // bool
+		Type*newtype=&Type_BOOL;
+		array_append(&module->stack.types,&newtype);
+	}
+	{ // void
+		Type*newtype=&Type_VOID;
+		array_append(&module->stack.types,&newtype);
+	}
+	{ // float
+		Type*newtype=&Type_FLOAT;
+		array_append(&module->stack.types,&newtype);
+	}
+	{ // double
+		Type*newtype=&Type_DOUBLE;
+		array_append(&module->stack.types,&newtype);
+	}
+	{ // nullptr_t
+		Type*newtype=&Type_NULLPTR_T;
+		array_append(&module->stack.types,&newtype);
+	}
+	{ // __builtin_va_list
 		// the actual type is implementation defined
 		// pointer-like though, it seems
 		// gets aliased as va_list in stdarg.h
-		"__builtin_va_list",
-		// for builtin functions taking a type as argument, e.g. sizeof
-		"__type",
-		// to perform magic in builtin functions
-		"__any",
-	};
-	static const int num_types=sizeof(basicTypes)/sizeof(basicTypes[0]);
-
-	for(int i=0;i<num_types;i++){
-		Type type={
-			.kind=TYPE_KIND_PRIMITIVE,
-			.name=allocAndCopy(sizeof(Token),Token_fromString(basicTypes[i])),
-		};
-		Type*newtype=COPY_(&type);
+		Type*newtype=&Type_VA_LIST;
 		array_append(&module->stack.types,&newtype);
 	}
+	{ // __type
+		// for builtin functions taking a type as argument, e.g. sizeof
+		Type*newtype=&Type_TYPE;
+		array_append(&module->stack.types,&newtype);
+	}
+	{ // __any
+		// to perform magic in builtin functions
+		Type*newtype=&Type_ANY;
+		array_append(&module->stack.types,&newtype);
+	}
+	
 
 	// add builtin symbols
 	// 1) sizeof function, which takes a TYPE_KIND_TYPE as argument and returns an int
@@ -44,7 +64,7 @@ void Module_init(Module*module){
 				.kind=TYPE_KIND_FUNCTION,
 				.function={
 					.args={},
-					.ret=Stack_findType(&module->stack, Token_fromString("int")),
+					.ret=&Type_INT,
 				},
 			})
 		};
@@ -52,33 +72,55 @@ void Module_init(Module*module){
 		array_append(&symbol.type->function.args,&(Symbol){
 			.kind=SYMBOL_KIND_DECLARATION,
 			.name=Token_fromString("type"),
-			.type=Stack_findType(&module->stack, Token_fromString("__type")),
+			.type=&Type_ANY,
 		});
 
 		Stack_addSymol(&module->stack,&symbol);
 	}
-	// 2) nullptr, basic symbol of type nullptr_t
+	// typeof function, which takes a TYPE_KIND_TYPE as argument and returns an int
+	{
+		Symbol symbol={
+			.kind=SYMBOL_KIND_DECLARATION,
+			.name=Token_fromString("typeof"),
+			.type=allocAndCopy(sizeof(Type),&(Type){
+				.kind=TYPE_KIND_FUNCTION,
+				.function={
+					.args={},
+					.ret=&Type_TYPE,
+				},
+			})
+		};
+		array_init(&symbol.type->function.args,sizeof(Symbol));
+		array_append(&symbol.type->function.args,&(Symbol){
+			.kind=SYMBOL_KIND_DECLARATION,
+			.name=Token_fromString("type"),
+			.type=&Type_ANY,
+		});
+
+		Stack_addSymol(&module->stack,&symbol);
+	}
+	// nullptr, basic symbol of type nullptr_t
 	{
 		Symbol symbol={
 			.kind=SYMBOL_KIND_DECLARATION,
 			.name=Token_fromString("nullptr"),
-			.type=Stack_findType(&module->stack, Token_fromString("nullptr_t")),
+			.type=&Type_NULLPTR_T,
 		};
 		Stack_addSymol(&module->stack,&symbol);
 	}
-	// 3) true and false
+	// true and false
 	{
 		Symbol symbol={
 			.kind=SYMBOL_KIND_DECLARATION,
 			.name=Token_fromString("true"),
-			.type=Stack_findType(&module->stack, Token_fromString("bool")),
+			.type=&Type_BOOL,
 		};
 		Stack_addSymol(&module->stack,&symbol);
 
 		symbol.name=Token_fromString("false");
 		Stack_addSymol(&module->stack,&symbol);
 	}
-	// 4) vararg related builtin magic functions
+	// vararg related builtin magic functions
 	{
 		// __builtin_va_start should be a macro, but for now, i dont care
 		// __builtin_va_start(va_list ap, <name of last arg in the function before varargs start, so e.g. int f(int b,...) -> va_start(my_va_list,b); even though b does not directly have something to do with the vararg list>)
@@ -89,7 +131,7 @@ void Module_init(Module*module){
 				.kind=TYPE_KIND_FUNCTION,
 				.function={
 					.args={},
-					.ret=nullptr,
+					.ret=&Type_VOID
 				},
 			}),
 		};
@@ -97,11 +139,11 @@ void Module_init(Module*module){
 		array_append(&symbol.type->function.args,&(Symbol){
 			.kind=SYMBOL_KIND_DECLARATION,
 			.name=Token_fromString("ap"),
-			.type=Stack_findType(&module->stack, Token_fromString("__builtin_va_list")),
+			.type=&Type_VA_LIST,
 		});
 		array_append(&symbol.type->function.args,&(Symbol){
 			.kind=SYMBOL_KIND_VARARG,
-			.type=Stack_findType(&module->stack, Token_fromString("__builtin_va_list")),
+			.type=&Type_VA_LIST,
 		});
 		Stack_addSymol(&module->stack,&symbol);
 
@@ -114,7 +156,7 @@ void Module_init(Module*module){
 				.kind=TYPE_KIND_FUNCTION,
 				.function={
 					.args={},
-					.ret=Stack_findType(&module->stack, Token_fromString("__any")),
+					.ret=&Type_ANY,
 				},
 			}),
 		};
@@ -122,12 +164,12 @@ void Module_init(Module*module){
 		array_append(&symbol.type->function.args,&(Symbol){
 			.kind=SYMBOL_KIND_DECLARATION,
 			.name=Token_fromString("ap"),
-			.type=Stack_findType(&module->stack, Token_fromString("__builtin_va_list")),
+			.type=&Type_VA_LIST,
 		});
 		array_append(&symbol.type->function.args,&(Symbol){
 			.kind=SYMBOL_KIND_DECLARATION,
 			.name=Token_fromString("type"),
-			.type=Stack_findType(&module->stack, Token_fromString("__type")),
+			.type=&Type_TYPE,
 		});
 		Stack_addSymol(&module->stack,&symbol);
 
@@ -140,7 +182,7 @@ void Module_init(Module*module){
 				.kind=TYPE_KIND_FUNCTION,
 				.function={
 					.args={},
-					.ret=nullptr,
+					.ret=&Type_VOID,
 				},
 			}),
 		};
@@ -148,7 +190,7 @@ void Module_init(Module*module){
 		array_append(&symbol.type->function.args,&(Symbol){
 			.kind=SYMBOL_KIND_DECLARATION,
 			.name=Token_fromString("ap"),
-			.type=Stack_findType(&module->stack, Token_fromString("__builtin_va_list")),
+			.type=&Type_VA_LIST,
 		});
 		Stack_addSymol(&module->stack,&symbol);
 
@@ -169,12 +211,12 @@ void Module_init(Module*module){
 		array_append(&symbol.type->function.args,&(Symbol){
 			.kind=SYMBOL_KIND_DECLARATION,
 			.name=Token_fromString("dest"),
-			.type=Stack_findType(&module->stack, Token_fromString("__builtin_va_list")),
+			.type=&Type_VA_LIST,
 		});
 		array_append(&symbol.type->function.args,&(Symbol){
 			.kind=SYMBOL_KIND_DECLARATION,
 			.name=Token_fromString("src"),
-			.type=Stack_findType(&module->stack, Token_fromString("__builtin_va_list")),
+			.type=&Type_VA_LIST,
 		});
 		Stack_addSymol(&module->stack,&symbol);
 	}

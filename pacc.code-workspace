@@ -4,9 +4,4 @@
 			"path": "."
 		}
 	],
-	"settings": {
-		"clangd.fallbackFlags": [
-			"-I${workspaceFolder}/include",
-		]
-	}
 }

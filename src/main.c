@@ -90,9 +90,11 @@ int main(int argc, const char**argv){
 	Tokenizer tokenizer={};
 	Tokenizer_init(&tokenizer,&code_file);
 
-	print("tokens from file %s:\n",input_filename);
-	highlight_token_kind=TOKEN_TAG_SYMBOL;
-	Tokenizer_print(&tokenizer);
+	if(0){
+		print("tokens from file %s:\n",input_filename);
+		highlight_token_kind=TOKEN_TAG_SYMBOL;
+		Tokenizer_print(&tokenizer);
+	}
 
 	// run preprocessor (phase 4)
 	if(run_preprocessor){
@@ -125,16 +127,19 @@ int main(int argc, const char**argv){
 		TokenIter_init(&token_iter,&tokenizer,(struct TokenIterConfig){.skip_comments=true,});
 
 		Preprocessor_consume(&preprocessor,&token_iter);
-
-		print("tokens from file %s, after running preprocessor:\n",input_filename);
-
-		highlight_token_kind=TOKEN_TAG_SYMBOL;
+		
 		Tokenizer preprocessed_tokenizer={
 			.token_src=tokenizer.token_src,
 			.tokens=preprocessor.tokens_out.data,
 			.num_tokens=preprocessor.tokens_out.len,
 		};
-		Tokenizer_print(&preprocessed_tokenizer);
+
+		if(0){
+			println("tokens from file %s, after running preprocessor:",input_filename);
+
+			highlight_token_kind=TOKEN_TAG_SYMBOL;
+			Tokenizer_print(&preprocessed_tokenizer);
+		}
 
 		tokenizer=preprocessed_tokenizer;
 
