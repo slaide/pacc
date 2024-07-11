@@ -126,6 +126,12 @@ void Type_init(Type**type);
 bool Type_equal(Type*a,Type*b);
 /* returns true if a is convertible to b */
 bool Type_convertibleTo(Type*a,Type*b);
+/*
+check if the type contains a field of name f
+
+if the type has no fields, e.g. numeric types, this function returns false
+*/
+bool Type_containsField(Type*t,Token*f);
 
 static Type
 	Type_I8={

@@ -226,6 +226,37 @@ enum SYMBOL_PARSE_RESULT SymbolDefinition_parse(Stack*stack,int*num_symbol_defs,
 					base_type.kind=TYPE_KIND_UNION;
 					base_type.union_.name=allocAndCopy(sizeof(Token),&nameToken);
 				}else fatal("bug");
+
+				// search stack for type with name
+				Type*type=Stack_findType(stack,&nameToken);
+				if(type==nullptr){
+					// if it does not already exist, add type to stack
+					switch(base_type.kind){
+						case TYPE_KIND_STRUCT:
+							if(base_type.struct_.name!=nullptr && base_type.name==nullptr){
+								base_type.name=base_type.struct_.name;
+							}
+							break;
+						case TYPE_KIND_ENUM:
+							if(base_type.enum_.name!=nullptr && base_type.name==nullptr){
+								base_type.name=base_type.enum_.name;
+							}
+							break;
+						case TYPE_KIND_UNION:
+							if(base_type.union_.name!=nullptr && base_type.name==nullptr){
+								base_type.name=base_type.union_.name;
+							}
+							break;
+						default:
+							fatal("bug");
+					}
+
+					if(base_type.name!=nullptr){
+						Stack_addType(stack,COPY_(&base_type));
+					}
+				}else{
+					base_type=*type;
+				}
 				
 				continue;
 			}
@@ -268,8 +299,10 @@ enum SYMBOL_PARSE_RESULT SymbolDefinition_parse(Stack*stack,int*num_symbol_defs,
 					continue;
 				}
 				
-				if(symbol_defs.len==0)
+				if(symbol_defs.len==0){
 					goto SYMBOL_PARSE_RET_FAILURE;
+				}
+
 				goto SYMBOL_PARSE_RET_SUCCESS;
 			}
 

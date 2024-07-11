@@ -311,3 +311,27 @@ bool Type_convertibleTo(Type*a,Type*b){
 
 	return false;
 }
+
+bool Type_containsField(Type*t,Token*f){
+	switch(t->kind){
+		case TYPE_KIND_STRUCT:
+			for(int i=0;i<t->struct_.members.len;i++){
+				Symbol*sym=array_get(&t->struct_.members,i);
+				if(Token_equalToken(sym->name,f)){
+					return true;
+				}
+			}
+			return false;
+		case TYPE_KIND_UNION:
+			for(int i=0;i<t->union_.members.len;i++){
+				Symbol*sym=array_get(&t->union_.members,i);
+				if(Token_equalToken(sym->name,f)){
+					return true;
+				}
+			}
+			return false;
+		default:
+			return false;
+	}
+	return false;
+}

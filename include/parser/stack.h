@@ -16,7 +16,7 @@ struct Stack{
     /*
     list of types defined in this stack
     
-    i.e. item type is Type
+    i.e. item type is Type*
     */
     array types;
     /* list of statements made in this stack, which may create temporary values that live on the stack
@@ -56,6 +56,10 @@ find a type by name, returns nullptr if none is found
 the returned pointer is valid until the module is destroyed (does not get invalidated from module changes)
 */
 struct Type* Stack_findType(Stack*stack,Token*name);
+/*
+add type to stack for future reference
+*/
+void Stack_addType(Stack*stack,Type*type);
 
 /// @brief  type cannot be parsed separate from symbol, so we parse a symbol as combination of type and name parser
 /// @param module module that provides the context for parsing

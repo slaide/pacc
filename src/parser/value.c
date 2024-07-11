@@ -880,10 +880,12 @@ Type*Value_getType(Value*value){
 		}
 		case VALUE_KIND_OPERATOR:{
 			switch(value->op.op){
-				case VALUE_OPERATOR_ADD:
+				case VALUE_OPERATOR_ADD:{
 					// can be int-like, float-like, pointer or array
 					Type*left_type=Value_getType(value->op.left);
-					while(left_type->kind==TYPE_KIND_REFERENCE)left_type=left_type->reference.ref;
+					while(left_type->kind==TYPE_KIND_REFERENCE){
+						left_type=left_type->reference.ref;
+					}
 
 					switch(left_type->kind){
 						case TYPE_KIND_PRIMITIVE:{
@@ -904,6 +906,8 @@ Type*Value_getType(Value*value){
 						default:
 							fatal("unreachable %s",Type_asString(left_type));
 					}
+					break;
+				}
 				case VALUE_OPERATOR_SUB:
 					fatal("unimplemented");
 				case VALUE_OPERATOR_MULT:
@@ -996,10 +1000,25 @@ Type*Value_getType(Value*value){
 			return Value_getType(value->conditional.onTrue);
 		}
 		case VALUE_KIND_ARROW:{
-			fatal("unimplemented");
+			// get type of dereferenced value
+			Type*left_type=Value_getType(value->arrow.left);
+			if(left_type->kind!=TYPE_KIND_POINTER){
+				fatal("cannot dereference non-pointer type %s",Type_asString(left_type));
+			}
+			left_type=left_type->pointer.base;
+			bool type_contains_field=Type_containsField(left_type,value->arrow.right);
+			if(!type_contains_field){
+				fatal("type %s does not contain field %.*s",Type_asString(left_type),value->arrow.right->len,value->arrow.right->p);
+			}
+			break;
 		}
 		case VALUE_KIND_DOT:{
-			fatal("unimplemented");
+			Type*left_type=Value_getType(value->dot.left);
+			bool type_contains_field=Type_containsField(left_type,value->arrow.right);
+			if(!type_contains_field){
+				fatal("type %s does not contain field %.*s",Type_asString(left_type),value->arrow.right->len,value->arrow.right->p);
+			}
+			break;
 		}
 		default:
 			fatal("unimplemented %s",ValueKind_asString(value->kind));

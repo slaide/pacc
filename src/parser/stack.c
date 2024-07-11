@@ -38,6 +38,7 @@ Symbol* Stack_findSymbol(Stack*stack,Token*name){
 struct Type* Stack_findType(Stack*stack,Token*name){
 	for(int i=0;i<stack->types.len;i++){
 		Type*type=*(Type**)array_get(&stack->types,i);
+
 		if(Token_equalToken(name,type->name)){
 			return type;
 		}
@@ -53,26 +54,53 @@ void Stack_ingestSymbolType(Stack*stack,Type*type){
     switch(type->kind){
         case TYPE_KIND_REFERENCE:{
             Type*ref=type->reference.ref;
-            if(ref==nullptr)fatal("bug");
             return Stack_ingestSymbolType(stack,ref);
         }
         case TYPE_KIND_ARRAY:{
             Type*ref=type->array.base;
             return Stack_ingestSymbolType(stack,ref);
         }
+        case TYPE_KIND_UNION:{
+            // insert struct type if not already present
+            Type*existing_type=Stack_findType(stack,type->name);
+            if(existing_type==nullptr && type->union_.name!=nullptr){
+                Type*t_copy=COPY_(type);
+                t_copy->name=type->union_.name;
+                array_append(&stack->types,&t_copy);
+            }
+
+            for(int i=0;i<type->union_.members.len;i++){
+                Symbol*field=array_get(&type->union_.members,i);
+                Stack_ingestSymbolType(stack,field->type);
+            }
+            break;
+        }
         case TYPE_KIND_STRUCT:{
+            // insert struct type if not already present
+            Type*existing_type=Stack_findType(stack,type->name);
+            if(existing_type==nullptr && type->struct_.name!=nullptr){
+                Type*t_copy=COPY_(type);
+                t_copy->name=type->struct_.name;
+                array_append(&stack->types,&t_copy);
+            }
+
             for(int i=0;i<type->struct_.members.len;i++){
                 Symbol*field=array_get(&type->struct_.members,i);
-                if(field==nullptr)fatal("bug");
                 Stack_ingestSymbolType(stack,field->type);
             }
             break;
         }
         case TYPE_KIND_ENUM:{
+            // insert struct type if not already present
+            Type*existing_type=Stack_findType(stack,type->name);
+            if(existing_type==nullptr && type->enum_.name!=nullptr){
+                Type*t_copy=COPY_(type);
+                t_copy->name=type->enum_.name;
+                array_append(&stack->types,&t_copy);
+            }
+            
             for(int i=0;i<type->enum_.members.len;i++){
                 struct EnumVariant*field=array_get(&type->enum_.members,i);
-                if(field==nullptr)fatal("bug");
-                if(field->name==nullptr)fatal("bug");
                 // add symbol of type int to stack symbols
                 Symbol newsym={
                     .name=COPY_(field->name),
@@ -100,6 +128,7 @@ enum STACK_PARSE_RESULT Stack_parse(Stack*stack,struct TokenIter*token_iter_in){
 				fatal("invalid statement at line %d col %d",token.line,token.col);
 				break;
 			case STATEMENT_PARSE_RESULT_PRESENT:
+                println("adding statement to stack %d %s",statement.tag,Statement_asString(&statement,0));
                 Stack_addStatement(stack, &statement);
 				continue;
 		}
@@ -181,4 +210,10 @@ void Stack_addStatement(Stack*stack,Statement*statement){
     Stack_ingestStatements(stack,statement);
 
     array_append(&stack->statements,COPY_(statement));
+}
+
+void Stack_addType(Stack*stack,Type*type){
+    if(type->name==nullptr)fatal("bug");
+    Type*t_copy=COPY_(type);
+    array_append(&stack->types,&t_copy);
 }

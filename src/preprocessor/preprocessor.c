@@ -198,7 +198,6 @@ void Preprocessor_processInclude(struct Preprocessor*preprocessor){
 				char*tok_filename=calloc(tok_filename_len+1,1);
 				strncpy(tok_filename, preprocessor->token_iter.tokenizer->token_src, tok_filename_len);
 				include_dir=dirname(tok_filename);
-				println("testing local include dir: %s, from %s",include_dir,preprocessor->token_iter.tokenizer->token_src);
 			}else{
 				include_dir=*(char**)array_get(&preprocessor->include_paths,i);
 			}
@@ -208,7 +207,6 @@ void Preprocessor_processInclude(struct Preprocessor*preprocessor){
 			discard sprintf(include_file_path,"%s/%s",include_dir,include_path);
 
 			if(access(include_file_path,F_OK)!=-1){
-				println("resolved include path %s to %s",include_path,include_file_path);
 				break;
 			}
 
@@ -225,7 +223,6 @@ void Preprocessor_processInclude(struct Preprocessor*preprocessor){
 		for(int i=0;i<preprocessor->already_included_files.len;i++){
 			char* already_included_file=*(char**)array_get(&preprocessor->already_included_files,i);
 			if(strcmp(already_included_file,include_file_path)==0){
-				println("file %s was already included",include_file_path);
 				file_already_included=true;
 				break;
 			}
@@ -1598,8 +1595,6 @@ struct PreprocessorExpression* Preprocessor_parseExpression(struct Preprocessor*
 void Preprocessor_consume(struct Preprocessor *preprocessor, struct TokenIter *token_iter){
 	struct TokenIter old_token_iter=preprocessor->token_iter;
 	preprocessor->token_iter=*token_iter;
-	
-	println("running preprocessor on file %s",preprocessor->token_iter.tokenizer->token_src);
 
 	/* last attempt to fetch a token was successfull? */
 	int ntr=1;
