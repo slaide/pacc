@@ -28,9 +28,6 @@ class TestResult(str,Enum):
     FAILURE="FAILURE"
     TIMEOUT="TIMEOUT"
 
-NUM_TEST_FAILURES_TO_PRINT=2
-NUM_TEST_FAILURES_SO_FAR=0
-
 @dataclass
 class Test:
     file: str
@@ -43,6 +40,7 @@ class Test:
     result:tp.Optional[TestResult]=None
 
     command:tp.Optional[str]=None
+    exit_code:tp.Optional[int]=None
 
     def copy(self)->"Test":
         return Test(
@@ -53,69 +51,58 @@ class Test:
             result=self.result
         )
 
-    def run(self,print_info:bool=True,timeout:float=0.5):
-        if print_info:
-            print(f"{BOLD}Running test: '{self.file}'{RESET}")
-
+    def run(self,timeout:float=0.5):
         command=f"bin/main {self.flags or ''} {self.file}"
         self.command=command
         cmd_timed_out=False
-        run_with_valgrind=False
-        while True:
-            myenv=os.environ.copy()
-            myenv["ASAN_OPTIONS"]="detect_leaks=0" # run with ASAN_OPTIONS=detect_leaks=0 # run with 
-            myenv["MallocNanoZone"]="0" # macos specific https://stackoverflow.com/questions/64126942/malloc-nano-zone-abandoned-due-to-inability-to-preallocate-reserved-vm-space
-            if run_with_valgrind:
-                #command=f"valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes {command}"
-                pass
 
-            popen_kwargs={
-                "stdout":sp.PIPE,
-                "stderr":sp.PIPE
-            }
+        myenv=os.environ.copy()
+        myenv["ASAN_OPTIONS"]="detect_leaks=0" # disable leak detection, which is not currently in scope of the ongoing code changes
+        myenv["MallocNanoZone"]="0" # macos specific https://stackoverflow.com/questions/64126942/malloc-nano-zone-abandoned-due-to-inability-to-preallocate-reserved-vm-space
 
-            # read stdout and stderr from pipe into buffer
-            stdout_buffer=[]
-            stderr_buffer=[]
+        popen_kwargs={
+            "stdout":sp.PIPE,
+            "stderr":sp.PIPE
+        }
 
-            def read_stream(stream, storage):
-                while True:
-                    data = stream.read(1024)
-                    if not data:
-                        break
-                    storage.append(data.decode())
-                stream.close()
+        # read stdout and stderr from pipe into buffer
+        stdout_buffer=[]
+        stderr_buffer=[]
 
-            # exec command
-            proc=sp.Popen(shlex.split(command), env=myenv, **popen_kwargs) # do not use shell=True because killing will not work
+        def read_stream(stream, storage):
+            while True:
+                data = stream.read(1024)
+                if not data:
+                    break
+                storage.append(data.decode())
+            stream.close()
 
-            stdout_thread = threading.Thread(target=read_stream, args=(proc.stdout, stdout_buffer))
-            stderr_thread = threading.Thread(target=read_stream, args=(proc.stderr, stderr_buffer))
-            
-            stdout_thread.start()
-            stderr_thread.start()
+        # exec command
+        proc=sp.Popen(shlex.split(command), env=myenv, **popen_kwargs) # do not use shell=True because killing will not work
 
-            try:
-                proc.wait(timeout=timeout)
-            except sp.TimeoutExpired:
-                proc.kill() # make sure the timed out process is terminated
-                cmd_timed_out=True
-            except Exception as e:
-                # catch other exceptions to ensure the process is killed
-                proc.kill()
-                raise RuntimeError(f"exception in command $ {command}:\n{e}")
-            
-            if cmd_timed_out:
-                if not run_with_valgrind:
-                    run_with_valgrind=True
-                    continue
+        stdout_thread = threading.Thread(target=read_stream, args=(proc.stdout, stdout_buffer))
+        stderr_thread = threading.Thread(target=read_stream, args=(proc.stderr, stderr_buffer))
+        
+        stdout_thread.start()
+        stderr_thread.start()
 
-                self.result=TestResult.TIMEOUT
+        try:
+            proc.wait(timeout=timeout)
+        except sp.TimeoutExpired:
+            proc.kill() # make sure the timed out process is terminated
+            cmd_timed_out=True
+        except Exception as e:
+            # catch other exceptions to ensure the process is killed
+            proc.kill()
+            raise RuntimeError(f"exception in command $ {command}:\n{e}")
+        
+        self.exit_code=proc.returncode
+        
+        if cmd_timed_out:
+            self.result=TestResult.TIMEOUT
 
-            stdout_thread.join()
-            stderr_thread.join()
-
-            break
+        stdout_thread.join()
+        stderr_thread.join()
 
         did_fail=proc.returncode!=0
 
@@ -123,44 +110,9 @@ class Test:
         if test_succeeded:
             self.result=TestResult.SUCCESS
             return
-        
-        global NUM_TEST_FAILURES_SO_FAR
-        NUM_TEST_FAILURES_SO_FAR+=1
-        if NUM_TEST_FAILURES_SO_FAR<=NUM_TEST_FAILURES_TO_PRINT:
-            def print_info():
-                print(f"{BOLD}{RED}Error: test '{self.file}' failed{RESET}")
-                print(f"$ {command}")
-                print(f"Goal: {self.goal}")
-                if cmd_timed_out:
-                    print(f"timed out after {timeout:.2f}s")
-                else:
-                    if self.should_fail:
-                        print(f"Expected to fail, but succeeded")
-                    else:
-                        print(f"Expected to succeed, but failed with code {proc.returncode}")
-
-            assert proc.stdout is not None
-            assert proc.stderr is not None
-
-            stdout_txt = ''.join(stdout_buffer)
-            stderr_txt = ''.join(stderr_buffer)
-
-            # print info once before stdout/stderr
-            print_info()
-
-            if len(stdout_txt)>0:
-                print("stdout: ---- \n",stdout_txt)
-            else:
-                print("stdout: [empty]")
-            if len(stderr_txt)>0:
-                print("stderr: ---- \n",stderr_txt)
-            else:
-                print("stderr: [empty]")
-
-            # print again after stdout/stderr
-            print_info()
             
-        self.result=TestResult.FAILURE
+        if not cmd_timed_out:
+            self.result=TestResult.FAILURE
 
 TEST_FILES=[
     Test(file="test/test001.c", goal="function definition without arguments, empty body"),
@@ -250,15 +202,17 @@ tests=[
 print(f"{BOLD}running tests...{RESET}")
 
 failed_tests:tp.List[Test]=[]
+timeout_tests:tp.List[Test]=[]
 
 # run all tests
 results={res:0 for res in TestResult}
 for test in tqdm(tests):
-    test.run(print_info=True,timeout=1.0)
+    test.run(timeout=1.0)
     assert test.result is not None
-    if test.result!=TestResult.SUCCESS:
-        print(f"{RED}Test failed: '{test.file}'{RESET}")
+    if test.result==TestResult.FAILURE:
         failed_tests.append(test)
+    if test.result==TestResult.TIMEOUT:
+        timeout_tests.append(test)
     results[test.result]+=1
 
 num_total=len(tests)
@@ -286,5 +240,11 @@ perc_timed_out_str=pad_to(perc_timed_out,6,fmt_str="{s:.2f}")
 print(f"{GREEN  }Succeeded : {num_succeeded_str} ({perc_success_str  } %){RESET}")
 print(f"{RED    }Failed    : {num_failed_str   } ({perc_failed_str   } %){RESET}")
 for test in failed_tests:
-    print(f"{RED}Failed test: '{test.command}'{RESET}")
+    if test.should_fail:
+        extra_info=" (expected to fail)"
+    else:
+        extra_info=f" (expected to succeed; failed with {test.exit_code})"
+    print(f"{RED}Failed test: '{test.command}'{RESET} {extra_info}")
 print(f"{ORANGE }Timed out : {num_timed_out_str} ({perc_timed_out_str} %){RESET}")
+for test in timeout_tests:
+    print(f"{ORANGE}Timed out test: '{test.command}'{RESET}")
