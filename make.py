@@ -43,7 +43,12 @@ file_paths=[
     "src/main.c",
 ]
 
-CC_CMD=f"{args.get('cc')} -g -O{args.get('opt')} -fPIC -std=c2x -I./include -Wall -Wextra -Wpedantic -Werror=switch -Werror=incompatible-pointer-types -Wno-incompatible-pointer-types-discards-qualifiers -fno-omit-frame-pointer -fno-common "+("-fsanitize=undefined -fsanitize=address " if args.get('enable_sanitizers') else "")
+CC_CMD=f"{args.get('cc')} -fPIC -g -std=c2x -O{args.get('opt')} -I./include " \
+    " -Wall -Wextra -Wpedantic " \
+    " -Werror=switch -Werror=incompatible-pointer-types " \
+    " -Wno-incompatible-pointer-types-discards-qualifiers " \
+    " -fno-omit-frame-pointer -fno-common " \
+    +(" -fsanitize=undefined -fsanitize=address " if args.get('enable_sanitizers') else "")
 
 class CompileFile(Command):
     " compile a single file "

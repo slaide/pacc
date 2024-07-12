@@ -17,9 +17,9 @@ void Stack_init(Stack*stack,Stack*parent){
 
     *stack=ret;
 }
-void Stack_addSymol(Stack*stack,Symbol*newsym){
-    if(newsym==nullptr)fatal("bug");
-    Symbol*sym_copy=COPY_(newsym);
+void Stack_addSymol(Stack*stack,Symbol*symbol){
+    if(symbol==nullptr)fatal("bug");
+    Symbol*sym_copy=COPY_(symbol);
     array_append(&stack->symbols,&sym_copy);
 }
 Symbol* Stack_findSymbol(Stack*stack,Token*name){
@@ -139,6 +139,86 @@ enum STACK_PARSE_RESULT Stack_parse(Stack*stack,struct TokenIter*token_iter_in){
     return STACK_PRESENT;
 }
 
+void Stack_validateValue(Stack*stack,Value*value){
+    if(value->kind==VALUE_KIND_UNKNOWN) fatal("unreachable");
+    Type*value_type=Value_getType(value);
+
+    switch(value->kind){
+        case VALUE_KIND_OPERATOR:{
+            switch(value->op.op){
+                case VALUE_OPERATOR_CALL:fatal("unreachable");
+                default:;
+            }
+
+            break;
+        }
+        case VALUE_KIND_FUNCTION_CALL:{
+            {
+                Type*function_type=Value_getType(value->function_call.function);
+                if(function_type->kind!=TYPE_KIND_FUNCTION){
+                    fatal("cannot call non-function type %s",Type_asString(value->typeref.type));
+                }
+                array values=value->function_call.args;
+
+                bool func_has_vararg=false;
+                // check if last arg is vararg
+                if(function_type->function.args.len>0){
+                    Symbol*last_arg=array_get(&function_type->function.args,function_type->function.args.len-1);
+                    func_has_vararg=last_arg->kind==SYMBOL_KIND_VARARG;
+                }
+                if(func_has_vararg){
+                    if(function_type->function.args.len-1 > values.len){
+                        fatal(
+                            "expected at least %d arguments but got %d at %s",
+                            function_type->function.args.len-1,
+                            values.len,
+                            "who know where.. (TODO)" // TODO(patrick)
+                        );
+                    }
+                }else{
+                    if(function_type->function.args.len!=values.len){
+                        fatal(
+                            "expected %d arguments but got %d at %s",
+                            function_type->function.args.len,values.len,
+                            "who know where.. (TODO)" // TODO(patrick)
+                        );
+                    }
+                }
+
+                // check argument types
+                for(int i=0;i<values.len;i++){
+                    Value*arg_value=array_get(&values,i);
+                    // get func arg
+                    Symbol*func_arg=nullptr;
+                    if(i<function_type->function.args.len){
+                        func_arg=array_get(&function_type->function.args,i);
+                    }else{
+                        if(!func_has_vararg){
+                            // should be unreachable
+                            fatal("unreachable");
+                        }
+                        func_arg=array_get(&function_type->function.args,function_type->function.args.len-1);
+                    }
+
+                    if(func_arg->type==nullptr)fatal("unreachable");
+                    if(Value_getType(arg_value)==nullptr)fatal("unreachable %d",i);
+                    bool can_assign=Type_convertibleTo(Value_getType(arg_value),func_arg->type);
+                    if(!can_assign){
+                        fatal(
+                            "cannot assign %s to %s in function call at %s",
+                            Type_asString(Value_getType(arg_value)),
+                            Type_asString(func_arg->type),
+                            "who know where.. (TODO)" // TODO(patrick)
+                        );
+                    }
+                }
+                break;
+            }
+        }
+        default:;
+    }
+}
+
 /* ingest statement and process to adjust stack state
 
 e.g. add symbol definitions
@@ -167,6 +247,7 @@ void Stack_ingestStatements(Stack*stack,Statement*statement){
             break;
         }
         case STATEMENT_KIND_FUNCTION_DEFINITION:
+            // statement->functionDef.stack.
             break;
         case STATEMENT_KIND_SYMBOL_DEFINITION:
             {
@@ -182,15 +263,38 @@ void Stack_ingestStatements(Stack*stack,Statement*statement){
             }
             break;
             
+        case STATEMENT_KIND_VALUE:
+            Stack_validateValue(stack,statement->value.value);
+            break;
+
+        case STATEMENT_KIND_RETURN:
+            if(statement->return_.retval!=nullptr){
+                Stack_validateValue(stack,statement->return_.retval);
+            }
+            break;
+
         case STATEMENT_KIND_EMPTY:
         case STATEMENT_KIND_BREAK:
         case STATEMENT_KIND_CONTINUE:
-        case STATEMENT_KIND_RETURN:
+            break;
+
         case STATEMENT_KIND_WHILE:
+            if(statement->whileLoop.condition==nullptr)fatal("");
+            Stack_validateValue(stack,statement->whileLoop.condition);
+            if(statement->whileLoop.body==nullptr)fatal("");
+            Stack_ingestStatements(stack,statement->whileLoop.body);
+            break;
         case STATEMENT_KIND_IF:
+            if(statement->if_.condition==nullptr)fatal("");
+            Stack_validateValue(stack,statement->if_.condition);
+            if(statement->if_.body==nullptr)fatal("");
+            Stack_ingestStatements(stack,statement->if_.body);
+            if(statement->if_.elseBody!=nullptr){
+                Stack_ingestStatements(stack,statement->if_.elseBody);
+            }
+            break;
         case STATEMENT_KIND_FOR:
         case STATEMENT_KIND_SWITCH:
-        case STATEMENT_KIND_VALUE:
         case STATEMENT_KIND_BLOCK:
         case STATEMENT_KIND_DEFAULT:
         case STATEMENT_KIND_GOTO:

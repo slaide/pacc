@@ -714,55 +714,7 @@ enum VALUE_PARSE_RESULT Value_parse(Stack*stack,Value*value,struct TokenIter*tok
 					}
 				}
 
-				if(value->kind==VALUE_KIND_UNKNOWN) fatal("unreachable");
-				Type*value_type=Value_getType(value);
-
-				if(value_type->kind!=TYPE_KIND_FUNCTION){
-					fatal("cannot call non-function type %s",Type_asString(value->typeref.type));
-				}
-
 				Value*function=allocAndCopy(sizeof(Value),value);
-				Type*function_type=value_type;
-				*value=(Value){};
-
-				bool func_has_vararg=false;
-				// check if last arg is vararg
-				if(function_type->function.args.len>0){
-					Symbol*last_arg=array_get(&function_type->function.args,function_type->function.args.len-1);
-					func_has_vararg=last_arg->kind==SYMBOL_KIND_VARARG;
-				}
-				if(func_has_vararg){
-					if(function_type->function.args.len-1 > values.len){
-						fatal("expected at least %d arguments but got %d at %s",function_type->function.args.len-1,values.len,Token_print(&token));
-					}
-				}else{
-					if(function_type->function.args.len!=values.len){
-						fatal("expected %d arguments but got %d at %s",function_type->function.args.len,values.len,Token_print(&token));
-					}
-				}
-
-				// check argument types
-				for(int i=0;i<values.len;i++){
-					Value*arg_value=array_get(&values,i);
-					// get func arg
-					Symbol*func_arg=nullptr;
-					if(i<function_type->function.args.len){
-						func_arg=array_get(&function_type->function.args,i);
-					}else{
-						if(!func_has_vararg){
-							// should be unreachable
-							fatal("unreachable");
-						}
-						func_arg=array_get(&function_type->function.args,function_type->function.args.len-1);
-					}
-
-					if(func_arg->type==nullptr)fatal("unreachable");
-					if(Value_getType(arg_value)==nullptr)fatal("unreachable %d",i);
-					bool can_assign=Type_convertibleTo(Value_getType(arg_value),func_arg->type);
-					if(!can_assign){
-						fatal("cannot assign %s to %s in function call at %s",Type_asString(Value_getType(arg_value)),Type_asString(func_arg->type),Token_print(&token));
-					}
-				}
 
 				value->kind=VALUE_KIND_FUNCTION_CALL;
 				value->function_call.function=function;
@@ -917,8 +869,32 @@ Type*Value_getType(Value*value){
 				case VALUE_OPERATOR_MODULO:
 					fatal("unimplemented");
 				
-				case VALUE_OPERATOR_ADD_ASSIGN:
-					fatal("unimplemented");
+				case VALUE_OPERATOR_ADD_ASSIGN:{
+					Type*left_type=Value_getType(value->op.left);
+					while(left_type->kind==TYPE_KIND_REFERENCE){
+						left_type=left_type->reference.ref;
+					}
+
+					switch(left_type->kind){
+						case TYPE_KIND_PRIMITIVE:{
+							switch(left_type->primitive){
+								case TYPE_PRIMITIVE_KIND_I32:
+									return &Type_I32;
+								case TYPE_PRIMITIVE_KIND_F32:
+									return &Type_F32;
+								case TYPE_PRIMITIVE_KIND_F64:
+									return &Type_F64;
+								default:
+									fatal("unreachable");
+							}
+						}
+						case TYPE_KIND_POINTER:
+						case TYPE_KIND_ARRAY:
+							return left_type;
+						default:
+							fatal("unreachable %s",Type_asString(left_type));
+					}
+				}
 				case VALUE_OPERATOR_SUB_ASSIGN:
 					fatal("unimplemented");
 				case VALUE_OPERATOR_MULT_ASSIGN:
@@ -933,14 +909,6 @@ Type*Value_getType(Value*value){
 					fatal("unimplemented");
 				case VALUE_OPERATOR_BITWISE_XOR_ASSIGN:
 					fatal("unimplemented");
-				case VALUE_OPERATOR_LESS_THAN:
-					fatal("unimplemented");
-				case VALUE_OPERATOR_GREATER_THAN:
-					fatal("unimplemented");
-				case VALUE_OPERATOR_LESS_THAN_OR_EQUAL:
-					fatal("unimplemented");
-				case VALUE_OPERATOR_GREATER_THAN_OR_EQUAL:
-					fatal("unimplemented");
 				case VALUE_OPERATOR_INDEX:
 					switch(Value_getType(value->op.left)->kind){
 						case TYPE_KIND_ARRAY:
@@ -950,18 +918,21 @@ Type*Value_getType(Value*value){
 						default:
 							fatal("unreachable");
 					}
-				case VALUE_OPERATOR_LOGICAL_AND:
-					fatal("unimplemented");
-				case VALUE_OPERATOR_LOGICAL_OR:
-					fatal("unimplemented");
 				case VALUE_OPERATOR_BITWISE_AND:
 					fatal("unimplemented");
 				case VALUE_OPERATOR_BITWISE_OR:
 					fatal("unimplemented");
+
+				case VALUE_OPERATOR_LOGICAL_AND:
+				case VALUE_OPERATOR_LOGICAL_OR:
+				case VALUE_OPERATOR_LESS_THAN:
+				case VALUE_OPERATOR_GREATER_THAN:
+				case VALUE_OPERATOR_LESS_THAN_OR_EQUAL:
+				case VALUE_OPERATOR_GREATER_THAN_OR_EQUAL:
 				case VALUE_OPERATOR_NOT_EQUAL:
-					fatal("unimplemented");
 				case VALUE_OPERATOR_EQUAL:
-					fatal("unimplemented");
+					return &Type_BOOL;
+					
 				case VALUE_OPERATOR_DOT:
 					fatal("unimplemented");
 				case VALUE_OPERATOR_ARROW:
@@ -974,8 +945,13 @@ Type*Value_getType(Value*value){
 					fatal("unimplemented");
 				case VALUE_OPERATOR_RIGHT_SHIFT_ASSIGN:
 					fatal("unimplemented");
-				case VALUE_OPERATOR_DEREFERENCE:
-					fatal("unimplemented");
+				case VALUE_OPERATOR_DEREFERENCE:{
+					Type*left_type=Value_getType(value->op.left);
+					if(left_type->kind!=TYPE_KIND_POINTER){
+						fatal("cannot dereference non-pointer type %s",Type_asString(left_type));
+					}
+					return left_type->pointer.base;
+				}
 
 				case VALUE_OPERATOR_ASSIGNMENT:
 

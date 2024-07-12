@@ -369,8 +369,8 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Stack*stack,Statement*out,struct Tok
 		*out=(Statement){
 			.tag=STATEMENT_KIND_WHILE,
 			.whileLoop={
-				.condition=allocAndCopy(sizeof(Value),&condition),
-				.body=allocAndCopy(sizeof(Statement),&whileBody),
+				.condition=COPY_(&condition),
+				.body=COPY_(&whileBody),
 			}
 		};
 
@@ -420,8 +420,8 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Stack*stack,Statement*out,struct Tok
 			.tag=STATEMENT_KIND_WHILE,
 			.whileLoop={
 				.doWhile=true,
-				.condition=allocAndCopy(sizeof(Value),&condition),
-				.body=allocAndCopy(sizeof(Statement), &whileBody)
+				.condition=COPY_(&condition),
+				.body=COPY_(&whileBody)
 			}
 		};
 
