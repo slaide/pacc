@@ -227,6 +227,7 @@ TEST_FILES=[
     Test(file="test/test064.c", level=TestLevel.PARSE, goal="function argument has incompatible type", should_fail=True),
     Test(file="test/test065.c", level=TestLevel.PARSE, goal="accessing non-existent field on a struct", should_fail=True),
     Test(file="test/test066.c", level=TestLevel.PARSE, goal="leftover tokens at end of file", should_fail=True),
+    Test(file="test/test067.c", level=TestLevel.PARSE, goal="compound symbol declarations"),
 ]
 
 tests=[
