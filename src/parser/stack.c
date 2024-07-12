@@ -257,8 +257,9 @@ void Stack_ingestStatements(Stack*stack,Statement*statement){
 
                     Stack_ingestSymbolType(stack,sym_def->symbol.type);
 
-                    Symbol*newsym=COPY_(&sym_def->symbol);
-                    Stack_addSymol(stack,&sym_def->symbol);
+                    if(sym_def->symbol.name!=nullptr){
+                        Stack_addSymol(stack,&sym_def->symbol);
+                    }
                 }
             }
             break;

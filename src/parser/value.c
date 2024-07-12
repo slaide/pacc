@@ -313,7 +313,7 @@ enum VALUE_PARSE_RESULT Value_parse(Stack*stack,Value*value,struct TokenIter*tok
 				}
 
 				if (!Token_equalString(&token, KEYWORD_CURLY_BRACES_CLOSE)){
-					fatal("expected %s after struct initializer at line %d col %d",KEYWORD_CURLY_BRACES_CLOSE,token.line,token.col);
+					fatal("expected %s after struct initializer at %s",KEYWORD_CURLY_BRACES_CLOSE,Token_print(&token));
 				}
 				TokenIter_nextToken(token_iter, &token);
 
