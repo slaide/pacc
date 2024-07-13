@@ -43,8 +43,12 @@ file_paths=[
     "src/main.c",
 ]
 
+# some flags from https://github.com/mcinglis/c-style
 CC_CMD=f"{args.get('cc')} -fPIC -g -std=c2x -O{args.get('opt')} -I./include " \
     " -Wall -Wextra -Wpedantic " \
+    " -Wformat=2 -Wno-unused-parameter -Wshadow " \
+    " -Wwrite-strings -Wstrict-prototypes -Wold-style-definition " \
+    " -Wredundant-decls -Wnested-externs -Wmissing-include-dirs " \
     " -Werror=switch -Werror=incompatible-pointer-types " \
     " -Wno-incompatible-pointer-types-discards-qualifiers " \
     " -fno-omit-frame-pointer -fno-common " \
