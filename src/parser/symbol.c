@@ -206,7 +206,7 @@ enum SYMBOL_PARSE_RESULT SymbolDefinition_parse(Stack*stack,int*num_symbol_defs,
 						TokenIter_nextToken(token_iter,&token);
 
 						base_type.kind=TYPE_KIND_ENUM;
-						base_type.enum_.name=unnamedTypeDefinition?nullptr:allocAndCopy(sizeof(Token),&nameToken);
+						base_type.enum_.name=unnamedTypeDefinition?nullptr:COPY_(&nameToken);
 						base_type.enum_.members=enumMembers;
 					}
 					else fatal("");
@@ -218,13 +218,13 @@ enum SYMBOL_PARSE_RESULT SymbolDefinition_parse(Stack*stack,int*num_symbol_defs,
 
 				if(type_is_struct){
 					base_type.kind=TYPE_KIND_STRUCT;
-					base_type.struct_.name=allocAndCopy(sizeof(Token),&nameToken);
+					base_type.struct_.name=COPY_(&nameToken);
 				}else if(type_is_enum){
 					base_type.kind=TYPE_KIND_ENUM;
-					base_type.enum_.name=allocAndCopy(sizeof(Token),&nameToken);
+					base_type.enum_.name=COPY_(&nameToken);
 				}else if(type_is_union){
 					base_type.kind=TYPE_KIND_UNION;
-					base_type.union_.name=allocAndCopy(sizeof(Token),&nameToken);
+					base_type.union_.name=COPY_(&nameToken);
 				}else fatal("bug");
 
 				// search stack for type with name

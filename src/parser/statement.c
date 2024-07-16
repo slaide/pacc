@@ -187,11 +187,14 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Stack*stack,Statement*out,struct Tok
 
 	// long list of stuff that can be a statement
 
+	// empty statement
 	if(Token_equalString(&token,";")){
 		TokenIter_nextToken(token_iter,&token);
 		*out=(Statement){.tag=STATEMENT_KIND_EMPTY};
 		goto STATEMENT_PARSE_RET_SUCCESS;
 	}
+
+	// block statement
 	if(Token_equalString(&token, "{")){
 		TokenIter_nextToken(token_iter,&token);
 
@@ -228,6 +231,8 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Stack*stack,Statement*out,struct Tok
 
 		goto STATEMENT_PARSE_RET_SUCCESS;
 	}
+
+	// switch-case 'default' clause
 	if(Token_equalString(&token,"default")){
 		TokenIter_nextToken(token_iter,&token);
 		if(!Token_equalString(&token,":")){
@@ -238,6 +243,8 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Stack*stack,Statement*out,struct Tok
 		*out=(Statement){.tag=STATEMENT_KIND_DEFAULT};
 		goto STATEMENT_PARSE_RET_SUCCESS;
 	}
+
+	// typedef
 	if(Token_equalString(&token,"typedef")){
 		TokenIter_nextToken(token_iter,&token);
 
@@ -265,6 +272,8 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Stack*stack,Statement*out,struct Tok
 
 		goto STATEMENT_PARSE_RET_SUCCESS;
 	}
+
+	// switch-case 'case' clause
 	if(Token_equalString(&token,"case")){
 		TokenIter_nextToken(token_iter,&token);
 
@@ -289,6 +298,8 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Stack*stack,Statement*out,struct Tok
 
 		goto STATEMENT_PARSE_RET_SUCCESS;
 	}
+
+	// if statement
 	if(Token_equalString(&token,"if")){
 		TokenIter_nextToken(token_iter,&token);
 		// check for (
@@ -339,6 +350,8 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Stack*stack,Statement*out,struct Tok
 
 		goto STATEMENT_PARSE_RET_SUCCESS;
 	}
+
+	// while loop
 	if(Token_equalString(&token,"while")){
 		TokenIter_nextToken(token_iter,&token);
 		// check for (
@@ -376,6 +389,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Stack*stack,Statement*out,struct Tok
 
 		goto STATEMENT_PARSE_RET_SUCCESS;
 	}
+	// do-while loop
 	if(Token_equalString(&token,"do")){
 		TokenIter_nextToken(token_iter,&token);
 		
@@ -427,6 +441,8 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Stack*stack,Statement*out,struct Tok
 
 		goto STATEMENT_PARSE_RET_SUCCESS;
 	}
+
+	// for loop
 	if(Token_equalString(&token,"for")){
 		TokenIter_nextToken(token_iter,&token);
 		if(!Token_equalString(&token,"(")){
@@ -493,6 +509,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Stack*stack,Statement*out,struct Tok
 		goto STATEMENT_PARSE_RET_SUCCESS;
 	}
 
+	// return statement
 	if(Token_equalString(&token,"return")){
 		TokenIter_nextToken(token_iter,&token);
 
@@ -517,6 +534,8 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Stack*stack,Statement*out,struct Tok
 
 		goto STATEMENT_PARSE_RET_SUCCESS;
 	}
+
+	// break statement
 	if(Token_equalString(&token,"break")){
 		TokenIter_nextToken(token_iter,&token);
 		*out=(Statement){.tag=STATEMENT_KIND_BREAK};
@@ -526,6 +545,8 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Stack*stack,Statement*out,struct Tok
 		TokenIter_nextToken(token_iter,&token);
 		goto STATEMENT_PARSE_RET_SUCCESS;
 	}
+
+	// continue statement
 	if(Token_equalString(&token,"continue")){
 		TokenIter_nextToken(token_iter,&token);
 		*out=(Statement){.tag=STATEMENT_KIND_CONTINUE};
@@ -535,6 +556,8 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Stack*stack,Statement*out,struct Tok
 		TokenIter_nextToken(token_iter,&token);
 		goto STATEMENT_PARSE_RET_SUCCESS;
 	}
+
+	// goto statement
 	if(Token_equalString(&token,"goto")){
 		TokenIter_nextToken(token_iter,&token);
 		Value label={};
@@ -584,6 +607,8 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Stack*stack,Statement*out,struct Tok
 
 		goto STATEMENT_PARSE_RET_SUCCESS;
 	}
+
+	// switch-case statement
 	if(Token_equalString(&token,"switch")){
 		TokenIter_nextToken(token_iter,&token);
 		*out=(Statement){.tag=STATEMENT_KIND_SWITCH,.switch_={}};
@@ -641,7 +666,7 @@ enum STATEMENT_PARSE_RESULT Statement_parse(Stack*stack,Statement*out,struct Tok
 		goto STATEMENT_PARSE_RET_SUCCESS;
 	}
 
-	// parse symbol definition
+	// symbol definition
 	do{
 		int numSymbols=0;
 		struct SymbolDefinition *symbols=nullptr;
