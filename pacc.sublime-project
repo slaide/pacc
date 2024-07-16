@@ -1,11 +1,12 @@
 {
     /* recommended packages:
-       ASNIescape - for ansi color sequences in build commands
+
+       ANSIescape - for ansi color sequences in build commands
        LSP
        LSP-clangd - for c syntax support
        LSP-pyright - for python syntax support
        requirementstxt - for requirements.txt syntax support
-       SideBadEnhancement - for expanded context menu, e.g. add file in the sidebar
+       SideBarEnhancement - for expanded context menu, e.g. add file in the sidebar
        Terminus - for a native terminal inside the editor
 
        LSP-copilot - for github copilot integration
@@ -25,6 +26,7 @@
         {
             "name": "make (rebuild)",
             "shell_cmd": "bash env.run ./make.py -f -j=0",
+            "working_dir": "$project_path",
             
             "target": "ansi_color_build",
             "syntax": "Packages/ANSIescape/ANSI.sublime-syntax"
@@ -32,6 +34,7 @@
         {
             "name": "make",
             "shell_cmd": "bash env.run ./make.py -j=0",
+            "working_dir": "$project_path",
             
             "target": "ansi_color_build",
             "syntax": "Packages/ANSIescape/ANSI.sublime-syntax"
@@ -39,6 +42,7 @@
         {
             "name": "test",
             "shell_cmd": "bash env.run ./test.py -j=0",
+            "working_dir": "$project_path",
             
             "target": "ansi_color_build",
             "syntax": "Packages/ANSIescape/ANSI.sublime-syntax"
@@ -46,6 +50,7 @@
         {
             "name": "make and test",
             "shell_cmd": "bash env.run bash -c './make.py -f -j=0 && ./test.py -j=0'",
+            "working_dir": "$project_path",
             
             "target": "ansi_color_build",
             "syntax": "Packages/ANSIescape/ANSI.sublime-syntax"
