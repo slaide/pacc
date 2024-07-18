@@ -13,7 +13,15 @@ from dataclasses import dataclass
 
 from tqdm import tqdm
 
-
+BOLD="\033[1m"
+RESET="\033[0m"
+RED="\033[31m"
+GREEN="\033[32m"
+ORANGE="\033[33m"
+BLUE="\033[34m"
+PURPLE="\033[35m"
+CYAN="\033[36m"
+LIGHT_GRAY="\033[37m"
 
 def get_num_cores()->int:
     """

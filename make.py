@@ -46,6 +46,7 @@ file_paths=[
 # some flags from https://github.com/mcinglis/c-style
 CC_CMD=f"{args.get('cc')} -fPIC -g -std=c2x -O{args.get('opt')} -I./include " \
     " -Wall -Wextra -Wpedantic " \
+    " -fmax-errors=1 " \
     " -Wformat=2 -Wno-unused-parameter -Wshadow " \
     " -Wwrite-strings -Wstrict-prototypes -Wold-style-definition " \
     " -Wredundant-decls -Wnested-externs -Wmissing-include-dirs " \
