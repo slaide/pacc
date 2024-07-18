@@ -92,9 +92,9 @@ def print_tokens(
                 print(f"\n{filename}:{last_loc.line+1} ",end="")
 
         elif mode=="logical":
-            if line_num>last_loc.line:
+            if token.log_loc.line>last_loc.line:
                 last_loc.col=0
-                last_loc.line=line_num
+                last_loc.line=token.log_loc.line
                 print(f"\n{filename}:{last_loc.line+1} ",end="")
 
         if mode=="source":
@@ -156,6 +156,7 @@ def main():
             self.file_contents=file_contents
             self.file_index=0
 
+            self.logical_line_index:int=0
             self.line_index:int=0
             self.col_index:int=0
 
@@ -166,10 +167,12 @@ def main():
             " return character at current pointer location in line "
             return self.c_fut(0)
 
-        def adv(self):
+        def adv(self,logical_line_adjust:bool=True):
             " advance current line pointer to next character in line "
             if self.remaining and t.c=="\n":
                 self.line_index+=1
+                if logical_line_adjust:
+                    self.logical_line_index+=1
                 self.col_index=0
             else:
                 self.col_index+=1
@@ -179,11 +182,11 @@ def main():
             # check for line continuation
             # requires: forward clash followed by whitespace
             if t.nc_rem>=1 and t.c=="\\" and is_whitespace(t.c_fut(1),True):
-                self.adv()
+                self.adv(logical_line_adjust=False)
                 while t.remaining and is_whitespace(t.c,False):
                     self.adv()
                 assert t.c=="\n", t.c
-                t.adv()
+                t.adv(logical_line_adjust=False)
 
         @property
         def nc_rem(self)->int:
@@ -198,6 +201,9 @@ def main():
             " return source location of current pointer into file "
 
             return SourceLocation(self.filename,self.line_index,self.col_index)
+
+        def current_log_loc(self):
+            return SourceLocation(self.filename,self.logical_line_index,self.col_index)
 
         @property
         def remaining(self):
@@ -273,7 +279,7 @@ def main():
     # tokenize the file (phase 3, combined with phase 2)
     current_token: tp.Optional[Token]=None
     while t.remaining:
-        current_token=Token("",t.current_loc())
+        current_token=Token("",t.current_loc(),log_loc=t.current_log_loc())
 
         skip_col_increment:bool=False
 
@@ -482,7 +488,8 @@ def main():
         t.add_tok(current_token)
 
     # visually inspect results
-    #print_tokens(t.tokens,ignore_comments=False,ignore_whitespace=True,pad_string=False)
+    print_tokens(t.tokens,mode="logical",ignore_comments=False,ignore_whitespace=True,pad_string=False)
+    return
 
     # remove whitespace and comment tokens
     def filter_token(token:Token)->bool:
@@ -494,8 +501,22 @@ def main():
             case tok:
                 return False
 
-    final_tokens=[t for t in t.tokens if not filter_token(t)]
-    print(f"parsed into {len(final_tokens)} tokens")
+    filtered__tokens=[tok for tok in t.tokens if not filter_token(tok)]
+    print(f"parsed into {len(filtered__tokens)} tokens")
+
+    # pack into lines for preprocessor (phase 4)
+
+    token_lines=[[]]
+    current_line_num=0
+    for tok in filtered__tokens:
+        if tok.log_loc.line!=current_line_num:
+            current_line_num=tok.log_loc.line
+            token_lines.append([])
+
+        token_lines[-1].append(tok)
+
+    for line in token_lines:
+        print(" ".join([tok.s for tok in line]))
 
     return
 
