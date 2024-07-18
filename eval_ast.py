@@ -123,17 +123,21 @@ def print_tokens(
 
     print("") # newline
 
+WHITESPACE_NONEWLINE_CHARS=set([whitespace_char for whitespace_char in " \t"])
+WHITESPACE_NEWLINE_CHARS=set([whitespace_char for whitespace_char in "\r\n"]+list(WHITESPACE_NONEWLINE_CHARS))
 def is_whitespace(c,newline_allowed:bool=True):
-    ret=c in set([whitespace_char for whitespace_char in " \t"])
     if newline_allowed:
-        ret|=c in set([whitespace_char for whitespace_char in "\r\n"])
-    return ret
+        return c in WHITESPACE_NEWLINE_CHARS
+    else:
+        return c in WHITESPACE_NONEWLINE_CHARS
 
+SPECIAL_CHARS_SET=set([special_char for special_char in "(){}[]<>,.+-/*&|%^;:=?!'@"])
 def is_special(c):
-    return c in set([special_char for special_char in "(){}[]<>,.+-/*&|%^;:=?!'\""])
+    return c in SPECIAL_CHARS_SET
 
+NUMERIC_CHARS_SET=set([n for n in "0123456789"])
 def is_numeric(c):
-    return c in set([n for n in "0123456789"])
+    return c in NUMERIC_CHARS_SET
 
 def main():
     if len(sys.argv)<2:
@@ -207,7 +211,7 @@ def main():
 
     t=Tokenizer(filename,code_file.read())
 
-    def compound_symbol_present(c_sym:str)->bool:
+    def compound_symbol_present(c_sym:str,current_token:Token)->bool:
         if t.c==c_sym[0] and t.nc_rem>=(len(c_sym)-1):
             ret_s=t.c
             for i in range(1,len(c_sym)):
@@ -267,9 +271,9 @@ def main():
         return False
 
     # tokenize the file (phase 3, combined with phase 2)
-    current_token=Token("",t.current_loc())
+    current_token: tp.Optional[Token]=None
     while t.remaining:
-        current_token:Token=Token("",t.current_loc())
+        current_token=Token("",t.current_loc())
 
         skip_col_increment:bool=False
 
@@ -419,46 +423,46 @@ def main():
 
                 # check for compound symbols (made up from more than one special symbol)
 
-                if compound_symbol_present("--"):
+                if compound_symbol_present("--",current_token):
                     break
-                if compound_symbol_present("-="):
+                if compound_symbol_present("-=",current_token):
                     break
-                if compound_symbol_present("++"):
+                if compound_symbol_present("++",current_token):
                     break
-                if compound_symbol_present("+="):
+                if compound_symbol_present("+=",current_token):
                     break
-                if compound_symbol_present("||"):
+                if compound_symbol_present("||",current_token):
                     break
-                if compound_symbol_present("|="):
+                if compound_symbol_present("|=",current_token):
                     break
-                if compound_symbol_present("&&"):
+                if compound_symbol_present("&&",current_token):
                     break
-                if compound_symbol_present("&="):
-                    break
-
-                if compound_symbol_present("^="):
+                if compound_symbol_present("&=",current_token):
                     break
 
-                if compound_symbol_present("!="):
-                    break
-                if compound_symbol_present("=="):
+                if compound_symbol_present("^=",current_token):
                     break
 
-                if compound_symbol_present("<="):
+                if compound_symbol_present("!=",current_token):
                     break
-                if compound_symbol_present(">="):
-                    break
-
-                if compound_symbol_present("<<"):
-                    break
-                if compound_symbol_present(">>"):
-                    break
-                if compound_symbol_present("<<="):
-                    break
-                if compound_symbol_present(">>="):
+                if compound_symbol_present("==",current_token):
                     break
 
-                if compound_symbol_present("->"):
+                if compound_symbol_present("<=",current_token):
+                    break
+                if compound_symbol_present(">=",current_token):
+                    break
+
+                if compound_symbol_present("<<",current_token):
+                    break
+                if compound_symbol_present(">>",current_token):
+                    break
+                if compound_symbol_present("<<=",current_token):
+                    break
+                if compound_symbol_present(">>=",current_token):
+                    break
+
+                if compound_symbol_present("->",current_token):
                     break
 
                 current_token.s=t.c
@@ -467,33 +471,31 @@ def main():
             current_token.s+=t.c
             t.adv()
 
-        if len(current_token.s)>0:
-            if current_token.token_type==TokenType.COMMENT:
-                assert current_token.s[0]=="/", f"{current_token}"
-            if current_token.token_type==TokenType.WHITESPACE:
-                assert current_token.is_whitespace, f"{current_token}"
+        if current_token is not None and len(current_token.s)>0:
             t.add_tok(current_token)
-            current_token=Token("",t.current_loc())
+            current_token=None
 
         if not skip_col_increment:
             t.adv()
 
-    if len(current_token.s)!=0:
+    if current_token is not None and len(current_token.s)!=0:
         t.add_tok(current_token)
 
     # visually inspect results
-    print_tokens(t.tokens,ignore_comments=False,ignore_whitespace=True,pad_string=False)
+    #print_tokens(t.tokens,ignore_comments=False,ignore_whitespace=True,pad_string=False)
 
     # remove whitespace and comment tokens
-    final_tokens=[]
-    for token in t.tokens:
+    def filter_token(token:Token)->bool:
         match token.token_type:
             case TokenType.COMMENT:
-                continue
+                return True
             case TokenType.WHITESPACE:
-                continue
+                return True
             case tok:
-                final_tokens.append(tok)
+                return False
+
+    final_tokens=[t for t in t.tokens if not filter_token(t)]
+    print(f"parsed into {len(final_tokens)} tokens")
 
     return
 
