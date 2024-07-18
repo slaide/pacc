@@ -157,6 +157,7 @@ def main():
             self.file_index=0
 
             self.logical_line_index:int=0
+            self.logical_col_index:int=0
             self.line_index:int=0
             self.col_index:int=0
 
@@ -173,8 +174,10 @@ def main():
                 self.line_index+=1
                 if logical_line_adjust:
                     self.logical_line_index+=1
+                    self.logical_col_index=0
                 self.col_index=0
             else:
+                self.logical_col_index+=1
                 self.col_index+=1
 
             self.file_index+=1
@@ -182,6 +185,9 @@ def main():
             # check for line continuation
             # requires: forward clash followed by whitespace
             if t.nc_rem>=1 and t.c=="\\" and is_whitespace(t.c_fut(1),True):
+                # line continuation character does not exist in the logical source code
+                self.logical_col_index-=1
+
                 self.adv(logical_line_adjust=False)
                 while t.remaining and is_whitespace(t.c,False):
                     self.adv()
@@ -203,7 +209,7 @@ def main():
             return SourceLocation(self.filename,self.line_index,self.col_index)
 
         def current_log_loc(self):
-            return SourceLocation(self.filename,self.logical_line_index,self.col_index)
+            return SourceLocation(self.filename,self.logical_line_index,self.logical_col_index)
 
         @property
         def remaining(self):
@@ -279,7 +285,7 @@ def main():
     # tokenize the file (phase 3, combined with phase 2)
     current_token: tp.Optional[Token]=None
     while t.remaining:
-        current_token=Token("",t.current_loc(),log_loc=t.current_log_loc())
+        current_token=Token("",src_loc=t.current_loc(),log_loc=t.current_log_loc())
 
         skip_col_increment:bool=False
 
@@ -502,7 +508,6 @@ def main():
                 return False
 
     filtered__tokens=[tok for tok in t.tokens if not filter_token(tok)]
-    print(f"parsed into {len(filtered__tokens)} tokens")
 
     # pack into lines for preprocessor (phase 4)
 
