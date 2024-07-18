@@ -2,6 +2,8 @@ import sys, os, io
 from dataclasses import dataclass, field
 import typing as tp
 from enum import Enum
+from pathlib import Path
+from glob import glob
 
 from libbuild import RED,GREEN,BLUE,RESET,LIGHT_GRAY,ORANGE
 
@@ -40,6 +42,24 @@ class Token:
     src_loc:SourceLocation
     token_type:TokenType=TokenType.SYMBOL
     log_loc:SourceLocation=field(default_factory=lambda:SourceLocation("",-1,-1))
+
+    expanded_from_macros:tp.Optional[tp.List[str]]=None
+
+    def expand_from(self,macro_name:str):
+        if self.expanded_from_macros is None:
+            self.expanded_from_macros=[]
+
+        self.expanded_from_macros.append(macro_name)
+
+    def is_expanded_from(self,macro_name:str):
+        if self.expanded_from_macros is None:
+            return False
+
+        for expanded_from_macro_name in self.expanded_from_macros:
+            if expanded_from_macro_name==macro_name:
+                return True
+
+        return False
 
     @property
     def is_whitespace(self)->bool:
@@ -131,7 +151,7 @@ def is_whitespace(c,newline_allowed:bool=True):
     else:
         return c in WHITESPACE_NONEWLINE_CHARS
 
-SPECIAL_CHARS_SET=set([special_char for special_char in "(){}[]<>,.+-/*&|%^;:=?!'@"])
+SPECIAL_CHARS_SET=set([special_char for special_char in "(){}[]<>,.+-/*&|%^;:=?!'@#"])
 def is_special(c):
     return c in SPECIAL_CHARS_SET
 
@@ -494,8 +514,7 @@ def main():
         t.add_tok(current_token)
 
     # visually inspect results
-    print_tokens(t.tokens,mode="logical",ignore_comments=False,ignore_whitespace=True,pad_string=False)
-    return
+    #print_tokens(t.tokens,mode="logical",ignore_comments=False,ignore_whitespace=True,pad_string=False)
 
     # remove whitespace and comment tokens
     def filter_token(token:Token)->bool:
@@ -507,21 +526,103 @@ def main():
             case tok:
                 return False
 
-    filtered__tokens=[tok for tok in t.tokens if not filter_token(tok)]
+    filtered_tokens=[tok for tok in t.tokens if not filter_token(tok)]
 
     # pack into lines for preprocessor (phase 4)
 
     token_lines=[[]]
     current_line_num=0
-    for tok in filtered__tokens:
+    for tok in filtered_tokens:
         if tok.log_loc.line!=current_line_num:
             current_line_num=tok.log_loc.line
             token_lines.append([])
 
         token_lines[-1].append(tok)
 
+    # execute preprocessor
+
+    lookup_dirs=[
+        Path("."),
+        Path("include"),
+        Path("musl/include")
+    ]
+
+    out_lines=[]
     for line in token_lines:
-        print(" ".join([tok.s for tok in line]))
+        if line[0].s=="#":
+            if len(line)<2:
+                # empty directive is allowed
+                continue
+
+            match line[1].s:
+                case "include":
+                    if line[2].s[0]=="\"":
+                        print("local include")
+
+                    elif line[2].s=="<":
+                        # collect remaining tokens in line into include string which must preserve whitespace from source
+                        include_str=""
+                        col_index=line[2].log_loc.col
+                        col_index+=1
+                        for tok in line[3:]:
+                            if tok.s==">":
+                                break
+                            if tok.log_loc.col!=col_index:
+                                include_str+=" "*(tok.log_loc.col-col_index)
+                            include_str+=tok.s
+                            col_index+=len(tok.s)
+                        print(f"including global lookup: {include_str}")
+
+                        found_file=False
+                        for dir in lookup_dirs:
+                            file_path=dir/include_str
+                            if file_path.exists():
+                                print(f"found {include_str} in {str(dir)}")
+                                found_file=True
+                                break
+
+                        if not found_file:
+                            fatal(f"did not find include file {include_str}")
+
+
+                case "define":
+                    print(f"unimplemented directive: {line[1].s}")
+                case "undef":
+                    print(f"unimplemented directive: {line[1].s}")
+
+                case "if":
+                    print(f"unimplemented directive: {line[1].s}")
+                case "ifdef":
+                    print(f"unimplemented directive: {line[1].s}")
+                case "ifndef":
+                    print(f"unimplemented directive: {line[1].s}")
+
+                case "elif":
+                    print(f"unimplemented directive: {line[1].s}")
+                case "elifdef":
+                    print(f"unimplemented directive: {line[1].s}")
+                case "elifndef":
+                    print(f"unimplemented directive: {line[1].s}")
+
+                case "else":
+                    print(f"unimplemented directive: {line[1].s}")
+                    
+                case "endif":
+                    print(f"unimplemented directive: {line[1].s}")
+                    
+                case "line":
+                    print(f"unimplemented directive: {line[1].s}")
+                case "error":
+                    print(f"unimplemented directive: {line[1].s}")
+                case "warning":
+                    print(f"unimplemented directive: {line[1].s}")
+                case "pragma":
+                    print(f"unimplemented directive: {line[1].s}")
+
+                case unimplemented_directive:
+                    print(f"directive {unimplemented_directive} unimplemented!")
+        else:
+            out_lines.append(line)
 
     return
 
