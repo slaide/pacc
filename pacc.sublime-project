@@ -40,6 +40,14 @@
             "syntax": "Packages/ANSIescape/ANSI.sublime-syntax"
         },
         {
+            "name": "build local and run main",
+            "shell_cmd": "bash -c './make.py --cc=clang-16 -f -j=0 && bin/main'",
+            "working_dir": "$project_path",
+            
+            "target": "ansi_color_build",
+            "syntax": "Packages/ANSIescape/ANSI.sublime-syntax"
+        },
+        {
             "name": "test",
             "shell_cmd": "bash env.run ./test.py -j=0",
             "working_dir": "$project_path",

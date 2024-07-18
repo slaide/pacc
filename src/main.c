@@ -26,7 +26,11 @@ void print_test_result(const char*testname,bool passed){
 	}
 }
 
+void openWindow();
 int main(int argc, const char**argv){
+	openWindow();
+	return 0;
+
 	if(argc<2){
 		fatal("no input file given. aborting.");
 	}

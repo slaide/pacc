@@ -39,6 +39,7 @@ file_paths=[
     "src/preprocessor/preprocessor.c",
 
     "src/file.c",
+    "src/openWindow.c",
     "src/tokenizer.c",
     "src/main.c",
 ]
@@ -54,6 +55,8 @@ CC_CMD=f"{args.get('cc')} -fPIC -g -std=c2x -O{args.get('opt')} -I./include " \
     " -Wno-incompatible-pointer-types-discards-qualifiers " \
     " -fno-omit-frame-pointer -fno-common " \
     +(" -fsanitize=undefined -fsanitize=address " if args.get('enable_sanitizers') else "")
+
+LINK_FLAGS=" -lvulkan -lxcb -lxcb-randr"
 
 class CompileFile(Command):
     " compile a single file "
@@ -78,7 +81,7 @@ class Link(Command):
             self.depends(d)
 
         deps_str=" ".join(obj_out_files)
-        self.cmd=f"{CC_CMD} -o {self.out} {deps_str}"
+        self.cmd=f"{CC_CMD} {LINK_FLAGS} -o {self.out} {deps_str}"
 
 class Mkdir(Command):
     " create a directory "
@@ -126,6 +129,10 @@ if __name__=="__main__":
     final_bin=Link("bin/main",objs=objs).depends(bin_dir)
 
     cmd_all.depends(final_bin)
+    cmd_all.depends(
+        CompileShader("src/shader.frag",output="frag.spv"),
+        CompileShader("src/shader.vert",output="vert.spv"),
+    )
 
     clean_target=Nop().depends(Remove("build"),Remove("bin"))
 
