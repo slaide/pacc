@@ -54,6 +54,14 @@
             
             "target": "ansi_color_build",
             "syntax": "Packages/ANSIescape/ANSI.sublime-syntax"
+        },
+        {
+            "name": "alternative_implementation",
+            "shell_cmd": "timeout 2 python3 eval_ast.py src/parser/statement.c",
+            "working_dir": "$project_path",
+            
+            "target": "ansi_color_build",
+            "syntax": "Packages/ANSIescape/ANSI.sublime-syntax"
         }
     ]
 }
