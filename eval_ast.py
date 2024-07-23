@@ -647,6 +647,8 @@ def main():
 
                 if do_eval:
                     def remove_defchecks(tokens:tp.List[Token])->tp.List[Token]:
+                        " execute the define operator "
+
                         # check if the 'defined' keyword even occurs in sequence, and return input sequence if not
                         define_found=False
                         for tok in tokens:
@@ -663,7 +665,6 @@ def main():
                         while tok_index<len(tokens):
                             tok=tokens[tok_index]
 
-                            # TODO the 'defined' operator should be executed before macro expansion, not after
                             if tok.s=="defined":
                                 tok_index+=1
                                 name_to_check_for_define=tokens[tok_index]
@@ -706,12 +707,134 @@ def main():
                                 ret.append(tok)
 
                         return ret
+
                     evalable_expression=expression_make_evalable(p,expanded_expression)
 
                     print(f"evaluating expression {tokens_into_str(tokens)}, i.e. {tokens_into_str(evalable_expression)}")
 
                     # TODO actually evaluate the expression
-                    if_value=True
+                    class Expression:
+                        def __init__(self):
+                            pass
+                        @property
+                        def val(self)->int:
+                            return 1
+
+                    @dataclass
+                    class ExpressionValue(Expression):
+                        value:int
+
+                        @property
+                        def val(self)->int:
+                            return self.value
+
+                    @dataclass
+                    class ExpressionAnd:
+                        left:tp.Type[Expression]
+                        right:tp.Type[Expression]
+
+                        @property
+                        def val(self)->int:
+                            return self.left.val and self.right.val
+
+                    @dataclass
+                    class ExpressionOr:
+                        left:tp.Type[Expression]
+                        right:tp.Type[Expression]
+
+                        @property
+                        def val(self)->int:
+                            return self.left.val or self.right.val
+
+                    @dataclass
+                    class ExpressionGreater:
+                        left:tp.Type[Expression]
+                        right:tp.Type[Expression]
+
+                        @property
+                        def val(self)->int:
+                            return self.left.val > self.right.val
+
+                    @dataclass
+                    class ExpressionLess:
+                        left:tp.Type[Expression]
+                        right:tp.Type[Expression]
+
+                        @property
+                        def val(self):
+                            return self.left.val < self.right.val
+
+                    class OperatorPrecedence(int,Enum):
+                        GREATER=0
+                        LESS=0
+                        AND=0
+                        OR=0
+
+                        NONE=20
+
+                    def parse_expression(tokens:tp.List[Token],current_operator_precedence:OperatorPrecedence)->tp.Tuple[Expression,tp.List[Token]]:
+                        "parse expression from list of tokens. returns an expression and the leftover tokens"
+
+                        ret=Expression()
+
+                        while len(tokens)>0:
+                            tok=tokens[0]
+
+                            if tok.token_type==TokenType.SYMBOL:
+                                fatal("")
+                            elif tok.token_type==TokenType.LITERAL_NUMBER:
+                                ret=ExpressionValue(int(tok.s))
+
+                                tokens=tokens[1:]
+                                continue
+                            elif tok.s==">":
+                                if current_operator_precedence<OperatorPrecedence.GREATER:
+                                    break
+                                tokens=tokens[1:]
+                                right,tokens=parse_expression(tokens,OperatorPrecedence.GREATER)
+
+                                ret=ExpressionGreater(ret,right)
+                                continue
+                            elif tok.s=="<":
+                                if current_operator_precedence<OperatorPrecedence.LESS:
+                                    break
+                                tokens=tokens[1:]
+                                right,tokens=parse_expression(tokens,OperatorPrecedence.LESS)
+
+                                ret=ExpressionLess(ret,right)
+                                continue
+                            elif tok.s=="&&":
+                                if current_operator_precedence<OperatorPrecedence.AND:
+                                    break
+                                tokens=tokens[1:]
+                                right,tokens=parse_expression(tokens,OperatorPrecedence.AND)
+
+                                ret=ExpressionAnd(ret,right)
+                                continue
+                            elif tok.s=="||":
+                                if current_operator_precedence<OperatorPrecedence.OR:
+                                    break
+                                tokens=tokens[1:]
+                                right,tokens=parse_expression(tokens,OperatorPrecedence.OR)
+                                
+                                ret=ExpressionOr(ret,right)
+                                continue
+                            elif tok.s=="(":
+                                tokens=tokens[1:]
+                                ret,tokens=parse_expression(tokens,OperatorPrecedence.NONE)
+                                assert tokens[0].s==")", f"expected token ), got instead {tokens[0]}"
+                                tokens=tokens[1:]
+                                continue
+
+                            break
+
+                        return ret,tokens
+
+                    expr,leftover_tokens=parse_expression(evalable_expression,OperatorPrecedence.NONE)
+                    assert len(leftover_tokens)==0, f"leftover tokens after evaluating preprocessor if statement: {tokens_into_str(leftover_tokens)}"
+                    print(f"evaluted to\n{expr.val}")
+
+                    if_value=expr.val==1
                 else:
                     if_value=False
                 return Preprocessor.If(tokens,if_value,first_if=first_if,do_eval=do_eval)
@@ -1176,7 +1299,7 @@ def main():
 
                         if self.is_empty():
                             break
-                            
+
                         line=self.get_next_line()
 
                     new_line=self.expand(expand_tokens)
