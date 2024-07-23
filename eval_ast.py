@@ -1,4 +1,4 @@
-import sys, os, io
+import sys, os, io, time
 from dataclasses import dataclass, field
 import typing as tp
 from enum import Enum
@@ -25,6 +25,13 @@ class SourceLocation:
     def with_col(self,col_override:int)->"SourceLocation":
         return SourceLocation(self.filename,self.line,col_override)
 
+    @staticmethod
+    def placeholder()->"SourceLocation":
+        return SourceLocation("",0,0)
+    @staticmethod
+    def invalid()->"SourceLocation":
+        return SourceLocation("",-1,-1)
+
 class TokenType(int,Enum):
     WHITESPACE=1
     COMMENT=2
@@ -32,7 +39,7 @@ class TokenType(int,Enum):
     SYMBOL=3
     OPERATOR_PUNCTUATION=4
 
-    KEYWORD=5
+    KEYWORD=6
 
     GLOBAL_HEADER=9 # local header is just a string
 
@@ -45,7 +52,7 @@ class Token:
     s:str
     src_loc:SourceLocation
     token_type:TokenType=TokenType.SYMBOL
-    log_loc:SourceLocation=field(default_factory=lambda:SourceLocation("",-1,-1))
+    log_loc:SourceLocation=field(default_factory=lambda:SourceLocation.invalid())
 
     expanded_from_macros:tp.Optional[tp.List[str]]=None
 
@@ -261,6 +268,9 @@ class Tokenizer:
                     if c!=c_sym[i]:
                         return False
                     ret_s+=c
+
+                # only advance if symbol has been found
+                for i in range(1,len(c_sym)):
                     t.adv()
 
                 current_token.s=ret_s
@@ -514,6 +524,9 @@ class Tokenizer:
                     if compound_symbol_present("->",current_token):
                         break
 
+                    if compound_symbol_present("...",current_token):
+                        break
+
                     # if not compound but still special:
                     current_token.token_type=TokenType.OPERATOR_PUNCTUATION
                     current_token.s=t.c
@@ -541,6 +554,15 @@ def main():
         return
 
     filename=sys.argv[1]
+
+    start_time=time.perf_counter()
+    def measure_timestep(msg:str):
+        nonlocal start_time
+        current_time=time.perf_counter()
+        time_elapsed_s=current_time-start_time
+        print(f"{msg} elapsed {time_elapsed_s:.3f}s")
+        start_time=current_time
+
     t=Tokenizer(filename)
     tokens=t.parse_tokens()
 
@@ -623,39 +645,51 @@ def main():
                         do_eval=False
 
                 if do_eval:
-                    def expand(p:"Preprocessor",tokens:tp.List[Token]):
-                        "expand macros in 'tokens' argument, which are the tokens from functionally one line of code"
-
-                        in_tokens=tokens
-                        ret=[]
-                        while 1:
-                            expanded_any=False
-                            current_tok_index=0
-                            while current_tok_index<len(in_tokens):
-                                tok=in_tokens[current_tok_index]
-                                current_tok_index+=1
-
-                                if tok.s in p.defines:
-                                    expanded_any=True
-
-                                    define=p.defines[tok.s]
-                                    if define.arguments is not None:
-                                        fatal("TODO replace arguments")
-
-                                    for out_tok in define.tokens:
-                                        ret.append(out_tok.copy())
-                                else:
-                                    ret.append(tok)
-
-                            if not expanded_any:
+                    def remove_defchecks(tokens:tp.List[Token])->tp.List[Token]:
+                        # check if the 'defined' keyword even occurs in sequence, and return input sequence if not
+                        define_found=False
+                        for tok in tokens:
+                            if tok.s=="defined":
+                                define_found=True
                                 break
 
-                            in_tokens=ret
-                            ret=[]
+                        if not define_found:
+                            return tokens
+
+                        # check for 'defined' operator and execute it
+                        ret=[]
+                        tok_index=0
+                        while tok_index<len(tokens):
+                            tok=tokens[tok_index]
+
+                            # TODO the 'defined' operator should be executed before macro expansion, not after
+                            if tok.s=="defined":
+                                tok_index+=1
+                                name_to_check_for_define=tokens[tok_index]
+                                if name_to_check_for_define.s=="(":
+                                    name_to_check_for_define=tokens[tok_index+1]
+                                    assert tokens[tok_index+2].s==")", f"{name_to_check_for_define=} {tokens[tok_index+2]}"
+                                    tok_index+=3
+
+                                if name_to_check_for_define.s in p.defines:
+                                    ret.append(Token("1",token_type=TokenType.LITERAL_NUMBER,src_loc=SourceLocation.placeholder()))
+                                else:
+                                    ret.append(Token("0",token_type=TokenType.LITERAL_NUMBER,src_loc=SourceLocation.placeholder()))
+
+                                continue
+
+                            ret.append(tok)
+                            tok_index+=1
 
                         return ret
 
-                    expanded_expression=expand(p,tokens)
+                    def tokens_into_str(tokens:tp.List[Token])->str:
+                        return ' '.join(tok.s for tok in tokens)
+
+                    defcheck_removed=remove_defchecks(tokens)
+                    print(f"eval define \n    {tokens_into_str(tokens)} \nto \n    {tokens_into_str(defcheck_removed)}")
+
+                    expanded_expression=p.expand(defcheck_removed)
 
                     def expression_make_evalable(p:"Preprocessor",tokens:tp.List[Token])->tp.List[Token]:
                         ret=[]
@@ -665,33 +699,15 @@ def main():
                             tok=tokens[tok_index]
                             tok_index+=1
 
-                            # TODO the 'defined' operator should be executed before macro expansion, not after
-                            if tok.s=="defined":
-                                name_to_check_for_define=tokens[tok_index]
-                                if name_to_check_for_define.s=="(":
-                                    name_to_check_for_define=tokens[tok_index+1]
-                                    assert tokens[tok_index+2].s==")", f"{tokens[tok_index+2]}"
-                                    tok_index+=3
-
-                                if name_to_check_for_define.s in p.defines:
-                                    ret.append(Token("1",token_type=TokenType.LITERAL_NUMBER,src_loc=SourceLocation("",0,0)))
-                                else:
-                                    ret.append(Token("0",token_type=TokenType.LITERAL_NUMBER,src_loc=SourceLocation("",0,0)))
-
-                                continue
-
                             if tok.token_type not in (TokenType.LITERAL_CHAR, TokenType.LITERAL_NUMBER, TokenType.OPERATOR_PUNCTUATION):
-                                ret.append(Token("0",token_type=TokenType.LITERAL_NUMBER,src_loc=SourceLocation("",0,0)))
+                                ret.append(Token("0",token_type=TokenType.LITERAL_NUMBER,src_loc=SourceLocation.placeholder()))
                             else:
                                 ret.append(tok)
 
                         return ret
                     evalable_expression=expression_make_evalable(p,expanded_expression)
 
-                    def tokens_into_str(tokens:tp.List[Token])->str:
-                        return ' '.join(tok.s for tok in tokens)
-
-                    print(f"evaluating expression {tokens_into_str(tokens)} as {tokens_into_str(expanded_expression)}, i.e. {tokens_into_str(evalable_expression)}")
+                    print(f"evaluating expression {tokens_into_str(tokens)}, i.e. {tokens_into_str(evalable_expression)}")
 
                     # TODO actually evaluate the expression
                     if_value=True
@@ -765,13 +781,13 @@ def main():
             self.files_included:tp.Dict[str,Preprocessor.IncludeFileReference]={}
             self.defines:tp.Dict[str,Preprocessor.Define]={
                 # from https://gcc.gnu.org/onlinedocs/cpp/Standard-Predefined-Macros.html
-                "__STDC__":Preprocessor.Define("__STDC__",[Token("1",token_type=TokenType.LITERAL_NUMBER,src_loc=SourceLocation("",0,0))]),
+                "__STDC__":Preprocessor.Define("__STDC__",[Token("1",token_type=TokenType.LITERAL_NUMBER,src_loc=SourceLocation.placeholder())]),
                 # __STDC_VERSION__ (from the link above): The value 199409L signifies the 1989 C standard as amended in 1994, which is
                 # the current default; the value 199901L signifies the 1999 revision of the C standard; the value 201112L signifies the 
                 # 2011 revision of the C standard; the value 201710L signifies the 2017 revision of the C standard (which is otherwise 
                 # identical to the 2011 version apart from correction of defects). The value 202311L is used for the experimental -std=c23 
                 # and -std=gnu23 modes. An unspecified value larger than 202311L is used for the experimental -std=c2y and -std=gnu2y modes.
-                "__STDC_VERSION__":Preprocessor.Define("__STDC_VERSION__",[Token("202311L",token_type=TokenType.LITERAL_NUMBER,src_loc=SourceLocation("",0,0))]),
+                "__STDC_VERSION__":Preprocessor.Define("__STDC_VERSION__",[Token("202311L",token_type=TokenType.LITERAL_NUMBER,src_loc=SourceLocation.placeholder())]),
 
                 # missing: __FILE__, __LINE__
 
@@ -817,6 +833,123 @@ def main():
 
         def add_lines(self,tokenized_lines:tp.List[tp.List[Token]]):
             self.lines=self.lines[:self.current_line_index]+tokenized_lines+self.lines[self.current_line_index:]
+
+
+        def expand(self,tokens:tp.List[Token]):
+            "expand macros in 'tokens' argument, which are the tokens from functionally one line of code"
+
+            in_tokens=tokens
+            ret:tp.List[Token]=[]
+            while True:
+                expanded_any=False
+                next_tok_index=0
+                while next_tok_index<len(in_tokens):
+                    tok:Token=in_tokens[next_tok_index]
+                    next_tok_index+=1
+
+                    # look for target macro
+                    target_macro=self.defines.get(tok.s)
+
+                    # check for recursion (and forbid it)
+                    if target_macro is not None:
+                        if tok.expanded_from_macros is not None:
+                            already_expanded=False
+                            for already_expanded_macro in tok.expanded_from_macros:
+                                if tok.s==already_expanded_macro:
+                                    already_expanded=True
+                                    break
+
+                            if already_expanded:
+                                target_macro=None
+
+                    # append token directly if no macro was found
+                    if target_macro is None:
+                        ret.append(tok)
+                        continue
+
+                    # store flag to indicate that a macro was found
+                    expanded_any=True
+
+                    # gather macro arguments (will remain empty if macro accepts no arguments)
+                    macro_arguments:tp.Dict[str,tp.List[Token]]={}
+
+                    # parse arguments, if macro expects any
+                    define=target_macro
+                    if define.arguments is not None:
+                        tok=in_tokens[next_tok_index]
+                        next_tok_index+=1
+
+                        assert tok.s=="(", f"{tok} define: {define}"
+                        tok=in_tokens[next_tok_index]
+                        next_tok_index+=1
+
+                        MACRO_VARARG_ARGNAME="__VA_ARGS__"
+                        for define_argument in define.arguments+([MACRO_VARARG_ARGNAME] if define.has_vararg else []):
+                            macro_arg:tp.List[Token]=[]
+                            nesting_depth=0
+                            "count paranethesis nesting level (other delimeters are not nested, e.g. curly braces can remain unpaired)"
+
+                            while 1:
+                                if tok.s=="(":
+                                    tok=in_tokens[next_tok_index]
+                                    next_tok_index+=1
+
+                                    nesting_depth+=1
+                                    continue
+
+                                if tok.s==")":
+                                    if nesting_depth==0:
+                                        break
+
+                                    tok=in_tokens[next_tok_index]
+                                    next_tok_index+=1
+
+                                    nesting_depth-=1
+                                    continue
+
+                                if tok.s=="," and define_argument!=MACRO_VARARG_ARGNAME:
+                                    tok=in_tokens[next_tok_index]
+                                    next_tok_index+=1
+                                    break
+
+                                macro_arg.append(tok)
+
+                                tok=in_tokens[next_tok_index]
+                                next_tok_index+=1
+
+                            if isinstance(define_argument,Token):
+                                macro_arguments[define_argument.s]=macro_arg
+                            else:
+                                macro_arguments[define_argument]=macro_arg
+
+                        # skip over trailing )
+                        if tok.s!=")":
+                            # may exit macro argument parsing by reaching ) or.. some other condition that is not quite clear
+                            next_tok_index+=1
+                            tok=in_tokens[next_tok_index]
+                        assert tok.s==")", f"{tok}"
+
+                    # expand macro body from arguments
+                    for out_tok in define.tokens:
+                        if out_tok.s in macro_arguments:
+                            for arg in macro_arguments[out_tok.s]:
+                                copied_token=arg.copy()
+                                copied_token.expand_from(define.name)
+                                ret.append(copied_token)
+                        else:
+                            copied_token=out_tok.copy()
+                            copied_token.expand_from(define.name)
+                            ret.append(copied_token)
+
+                # if no macro was expanded, no need to recurse -> stop expansion
+                if not expanded_any:
+                    break
+
+                # if a macro was expanded, resursive expansion may be required, so newly generated tokens become new input, and new output is generated
+                in_tokens=ret
+                ret=[]
+
+            return ret
 
         def run(self)->tp.List[tp.List[Token]]:
             while not self.is_empty():
@@ -947,16 +1080,22 @@ def main():
                             if not self.get_if_state():
                                 continue
 
-                            define=Preprocessor.Define(name=line[2].s,arguments=[],tokens=[])
+                            define=Preprocessor.Define(name=line[2].s,arguments=None,tokens=[])
 
                             if len(line)>3:
                                 first_tok_index=3
-                                if line[3].s=="(":
+
+                                if line[3].s=="(" and line[3].log_loc.col==line[2].log_loc.col+len(line[2].s):
                                     define.arguments=[]
 
                                     tok_index=4 # skip over opening paranthesis
                                     while line[tok_index].s!=")":
                                         argument_name=line[tok_index]
+                                        if argument_name.s=="...":
+                                            define.has_vararg=True
+                                            tok_index+=1
+                                            break # vararg must be last argument
+
                                         define.arguments.append(argument_name)
 
                                         tok_index+=1 # skip over argument name
@@ -972,12 +1111,14 @@ def main():
 
                             define_arg_str=""
                             if define.arguments is not None:
-                                define_arg_str=" ("+(",".join(t.s for t in define.arguments))+")"
+                                arg_str=(",".join(t.s for t in define.arguments))
+                                if define.has_vararg:
+                                    arg_str+=",..."
+                                define_arg_str=" ("+arg_str+")"
+
                             define_body_str=""
                             if len(define.tokens)>0:
                                 define_body_str=" as "+(" ".join(t.s for t in define.tokens))
-
-                            #print(f"define {define.name}{define_arg_str}{define_body_str}")
 
                             self.defines[define.name]=define
 
@@ -1003,10 +1144,7 @@ def main():
                     if not self.get_if_state():
                         continue
 
-                    new_line=[]
-                    for tok in line:
-                        # todo replace tokens in line before appending it to output
-                        new_line.append(tok)
+                    new_line=self.expand(line)
 
                     self.out_lines.append(new_line)
 
@@ -1015,7 +1153,7 @@ def main():
     p=Preprocessor()
     p.add_lines(token_lines)
     preprocessed_lines=p.run()
-    print(f"num lines after preprocessor: {len(preprocessed_lines)}")
+
     #return
     for line in preprocessed_lines:
         for tok in line:
