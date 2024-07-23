@@ -608,6 +608,7 @@ def main():
         class Define:
             name:str
             tokens:tp.List[Token]
+            " tokens that the macro is expanded to "
 
             arguments:tp.Optional[tp.List[Token]]=None
             has_vararg:bool=False
@@ -891,21 +892,13 @@ def main():
 
                             while 1:
                                 if tok.s=="(":
-                                    tok=in_tokens[next_tok_index]
-                                    next_tok_index+=1
-
                                     nesting_depth+=1
-                                    continue
 
                                 if tok.s==")":
                                     if nesting_depth==0:
                                         break
 
-                                    tok=in_tokens[next_tok_index]
-                                    next_tok_index+=1
-
                                     nesting_depth-=1
-                                    continue
 
                                 if tok.s=="," and define_argument!=MACRO_VARARG_ARGNAME:
                                     tok=in_tokens[next_tok_index]
@@ -930,16 +923,42 @@ def main():
                         assert tok.s==")", f"{tok}"
 
                     # expand macro body from arguments
-                    for out_tok in define.tokens:
+                    out_tok_index=0
+                    while out_tok_index < len(define.tokens):
+                        out_tok=define.tokens[out_tok_index]
+                        out_tok_index+=1
+
                         if out_tok.s in macro_arguments:
                             for arg in macro_arguments[out_tok.s]:
                                 copied_token=arg.copy()
                                 copied_token.expand_from(define.name)
                                 ret.append(copied_token)
-                        else:
-                            copied_token=out_tok.copy()
+
+                            continue
+
+                        if out_tok.s=="#":
+                            out_tok=define.tokens[out_tok_index]
+                            out_tok_index+=1
+
+                            assert out_tok.s in macro_arguments
+
+                            joined_str=""
+                            last_tok:tp.Optional[Token]=None
+                            for tok in macro_arguments[out_tok.s]:
+                                if last_tok is not None and tok.token_type==TokenType.SYMBOL:
+                                    joined_str+=" "
+                                joined_str+=tok.s
+                                last_tok=tok
+
+                            copied_token=Token('"'+joined_str+'"',src_loc=SourceLocation.placeholder(),token_type=TokenType.LITERAL_STRING)
                             copied_token.expand_from(define.name)
                             ret.append(copied_token)
+
+                            continue
+                        
+                        copied_token=out_tok.copy()
+                        copied_token.expand_from(define.name)
+                        ret.append(copied_token)
 
                 # if no macro was expanded, no need to recurse -> stop expansion
                 if not expanded_any:
@@ -952,8 +971,13 @@ def main():
             return ret
 
         def run(self)->tp.List[tp.List[Token]]:
+            skip_line_next=False
+            line=[]
             while not self.is_empty():
-                line=self.get_next_line()
+                if not skip_line_next:
+                    line=self.get_next_line()
+
+                skip_line_next=False
 
                 if len(line)==0:
                     continue
@@ -1144,7 +1168,18 @@ def main():
                     if not self.get_if_state():
                         continue
 
-                    new_line=self.expand(line)
+                    skip_line_next=True
+
+                    expand_tokens=[]
+                    while line[0].s!="#":
+                        expand_tokens.extend(line)
+
+                        if self.is_empty():
+                            break
+                            
+                        line=self.get_next_line()
+
+                    new_line=self.expand(expand_tokens)
 
                     self.out_lines.append(new_line)
 
