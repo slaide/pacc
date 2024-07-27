@@ -1059,11 +1059,27 @@ def main():
 
                             continue
 
+                        # check for stringification operator
                         if out_tok.s=="#":
                             out_tok=define.tokens[out_tok_index]
                             out_tok_index+=1
 
-                            assert out_tok.s in macro_arguments
+                            # check for concatentation operator
+                            if out_tok.s=="#":
+                                last_tok=ret[-1]
+
+                                concat_tok=define.tokens[out_tok_index]
+                                if concat_tok.s in macro_arguments:
+                                    assert len(macro_arguments[concat_tok.s])==1, f"can only concat individual tokens, yet got: {macro_arguments[concat_tok.s]}"
+                                    last_tok.s+=macro_arguments[concat_tok.s][0].s
+                                else:
+                                    last_tok.s+=concat_tok.s
+
+                                out_tok_index+=1
+
+                                continue
+
+                            assert out_tok.s in macro_arguments, out_tok.s
 
                             joined_str=""
                             last_tok:tp.Optional[Token]=None
@@ -1322,4 +1338,10 @@ def main():
 
 
 if __name__=="__main__":
+    start_time=time.perf_counter()
+
     main()
+
+    end_time=time.perf_counter()
+
+    print(f"ran in {(end_time-start_time):.4f}s")
