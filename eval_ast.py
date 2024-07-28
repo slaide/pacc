@@ -279,12 +279,13 @@ class Tokenizer:
                 return True
             return False
 
-        def parse_terminated_literal(start_char:str,end_char:str,current_token:Token)->bool:
+        def parse_terminated_literal(start_char:str,end_char:str,current_token:Token,token_type:TokenType)->bool:
             if len(current_token.s)>0:
                 return False
 
             if t.c==start_char:
                 if len(current_token.s)>0:
+                    current_token.token_type=token_type
                     return True
 
                 current_token.token_type=TokenType.LITERAL_CHAR
@@ -325,6 +326,7 @@ class Tokenizer:
 
                     t.adv()
 
+                current_token.token_type=token_type
                 return True
 
             return False
@@ -435,12 +437,12 @@ class Tokenizer:
                     break
 
                 # parse a character literal
-                if parse_terminated_literal("'","'",current_token):
+                if parse_terminated_literal("'","'",current_token,token_type=TokenType.LITERAL_CHAR):
                     skip_col_increment=True
                     break
 
                 # parse a string literal
-                if parse_terminated_literal('"','"',current_token):
+                if parse_terminated_literal('"','"',current_token,token_type=TokenType.LITERAL_STRING):
                     skip_col_increment=True
                     break
 
@@ -781,7 +783,7 @@ def main():
                             tok=tokens[0]
 
                             if tok.token_type==TokenType.SYMBOL:
-                                fatal("")
+                                fatal("786")
                             elif tok.token_type==TokenType.LITERAL_NUMBER:
                                 ret=ExpressionValue(int(tok.s))
 
@@ -1328,11 +1330,163 @@ def main():
     p.add_lines(token_lines)
     preprocessed_lines=p.run()
 
-    #return
+    # skip over phase 5 for now (handle character sets)
+
+    # phase 6 - concat adjacent string literals
+
+    linear_tokens=[]
     for line in preprocessed_lines:
-        for tok in line:
-            print(f"{tok.s} ",end="")
-        print("")
+        linear_tokens.extend(line)
+
+    tokens=[]
+    for tok in linear_tokens:
+        if len(tokens)>1:
+            if tok.token_type==TokenType.LITERAL_STRING and tokens[-1].token_type==TokenType.LITERAL_STRING:
+                tokens[-1].s=tokens[-1].s[:-1]+tok.s[1:]
+                continue
+
+        tokens.append(tok)
+
+    # phase 7 - syntactic and semantic analysis, code generation
+
+    for tok in tokens:
+        print(f"{tok.s}",end=" ")
+    print("")
+
+    class CType:
+        def __init__(self):
+            self.is_signed:tp.Optional[bool]=None
+            self.is_static:bool=False
+            self.is_atomic:bool=False
+            self.is_extern:bool=False
+            self.is_const:bool=False
+
+            self.is_explicit_struct:bool=False
+            self.is_explicit_enum:bool=False
+            self.is_explicit_union:bool=False
+
+            self.base_type:tp.Optional[CType]=None
+
+    class Symbol:
+        def __init__(self,ctype:CType,name:tp.Optional[Token]=None):
+            self.name=name
+            self.ctype=ctype
+
+    class Statement:
+        def __init__(self):
+            pass
+
+    class Block:
+        def __init__(self,
+            types:tp.Optional[tp.Dict[str,CType]]=None,
+
+            struct_types:tp.Optional[tp.Dict[str,CType]]=None,
+            enum_types:tp.Optional[tp.Dict[str,CType]]=None,
+            union_types:tp.Optional[tp.Dict[str,CType]]=None,
+        ):
+            self.types:tp.Dict[str,CType]={k:v for k,v in types.items()} if types is not None else {}
+
+            self.struct_types:tp.Dict[str,CType]={k:v for k,v in struct_types.items()} if struct_types is not None else {}
+            self.enum_types:tp.Dict[str,CType]={k:v for k,v in enum_types.items()} if enum_types is not None else {}
+            self.union_types:tp.Dict[str,CType]={k:v for k,v in union_types.items()} if union_types is not None else {}
+
+            self.symbols={}
+            self.statements:tp.List[Statement]=[]
+
+    class Ast:
+        @property
+        def empty(self)->bool:
+            return self.token_index>=len(self.tokens)
+
+        def __init__(self,tokens:tp.List[Token]):
+            self.tokens=tokens
+
+            self.token_index=0
+
+            self.block=Block(types={
+                "void":CType(),
+                "int":CType(),
+                "bool":CType(),
+            })
+
+            while 1:
+                match self.tok.s:
+                    case "typedef":
+                        fatal("typedef unimplemented")
+
+                    case "switch":
+                        fatal("switch unimplemented")
+                    case "while":
+                        fatal("while unimplemented")
+                    case "for":
+                        fatal("for unimplemented")
+                        
+                    case "break":
+                        fatal("break unimplemented")
+                    case "continue":
+                        fatal("continue unimplemented")
+                    case "return":
+                        fatal("return unimplemented")
+
+                    case "goto":
+                        fatal("goto unimplemented")
+
+                    case other:
+                        found_typedecl=other in self.block.types or other in set(("extern","static","signed","unsigned","struct","enum","union"))
+                        if found_typedecl:
+                            ctype=CType()
+                            while not self.empty:
+                                match self.tok.s:
+                                    case "extern":
+                                        ctype.is_extern=True
+                                    case "static":
+                                        ctype.is_static=True
+                                    case "signed":
+                                        ctype.is_signed=True
+                                    case "unsigned":
+                                        ctype.is_signed=False
+                                    case other:
+                                        if other in set(("(",")")):
+                                            fatal(f"unimplemented - {other}")
+
+                                        if other=="struct":
+                                            ctype.is_explicit_struct=True
+                                            self.token_index+=1
+                                        elif other=="enum":
+                                            ctype.is_explicit_enum=True
+                                            self.token_index+=1
+                                        elif other=="union":
+                                            ctype.is_explicit_union=True
+                                            self.token_index+=1
+
+                                        if other in self.block.types:
+                                            ctype.base_type=self.block.types[other]
+                                        elif ctype.is_explicit_struct and other in self.block.struct_types:
+                                            ctype.base_type=self.block.struct_types[other]
+                                        elif ctype.is_explicit_enum and other in self.block.enum_types:
+                                            ctype.base_type=self.block.enum_types[other]
+                                        elif ctype.is_explicit_union and other in self.block.union_types:
+                                            ctype.base_type=self.block.union_types[other]
+                                        else:
+                                            symbol=Symbol(ctype=ctype,name=self.tok)
+                                            fatal("unimplemented - handle symbol definition")
+
+                                self.token_index+=1
+
+                            fatal("unimplemented - symbol definition")
+
+                        if other in self.block.symbols:
+                            fatal("unimplemented - some value based off a symbol")
+
+                        fatal(f"unimplemented: {other}")
+
+        @property
+        def tok(self)->Token:
+            return self.tokens[self.token_index]
+
+    Ast(tokens)
+
+    # phase 8 - linking
 
     return
 
