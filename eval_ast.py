@@ -812,7 +812,21 @@ def main(filename:str|None=None):
                             print(f"{' '*indent}value: {self.val}")
 
                     @dataclass
-                    class ExpressionAnd(Expression):
+                    class ExpressionLogicalNot(Expression):
+                        expr:Expression
+
+                        @property
+                        @tp.override
+                        def val(self)->int:
+                            return int(not self.expr.val)
+
+                        @tp.override
+                        def print(self,indent:int=0):
+                            print(f"{' '*indent}logicalnot: {self.val}")
+                            self.expr.print(indent=indent+1)
+
+                    @dataclass
+                    class ExpressionLogicalAnd(Expression):
                         left:Expression
                         right:Expression
 
@@ -829,7 +843,7 @@ def main(filename:str|None=None):
                             self.right.print(indent=indent+1)
 
                     @dataclass
-                    class ExpressionOr(Expression):
+                    class ExpressionLogicalOr(Expression):
                         left:Expression
                         right:Expression
 
@@ -863,6 +877,23 @@ def main(filename:str|None=None):
                             self.right.print(indent=indent+1)
 
                     @dataclass
+                    class ExpressionGreaterOrEqual(Expression):
+                        left:Expression
+                        right:Expression
+
+                        @property
+                        @tp.override
+                        def val(self)->int:
+                            return int(bool(self.left.val) >= bool(self.right.val))
+                            
+                        @tp.override
+                        def print(self,indent:int=0):
+                            print(f"{' '*indent}greater: {self.val}")
+                            self.left.print(indent=indent+1)
+                            print(f"{' '*indent}>=")
+                            self.right.print(indent=indent+1)
+
+                    @dataclass
                     class ExpressionLess(Expression):
                         left:Expression
                         right:Expression
@@ -879,11 +910,38 @@ def main(filename:str|None=None):
                             print(f"{' '*indent}<")
                             self.right.print(indent=indent+1)
 
+                    @dataclass
+                    class ExpressionLessOrEqual(Expression):
+                        left:Expression
+                        right:Expression
+
+                        @property
+                        @tp.override
+                        def val(self)->int:
+                            return int(bool(self.left.val) <= bool(self.right.val))
+                            
+                        @tp.override
+                        def print(self,indent:int=0):
+                            print(f"{' '*indent}less: {self.val}")
+                            self.left.print(indent=indent+1)
+                            print(f"{' '*indent}<=")
+                            self.right.print(indent=indent+1)
+
                     class OperatorPrecedence(int,Enum):
                         GREATER=0
                         LESS=0
-                        AND=0
-                        OR=0
+
+                        LOGIC_AND=0
+                        LOGIC_OR=0
+
+                        BINARY_AND=0,
+                        BINARY_OR=0,
+
+                        LOGIC_NOT=0,
+                        BINARY_NOT=0,
+
+                        LESS_OR_EQUAL=0,
+                        GREATER_OR_EQUAL=0,
 
                         NONE=20
 
@@ -899,9 +957,25 @@ def main(filename:str|None=None):
                                 fatal("")
 
                             elif tok.token_type==TokenType.LITERAL_NUMBER:
-                                ret=ExpressionValue(int(tok.s))
+                                if tok.s[-1]=="L":
+                                    ret=ExpressionValue(int(tok.s[:-1]))
+                                else:
+                                    ret=ExpressionValue(int(tok.s))
 
                                 tokens=tokens[1:]
+                                continue
+
+                            elif tok.s=="!":
+                                if current_operator_precedence<OperatorPrecedence.LOGIC_NOT:
+                                    break
+
+                                if type(ret)!=Expression:
+                                    break
+
+                                tokens=tokens[1:]
+                                right,tokens=parse_expression(tokens,OperatorPrecedence.LOGIC_NOT)
+
+                                ret=ExpressionLogicalNot(right) # type: ignore
                                 continue
 
                             elif tok.s==">":
@@ -913,6 +987,15 @@ def main(filename:str|None=None):
                                 ret=ExpressionGreater(ret,right) # type: ignore
                                 continue
 
+                            elif tok.s==">=":
+                                if current_operator_precedence<OperatorPrecedence.GREATER_OR_EQUAL:
+                                    break
+                                tokens=tokens[1:]
+                                right,tokens=parse_expression(tokens,OperatorPrecedence.GREATER_OR_EQUAL)
+
+                                ret=ExpressionGreaterOrEqual(ret,right)
+                                continue
+
                             elif tok.s=="<":
                                 if current_operator_precedence<OperatorPrecedence.LESS:
                                     break
@@ -922,22 +1005,31 @@ def main(filename:str|None=None):
                                 ret=ExpressionLess(ret,right)
                                 continue
 
-                            elif tok.s=="&&":
-                                if current_operator_precedence<OperatorPrecedence.AND:
+                            elif tok.s=="<=":
+                                if current_operator_precedence<OperatorPrecedence.LESS_OR_EQUAL:
                                     break
                                 tokens=tokens[1:]
-                                right,tokens=parse_expression(tokens,OperatorPrecedence.AND)
+                                right,tokens=parse_expression(tokens,OperatorPrecedence.LESS_OR_EQUAL)
 
-                                ret=ExpressionAnd(ret,right)
+                                ret=ExpressionLessOrEqual(ret,right)
+                                continue
+
+                            elif tok.s=="&&":
+                                if current_operator_precedence<OperatorPrecedence.LOGIC_AND:
+                                    break
+                                tokens=tokens[1:]
+                                right,tokens=parse_expression(tokens,OperatorPrecedence.LOGIC_AND)
+
+                                ret=ExpressionLogicalAnd(ret,right)
                                 continue
 
                             elif tok.s=="||":
-                                if current_operator_precedence<OperatorPrecedence.OR:
+                                if current_operator_precedence<OperatorPrecedence.LOGIC_OR:
                                     break
                                 tokens=tokens[1:]
-                                right,tokens=parse_expression(tokens,OperatorPrecedence.OR)
+                                right,tokens=parse_expression(tokens,OperatorPrecedence.LOGIC_OR)
                                 
-                                ret=ExpressionOr(ret,right)
+                                ret=ExpressionLogicalOr(ret,right)
                                 continue
 
                             elif tok.s=="(":
@@ -2236,7 +2328,7 @@ def main(filename:str|None=None):
 
                             symbol=Symbol(ctype=ctype,name=self.tok)
                             self.t+=1
-                            continue
+                            continue 
 
                 break
 
@@ -2265,7 +2357,7 @@ if __name__=="__main__":
     test_files=Path("test").glob("test*.c")
     test_files=sorted(test_files)
 
-    for f_path in test_files[:9]:
+    for f_path in test_files[:10]:
         f=str(f_path)
 
         print(f"{ORANGE}{f}{RESET}")
