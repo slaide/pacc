@@ -1,15 +1,42 @@
-import sys, os, io, time
+import sys, io, time
 from dataclasses import dataclass, field
 import typing as tp
 from enum import Enum
 from pathlib import Path
-from glob import glob
+import inspect
+import re
+import glob
 
-from libbuild import RED,GREEN,BLUE,RESET,LIGHT_GRAY,ORANGE
+from libbuild import RED,GREEN,RESET,LIGHT_GRAY,ORANGE
 
-def fatal(message:str="",exit_code:int=-1):
-    sys.stdout.write(f"fatal{' :' if (len(message)>0) else ''} {message}\n")
-    sys.stdout.flush()
+def fatal(message:str="",exit_code:int=-1)->tp.NoReturn:
+    current_frame=inspect.currentframe()
+    assert current_frame is not None
+
+    frames=[current_frame]
+
+    while (current_frame:=current_frame.f_back) is not None:
+        frames.append(current_frame)
+
+    # omit bottom of stack (which is this function) and top of stack (which is the module)
+    # and reverse to print lowest stack information last
+    frames=reversed(frames[1:-2])
+
+    _=sys.stdout.write("FATAL >>>\n")
+
+    for current_frame in frames:
+        lineno=current_frame.f_lineno
+        filename=current_frame.f_code.co_filename
+
+        func_name=".".join(current_frame.f_code.co_qualname.split(".")[2:])
+        func_name=current_frame.f_code.co_qualname
+
+        _=sys.stdout.write(f" {LIGHT_GRAY}{filename}:{lineno} -{RESET} {func_name}\n")
+
+    if len(message)>0:
+        _=sys.stdout.write(f" >>> {RED}{message}{RESET}\n")
+
+    _=sys.stdout.flush()
 
     sys.exit(exit_code)
 
@@ -19,6 +46,7 @@ class SourceLocation:
     line:int
     col:int
 
+    @tp.override
     def __str__(self):
         return f"{self.filename}:{self.line+1}:{self.col+1}"
 
@@ -32,6 +60,50 @@ class SourceLocation:
     def invalid()->"SourceLocation":
         return SourceLocation("",-1,-1)
 
+T=tp.TypeVar("T")
+class Iter(tp.Generic[T]):
+    "bidirectional iterator over an indexable container"
+    def __init__(self,container:list[T],initial_index:int=0):
+        self.container=container
+        self.index=initial_index
+
+    def copy(self)->"Iter[T]":
+        "make a copy of the current state of the iterator and return the copy"
+        return Iter(container=self.container,initial_index=self.index)
+
+    @property
+    def item(self)->T:
+        return self.container[self.index]
+
+    def __len__(self)->int:
+        return len(self.container)
+
+    @property
+    def empty(self)->bool:
+        "return True if the index of the current element exceeds the container size"
+        return self.index>=len(self)
+
+    def __getitem__(self,i:int)->T:
+        "get item at self.index+i"
+        return (self+i).item
+
+    def __add__(self,o:int)->"Iter[T]":
+        "advance iterator by o items"
+        assert isinstance(o,int), f"{type(o)=}"
+        return Iter(self.container,self.index+o)
+
+    def __sub__(self,o:int)->"Iter[T]":
+        "reverse iterator by o items"
+        assert isinstance(o,int), f"{type(o)=}"
+        return Iter(self.container,self.index-o)
+
+    def offset(self,other:"Iter[T]")->int:            
+        "return offset between this iterator and another (must share container)"
+        if self.container is other.container:
+            return self.index-other.index
+
+        raise ValueError("cannot calculate offset between iterators not sharing containers")
+
 class TokenType(int,Enum):
     WHITESPACE=1
     COMMENT=2
@@ -41,7 +113,7 @@ class TokenType(int,Enum):
 
     KEYWORD=6
 
-    GLOBAL_HEADER=9 # local header is just a string
+    GLOBAL_HEADER=9 # local header is just a LITERAL_STRING
 
     LITERAL_STRING=0x10
     LITERAL_CHAR=0x11
@@ -54,7 +126,7 @@ class Token:
     token_type:TokenType=TokenType.SYMBOL
     log_loc:SourceLocation=field(default_factory=lambda:SourceLocation.invalid())
 
-    expanded_from_macros:tp.Optional[tp.List[str]]=None
+    expanded_from_macros:list[str]|None=None
 
     def copy(self)->"Token":
         return Token(
@@ -96,11 +168,17 @@ class Token:
     def is_empty(self):
         return len(self.s)==0
 
+    def is_valid_symbol(self)->bool:
+        if not re.match("[A-Za-z_][A-Za-z_0-9]*",self.s):
+            return False
+
+        return True
+
 
 def print_tokens(
-    tokens:tp.List[Token],
+    tokens:list[Token],
     mode:tp.Literal["source","logical"]="source",
-    filename="",
+    filename:str="",
     ignore_comments:bool=False,
     ignore_whitespace:bool=False,
     pad_string:bool=False
@@ -109,10 +187,7 @@ def print_tokens(
     token_index=0
     last_loc=SourceLocation("",-1,0)
 
-    line_num=0
     for token in tokens:
-        line_num=token.src_loc.line
-
         if token.token_type==TokenType.COMMENT and ignore_comments:
             continue
         elif token.token_type==TokenType.WHITESPACE and ignore_whitespace:
@@ -150,11 +225,11 @@ def print_tokens(
             color=ORANGE
 
         if pad_string:
-            PAD_STR_CHAR="-"
+            pad_str_char="-"
         else:
-            PAD_STR_CHAR=""
+            pad_str_char=""
 
-        print(f"{PAD_STR_CHAR}{color}{token.s}{RESET}{PAD_STR_CHAR}",end="")
+        print(f"{pad_str_char}{color}{token.s}{RESET}{pad_str_char}",end="")
 
         if mode=="source":
             last_loc.col=token.src_loc.col+len(token.s)
@@ -165,40 +240,43 @@ def print_tokens(
 
 WHITESPACE_NONEWLINE_CHARS=set([whitespace_char for whitespace_char in " \t"])
 WHITESPACE_NEWLINE_CHARS=set([whitespace_char for whitespace_char in "\r\n"]+list(WHITESPACE_NONEWLINE_CHARS))
-def is_whitespace(c,newline_allowed:bool=True):
+def is_whitespace(c:str,newline_allowed:bool=True):
+    assert len(c)==1, f"{len(c) = } ; {c = }"
     if newline_allowed:
         return c in WHITESPACE_NEWLINE_CHARS
     else:
         return c in WHITESPACE_NONEWLINE_CHARS
 
 SPECIAL_CHARS_SET=set([special_char for special_char in "(){}[]<>,.+-/*&|%^;:=?!\"'@#"])
-def is_special(c):
+def is_special(c:str):
+    assert len(c)==1, f"{len(c) = } ; {c = }"
     return c in SPECIAL_CHARS_SET
 
 NUMERIC_CHARS_SET=set([n for n in "0123456789"])
-def is_numeric(c):
+def is_numeric(c:str):
+    assert len(c)==1, f"{len(c) = } ; {c = }"
     return c in NUMERIC_CHARS_SET
 
 class Tokenizer:
     " utility class to convert file characters into tokens "
 
     def __init__(self,filename:str):
-        self.filename=filename
+        self.filename:str=filename
 
         file=io.open(filename)
-        self.file_contents=file.read()
+        self.file_contents:str=file.read()
         file.close()
-        self.file_index=0
+        self.file_index:int=0
 
         self.logical_line_index:int=0
         self.logical_col_index:int=0
         self.line_index:int=0
         self.col_index:int=0
 
-        self.tokens:tp.List[Token]=[]
+        self.tokens:list[Token]=[]
 
     @property
-    def c(self):
+    def c(self)->str:
         " return character at current pointer location in line "
         return self.c_fut(0)
 
@@ -233,16 +311,16 @@ class Tokenizer:
         " return number of characters left in file "
         return len(self.file_contents)-self.file_index-1
 
-    def c_fut(self,n):
+    def c_fut(self,n:int)->str:
         " return character in current line n positions in advance of current pointer "
         return self.file_contents[self.file_index+n]
 
-    def current_loc(self):
+    def current_loc(self)->"SourceLocation":
         " return source location of current pointer into file "
 
         return SourceLocation(self.filename,self.line_index,self.col_index)
 
-    def current_log_loc(self):
+    def current_log_loc(self)->"SourceLocation":
         return SourceLocation(self.filename,self.logical_line_index,self.logical_col_index)
 
     @property
@@ -308,6 +386,10 @@ class Tokenizer:
                                     current_token.s+="\0"
                                 case other:
                                     fatal(f"unimplemented {other}")
+                        elif t.c=="\"":
+                            current_token.s+="\""
+                        elif t.c=="'":
+                            current_token.s+="'"
                         else:
                             fatal(f"unimplemented escape sequence '\\{t.c}'")
 
@@ -332,7 +414,7 @@ class Tokenizer:
             return False
 
         # tokenize the file (phase 3, combined with phase 2)
-        current_token: tp.Optional[Token]=None
+        current_token:Token|None=None
         while t.remaining:
             current_token=Token("",src_loc=t.current_loc(),log_loc=t.current_log_loc())
 
@@ -550,20 +632,13 @@ class Tokenizer:
         return self.tokens
 
 
-def main():
-    if len(sys.argv)<2:
-        print("no input file")
-        return
+def main(filename:str|None=None):
+    if filename is None:
+        if len(sys.argv)<2:
+            print("no input file")
+            return
 
-    filename=sys.argv[1]
-
-    start_time=time.perf_counter()
-    def measure_timestep(msg:str):
-        nonlocal start_time
-        current_time=time.perf_counter()
-        time_elapsed_s=current_time-start_time
-        print(f"{msg} elapsed {time_elapsed_s:.3f}s")
-        start_time=current_time
+        filename=sys.argv[1]
 
     t=Tokenizer(filename)
     tokens=t.parse_tokens()
@@ -571,18 +646,18 @@ def main():
     # visually inspect results
     #print_tokens(tokens,mode="logical",ignore_comments=False,ignore_whitespace=True,pad_string=False)
 
-    # remove whitespace and comment tokens and pack into lines
     def filter_token(token:Token)->bool:
+        " remove whitespace and comment tokens and pack into lines"
         match token.token_type:
             case TokenType.COMMENT:
                 return True
             case TokenType.WHITESPACE:
                 return True
-            case tok:
+            case _:
                 return False
 
-    def collapse_tokens_into_lines(tokens)->tp.List[tp.List[Token]]:
-        token_lines=[[]]
+    def collapse_tokens_into_lines(tokens:list[Token])->list[list[Token]]:
+        token_lines:list[list[Token]]=[[]]
         current_line_num=0
         for tok in tokens:
             if filter_token(tok):
@@ -609,13 +684,13 @@ def main():
         @dataclass
         class Define:
             name:str
-            tokens:tp.List[Token]
+            tokens:list[Token]
             " tokens that the macro is expanded to "
 
-            arguments:tp.Optional[tp.List[Token]]=None
+            arguments:list[Token]|None=None
             has_vararg:bool=False
 
-            generate_func:tp.Optional[tp.Callable[[Token,tp.List[Token]],None]]=None
+            generate_func:tp.Callable[[Token,list[Token]],None]|None=None
             """
             function that generates the output tokens, instead of self.tokens
 
@@ -625,7 +700,7 @@ def main():
 
         @dataclass
         class If:
-            value_tokens:tp.List[Token]
+            value_tokens:list[Token]
             value:bool
 
             do_eval:bool=True
@@ -637,7 +712,7 @@ def main():
             "flag set to True only on #else directives to detect double-else or conditionals after else"
 
             @staticmethod
-            def eval(p:"Preprocessor",tokens:tp.List[Token],first_if:bool=False)->"Preprocessor.If":
+            def eval(p:"Preprocessor",tokens:list[Token],first_if:bool=False)->"Preprocessor.If":
                 do_eval=True
                 if len(p.if_stack)>0:
                     last_if_item=p.if_stack[-1][-1]
@@ -648,7 +723,7 @@ def main():
                         do_eval=False
 
                 if do_eval:
-                    def remove_defchecks(tokens:tp.List[Token])->tp.List[Token]:
+                    def remove_defchecks(tokens:list[Token])->list[Token]:
                         " execute the define operator "
 
                         # check if the 'defined' keyword even occurs in sequence, and return input sequence if not
@@ -662,7 +737,7 @@ def main():
                             return tokens
 
                         # check for 'defined' operator and execute it
-                        ret=[]
+                        ret:list[Token]=[]
                         tok_index=0
                         while tok_index<len(tokens):
                             tok=tokens[tok_index]
@@ -687,7 +762,7 @@ def main():
 
                         return ret
 
-                    def tokens_into_str(tokens:tp.List[Token])->str:
+                    def tokens_into_str(tokens:list[Token])->str:
                         return ' '.join(tok.s for tok in tokens)
 
                     defcheck_removed=remove_defchecks(tokens)
@@ -695,8 +770,8 @@ def main():
 
                     expanded_expression=p.expand(defcheck_removed)
 
-                    def expression_make_evalable(p:"Preprocessor",tokens:tp.List[Token])->tp.List[Token]:
-                        ret=[]
+                    def expression_make_evalable(p:"Preprocessor",tokens:list[Token])->list[Token]:
+                        ret:list[Token]=[]
 
                         tok_index=0
                         while tok_index<len(tokens):
@@ -714,57 +789,95 @@ def main():
 
                     print(f"evaluating expression {tokens_into_str(tokens)}, i.e. {tokens_into_str(evalable_expression)}")
 
-                    # TODO actually evaluate the expression
                     class Expression:
                         def __init__(self):
                             pass
                         @property
                         def val(self)->int:
                             return 1
+                        def print(self,indent:int=0):
+                            print(f"{' '*indent}val: {self.val}")
 
                     @dataclass
                     class ExpressionValue(Expression):
                         value:int
 
                         @property
+                        @tp.override
                         def val(self)->int:
                             return self.value
 
+                        @tp.override
+                        def print(self,indent:int=0):
+                            print(f"{' '*indent}value: {self.val}")
+
                     @dataclass
-                    class ExpressionAnd:
-                        left:tp.Type[Expression]
-                        right:tp.Type[Expression]
+                    class ExpressionAnd(Expression):
+                        left:Expression
+                        right:Expression
 
                         @property
+                        @tp.override
                         def val(self)->int:
-                            return self.left.val and self.right.val
+                            return int(bool(self.left.val) and bool(self.right.val))
+                            
+                        @tp.override
+                        def print(self,indent:int=0):
+                            print(f"{' '*indent}and: {self.val}")
+                            self.left.print(indent=indent+1)
+                            print(f"{' '*indent}&&")
+                            self.right.print(indent=indent+1)
 
                     @dataclass
-                    class ExpressionOr:
-                        left:tp.Type[Expression]
-                        right:tp.Type[Expression]
+                    class ExpressionOr(Expression):
+                        left:Expression
+                        right:Expression
 
                         @property
+                        @tp.override
                         def val(self)->int:
-                            return self.left.val or self.right.val
+                            return int(bool(self.left.val) or bool(self.right.val))
+                            
+                        @tp.override
+                        def print(self,indent:int=0):
+                            print(f"{' '*indent}or: {self.val}")
+                            self.left.print(indent=indent+1)
+                            print(f"{' '*indent} ||")
+                            self.right.print(indent=indent+1)
 
                     @dataclass
-                    class ExpressionGreater:
-                        left:tp.Type[Expression]
-                        right:tp.Type[Expression]
+                    class ExpressionGreater(Expression):
+                        left:Expression
+                        right:Expression
 
                         @property
+                        @tp.override
                         def val(self)->int:
-                            return self.left.val > self.right.val
+                            return int(bool(self.left.val) > bool(self.right.val))
+                            
+                        @tp.override
+                        def print(self,indent:int=0):
+                            print(f"{' '*indent}greater: {self.val}")
+                            self.left.print(indent=indent+1)
+                            print(f"{' '*indent}>")
+                            self.right.print(indent=indent+1)
 
                     @dataclass
-                    class ExpressionLess:
-                        left:tp.Type[Expression]
-                        right:tp.Type[Expression]
+                    class ExpressionLess(Expression):
+                        left:Expression
+                        right:Expression
 
                         @property
-                        def val(self):
-                            return self.left.val < self.right.val
+                        @tp.override
+                        def val(self)->int:
+                            return int(bool(self.left.val) < bool(self.right.val))
+                            
+                        @tp.override
+                        def print(self,indent:int=0):
+                            print(f"{' '*indent}less: {self.val}")
+                            self.left.print(indent=indent+1)
+                            print(f"{' '*indent}<")
+                            self.right.print(indent=indent+1)
 
                     class OperatorPrecedence(int,Enum):
                         GREATER=0
@@ -774,29 +887,32 @@ def main():
 
                         NONE=20
 
-                    def parse_expression(tokens:tp.List[Token],current_operator_precedence:OperatorPrecedence)->tp.Tuple[Expression,tp.List[Token]]:
+                    def parse_expression(tokens:list[Token],current_operator_precedence:OperatorPrecedence)->tuple[Expression,list[Token]]:
                         "parse expression from list of tokens. returns an expression and the leftover tokens"
 
-                        ret=Expression()
+                        ret:Expression=Expression()
 
                         while len(tokens)>0:
                             tok=tokens[0]
 
                             if tok.token_type==TokenType.SYMBOL:
-                                fatal("786")
+                                fatal("")
+
                             elif tok.token_type==TokenType.LITERAL_NUMBER:
                                 ret=ExpressionValue(int(tok.s))
 
                                 tokens=tokens[1:]
                                 continue
+
                             elif tok.s==">":
                                 if current_operator_precedence<OperatorPrecedence.GREATER:
                                     break
                                 tokens=tokens[1:]
                                 right,tokens=parse_expression(tokens,OperatorPrecedence.GREATER)
 
-                                ret=ExpressionGreater(ret,right)
+                                ret=ExpressionGreater(ret,right) # type: ignore
                                 continue
+
                             elif tok.s=="<":
                                 if current_operator_precedence<OperatorPrecedence.LESS:
                                     break
@@ -805,6 +921,7 @@ def main():
 
                                 ret=ExpressionLess(ret,right)
                                 continue
+
                             elif tok.s=="&&":
                                 if current_operator_precedence<OperatorPrecedence.AND:
                                     break
@@ -813,6 +930,7 @@ def main():
 
                                 ret=ExpressionAnd(ret,right)
                                 continue
+
                             elif tok.s=="||":
                                 if current_operator_precedence<OperatorPrecedence.OR:
                                     break
@@ -821,6 +939,7 @@ def main():
                                 
                                 ret=ExpressionOr(ret,right)
                                 continue
+
                             elif tok.s=="(":
                                 tokens=tokens[1:]
                                 ret,tokens=parse_expression(tokens,OperatorPrecedence.NONE)
@@ -834,6 +953,7 @@ def main():
 
                     expr,leftover_tokens=parse_expression(evalable_expression,OperatorPrecedence.NONE)
                     assert len(leftover_tokens)==0, f"leftover tokens after evaluating preprocessor if statement: {tokens_into_str(leftover_tokens)}"
+                    expr.print()
                     print(f"evaluted to\n{expr.val}")
 
                     if_value=expr.val==1
@@ -842,7 +962,7 @@ def main():
                 return Preprocessor.If(tokens,if_value,first_if=first_if,do_eval=do_eval)
 
             @staticmethod
-            def evaldef(p:"Preprocessor",tokens:tp.List[Token],first_if:bool=False)->"Preprocessor.If":
+            def evaldef(p:"Preprocessor",tokens:list[Token],first_if:bool=False)->"Preprocessor.If":
                 do_eval=True
                 if len(p.if_stack)>0:
                     last_if_item=p.if_stack[-1][-1]
@@ -860,7 +980,7 @@ def main():
                 return Preprocessor.If(tokens,if_value,first_if=first_if,do_eval=do_eval)
 
             @staticmethod
-            def evalndef(p:"Preprocessor",tokens:tp.List[Token],first_if:bool=False)->"Preprocessor.If":
+            def evalndef(p:"Preprocessor",tokens:list[Token],first_if:bool=False)->"Preprocessor.If":
                 do_eval=True
                 if len(p.if_stack)>0:
                     last_if_item=p.if_stack[-1][-1]
@@ -899,13 +1019,13 @@ def main():
                 Path("musl/include")
             ]
 
-            self.lines:tp.List[tp.List[Token]]=[]
+            self.lines:list[list[Token]]=[]
             self.current_line_index=0
 
-            self.out_lines:tp.List[tp.List[Token]]=[]
+            self.out_lines:list[list[Token]]=[]
 
-            self.files_included:tp.Dict[str,Preprocessor.IncludeFileReference]={}
-            self.defines:tp.Dict[str,Preprocessor.Define]={
+            self.files_included:dict[str,Preprocessor.IncludeFileReference]={}
+            self.defines:dict[str,Preprocessor.Define]={
                 # from https://gcc.gnu.org/onlinedocs/cpp/Standard-Predefined-Macros.html
                 "__STDC__":Preprocessor.Define("__STDC__",[Token("1",token_type=TokenType.LITERAL_NUMBER,src_loc=SourceLocation.placeholder())]),
                 # __STDC_VERSION__ (from the link above): The value 199409L signifies the 1989 C standard as amended in 1994, which is
@@ -924,7 +1044,7 @@ def main():
                 #   multiple size limits, like __INT_MAX__, __UINT16_MAX__
             }
 
-            self.if_stack:tp.List[tp.List[Preprocessor.If]]=[]
+            self.if_stack:list[list[Preprocessor.If]]=[]
 
         def add_if_stack_item(self,if_item:"Preprocessor.If"):
             if len(self.if_stack)==0 or if_item.first_if:
@@ -952,20 +1072,20 @@ def main():
         def is_empty(self)->bool:
             return self.current_line_index >= len(self.lines)
 
-        def get_next_line(self)->tp.List[Token]:
+        def get_next_line(self)->list[Token]:
             ret=self.lines[self.current_line_index]
             self.current_line_index+=1
             return ret
 
-        def add_lines(self,tokenized_lines:tp.List[tp.List[Token]]):
+        def add_lines(self,tokenized_lines:list[list[Token]]):
             self.lines=self.lines[:self.current_line_index]+tokenized_lines+self.lines[self.current_line_index:]
 
 
-        def expand(self,tokens:tp.List[Token]):
+        def expand(self,tokens:list[Token]):
             "expand macros in 'tokens' argument, which are the tokens from functionally one line of code"
 
             in_tokens=tokens
-            ret:tp.List[Token]=[]
+            ret:list[Token]=[]
             while True:
                 expanded_any=False
                 next_tok_index=0
@@ -997,7 +1117,7 @@ def main():
                     expanded_any=True
 
                     # gather macro arguments (will remain empty if macro accepts no arguments)
-                    macro_arguments:tp.Dict[str,tp.List[Token]]={}
+                    macro_arguments:dict[str,list[Token]]={}
 
                     # parse arguments, if macro expects any
                     define=target_macro
@@ -1011,7 +1131,7 @@ def main():
 
                         MACRO_VARARG_ARGNAME="__VA_ARGS__"
                         for define_argument in define.arguments+([MACRO_VARARG_ARGNAME] if define.has_vararg else []):
-                            macro_arg:tp.List[Token]=[]
+                            macro_arg:list[Token]=[]
                             nesting_depth=0
                             "count paranethesis nesting level (other delimeters are not nested, e.g. curly braces can remain unpaired)"
 
@@ -1084,7 +1204,7 @@ def main():
                             assert out_tok.s in macro_arguments, out_tok.s
 
                             joined_str=""
-                            last_tok:tp.Optional[Token]=None
+                            last_tok:Token|None=None
                             for tok in macro_arguments[out_tok.s]:
                                 if last_tok is not None and tok.token_type==TokenType.SYMBOL:
                                     joined_str+=" "
@@ -1111,7 +1231,7 @@ def main():
 
             return ret
 
-        def run(self)->tp.List[tp.List[Token]]:
+        def run(self)->list[list[Token]]:
             skip_line_next=False
             line=[]
             while not self.is_empty():
@@ -1159,7 +1279,7 @@ def main():
                             self.add_if_stack_item(if_item)
                             
                         case "endif":
-                            self.if_stack.pop()
+                            _=self.if_stack.pop()
 
                         case "error":
                             if not self.get_if_state():
@@ -1274,16 +1394,20 @@ def main():
                                 for tok in line[first_tok_index:]:
                                     define.tokens.append(tok)
 
-                            define_arg_str=""
-                            if define.arguments is not None:
-                                arg_str=(",".join(t.s for t in define.arguments))
-                                if define.has_vararg:
-                                    arg_str+=",..."
-                                define_arg_str=" ("+arg_str+")"
+                            if 0:
+                                define_arg_str=""
+                                if define.arguments is not None:
+                                    arg_str=(",".join(t.s for t in define.arguments))
+                                    if define.has_vararg:
+                                        arg_str+=",..."
+                                    define_arg_str=" ("+arg_str+")"
 
-                            define_body_str=""
-                            if len(define.tokens)>0:
-                                define_body_str=" as "+(" ".join(t.s for t in define.tokens))
+                                define_body_str=""
+                                if len(define.tokens)>0:
+                                    define_body_str=" as "+(" ".join(t.s for t in define.tokens))
+
+                                _=define_arg_str
+                                _=define_body_str
 
                             self.defines[define.name]=define
 
@@ -1311,7 +1435,7 @@ def main():
 
                     skip_line_next=True
 
-                    expand_tokens=[]
+                    expand_tokens:list[Token]=[]
                     while line[0].s!="#":
                         expand_tokens.extend(line)
 
@@ -1334,11 +1458,11 @@ def main():
 
     # phase 6 - concat adjacent string literals
 
-    linear_tokens=[]
+    linear_tokens:list[Token]=[]
     for line in preprocessed_lines:
         linear_tokens.extend(line)
 
-    tokens=[]
+    tokens:list[Token]=[]
     for tok in linear_tokens:
         if len(tokens)>1:
             if tok.token_type==TokenType.LITERAL_STRING and tokens[-1].token_type==TokenType.LITERAL_STRING:
@@ -1349,152 +1473,803 @@ def main():
 
     # phase 7 - syntactic and semantic analysis, code generation
 
+    print("tokens going into phase 7:")
     for tok in tokens:
         print(f"{tok.s}",end=" ")
     print("")
 
     class CType:
+        "basic c type class"
         def __init__(self):
-            self.is_signed:tp.Optional[bool]=None
             self.is_static:bool=False
-            self.is_atomic:bool=False
             self.is_extern:bool=False
+
+            self.is_atomic:bool=False
+
             self.is_const:bool=False
+
+            self.is_signed:bool|None=None
 
             self.is_explicit_struct:bool=False
             self.is_explicit_enum:bool=False
             self.is_explicit_union:bool=False
 
-            self.base_type:tp.Optional[CType]=None
+            self.base_type:CType|None=None
+
+        def is_empty_default(self)->bool:
+            "returns True if the type has every field set to its default"
+            return self.is_static==False and self.is_extern==False and self.is_atomic==False and self.is_const==False and self.is_signed==None and self.base_type==None
+
+        @tp.override
+        def __str__(self)->str:
+            ret=""
+            if self.is_static:
+                ret+="static "
+            if self.is_extern:
+                ret+="extern "
+            if self.is_atomic:
+                ret+="atomic "
+            if self.is_const:
+                ret+="const "
+            if self.is_signed is not None:
+                if self.is_signed:
+                    ret+="signed "
+                else:
+                    ret+="unsigned "
+
+            if self.is_explicit_struct:
+                ret+="struct "
+            if self.is_explicit_enum:
+                ret+="enum "
+            if self.is_explicit_union:
+                ret+="union "
+
+            return ret
+
+        def print(self,indent:int):
+            name_str=str(self)
+            if len(name_str)>0:
+                name_str+=" "
+
+            print(" "*indent+name_str,end="")
+            if self.base_type is not None:
+                print("base:")
+                self.base_type.print(indent+1)
+            else:
+                print("")
+
+    class CTypePrimitive(CType):
+        def __init__(self,name:str):
+            super().__init__()
+            self.name=name
+
+        @tp.override
+        def print(self,indent:int):
+            print(" "*indent+self.name)
+
+    class CTypePointer(CType):
+        "pointer to some other type (uses CType.base_type as base)"
+        def __init__(self,base_type:CType):
+            super().__init__()
+            self.base_type=base_type
+
+        @tp.override
+        def print(self,indent:int):
+            assert self.base_type is not None
+            print(" "*indent+"ptr to:")
+            self.base_type.print(indent+1)
+
+    class CTypeFunction(CType):
+        "function type"
+        def __init__(self,return_type:CType,arguments:list["Symbol"]):
+            super().__init__()
+            self.return_type=return_type
+            self.arguments=arguments
+
+        @tp.override
+        def print(self,indent:int):
+            print(" "*indent+f"fn:")
+            print(" "*(indent+1)+"args:")
+            for arg in self.arguments:
+                if arg.name is None:
+                    print(" "*(indent+2)+f"<anon>:")
+                    arg.ctype.print(indent+3)
+                else:
+                    print(" "*(indent+2)+f"{arg.name.s}:")
+                    arg.ctype.print(indent+3)
+
+            print(" "*(indent+1)+"ret:")
+            self.return_type.print(indent+2)
+
 
     class Symbol:
-        def __init__(self,ctype:CType,name:tp.Optional[Token]=None):
+        def __init__(self,ctype:CType,name:Token|None=None):
             self.name=name
             self.ctype=ctype
 
-    class Statement:
+        @tp.override
+        def __str__(self)->str:
+            if self.name is not None:
+                return f"{self.name.s}: {self.ctype}"
+            else:
+                return f"<anon>: {self.ctype}"
+
+    class AstValue:
         def __init__(self):
             pass
 
+        def print(self,indent:int):
+            pass
+
+    class AstValueNumericLiteral(AstValue):
+        def __init__(self,value:str|int|float,ctype:CType):
+            super().__init__()
+            self.value=value
+            self.ctype:CType=ctype
+
+        @tp.override
+        def print(self,indent:int):
+            print(" "*indent+"number:")
+            print(" "*(indent+1)+"literal: "+str(self.value))
+            print(" "*(indent+1)+"type: ")
+            self.ctype.print(indent+2)
+
+    class AstValueSymbolref(AstValue):
+        def __init__(self,symbol_to_ref:Symbol):
+            super().__init__()
+            self.symbol=symbol_to_ref
+
+        @tp.override
+        def print(self,indent:int):
+            assert self.symbol.name is not None, "should be unreachable"
+            print(" "*indent+"ref sym: "+self.symbol.name.s)
+
+    class AstFunctionCall(AstValue):
+        def __init__(self,func:AstValue,arguments:list[AstValue]):
+            super().__init__()
+            self.func=func
+            self.arguments=arguments
+
+        @tp.override
+        def print(self,indent:int):
+            print(" "*indent+"call:")
+            self.func.print(indent+1)
+
+            print(" "*(indent+1)+"args:")
+            for arg in self.arguments:
+                arg.print(indent+2)
+
+    class AstOperationKind(str,Enum):
+        GREATER_THAN=">"
+        LESS_THAN="<"
+        PLUS="+"
+        MINUS="-"
+        INCREMENT="++"
+        DECREMENT="--"
+
+        SUBSCRIPT="subscript"
+
+    class AstOperation(AstValue):
+        def __init__(self,operation:str|AstOperationKind,val0:AstValue,val1:AstValue|None=None,val2:AstValue|None=None):
+            super().__init__()
+            self.operation=AstOperationKind(operation)
+            self.val0=val0
+            self.val1=val1
+            self.val2=val2
+
+        @tp.override
+        def print(self,indent:int):
+            match self.operation:
+                case AstOperationKind.GREATER_THAN:
+                    print(" "*indent+"op:")
+                    self.val0.print(indent+1)
+                    print(" "*(indent+1)+">")
+                    assert self.val1 is not None
+                    self.val1.print(indent+1)
+                case _:
+                    fatal("unimplemented")
+
+    class Statement:
+        "base class for any statement"
+
+        def print(self,indent:int):
+            pass
+
+    class StatementReturn(Statement):
+        def __init__(self,value:AstValue|None):
+            super().__init__()
+            self.value=value
+
+        @tp.override
+        def print(self,indent:int):
+            p=" "*indent+"return"
+            if self.value is not None:
+                p+=":"
+
+            print(p)
+            if self.value is not None:
+                self.value.print(indent+1)
+
+    class StatementValue(Statement):
+        def __init__(self,value:AstValue):
+            super().__init__()
+            self.value=value
+
+        @tp.override
+        def print(self,indent:int):
+            print(" "*indent+"value:")
+            self.value.print(indent+1)
+
+    class SymbolDef(Statement):
+        "statement symbol definition"
+        def __init__(self,symbol:Symbol):
+            super().__init__()
+            self.symbol=symbol
+
+        @tp.override
+        def print(self,indent:int):
+            if self.symbol.name is None:
+                print(" "*indent+f"def <anon>:")
+            else:
+                print(" "*indent+f"def {self.symbol.name.s}:")
+
+            self.symbol.ctype.print(indent+1)
+
     class Block:
+        "block/scope containing a list of statements (which may include other Blocks) and derived information, like new types"
         def __init__(self,
-            types:tp.Optional[tp.Dict[str,CType]]=None,
+            types:dict[str,CType]|None=None,
 
-            struct_types:tp.Optional[tp.Dict[str,CType]]=None,
-            enum_types:tp.Optional[tp.Dict[str,CType]]=None,
-            union_types:tp.Optional[tp.Dict[str,CType]]=None,
+            struct_types:dict[str,CType]|None=None,
+            enum_types:dict[str,CType]|None=None,
+            union_types:dict[str,CType]|None=None,
+
+            symbols:dict[str,Symbol]|None=None,
+
+            parent:"Block|None"=None,
         ):
-            self.types:tp.Dict[str,CType]={k:v for k,v in types.items()} if types is not None else {}
+            self.types:dict[str,CType]=types.copy() if types is not None else {}
 
-            self.struct_types:tp.Dict[str,CType]={k:v for k,v in struct_types.items()} if struct_types is not None else {}
-            self.enum_types:tp.Dict[str,CType]={k:v for k,v in enum_types.items()} if enum_types is not None else {}
-            self.union_types:tp.Dict[str,CType]={k:v for k,v in union_types.items()} if union_types is not None else {}
+            self.struct_types:dict[str,CType]=struct_types.copy() if struct_types is not None else {}
+            self.enum_types:dict[str,CType]=enum_types.copy() if enum_types is not None else {}
+            self.union_types:dict[str,CType]=union_types.copy() if union_types is not None else {}
 
-            self.symbols={}
-            self.statements:tp.List[Statement]=[]
+            self.symbols:dict[str,Symbol]=symbols.copy() if symbols is not None else {}
+            self.statements:list[Statement]=[]
+
+            self.parent=parent
+
+        def print(self,indent:int):
+            for statement in self.statements:
+                statement.print(indent)
+
+        def getTypeByName(self,name:str)->CType|None:
+            if name in self.types:
+                return self.types[name]
+
+            if self.parent is not None:
+                return self.parent.getTypeByName(name)
+
+            return None
+
+        def getSymbolByName(self,name:str)->Symbol|None:
+            if name in self.symbols:
+                return self.symbols[name]
+
+            if self.parent is not None:
+                return self.parent.getSymbolByName(name)
+
+            return None
+
+        def addStatement(self,statement:Statement,ingest_symbols:bool=True):
+            if ingest_symbols and isinstance(statement,SymbolDef):
+                self.addSymbol(statement.symbol)
+
+            self.statements.append(statement)
+
+        def addSymbol(self,symbol:Symbol):
+            if symbol.name is not None:
+                self.symbols[symbol.name.s]=symbol
+
+    class AstForLoop(Block,Statement):
+        def __init__(self,
+            init_statement:Statement,
+            condition:AstValue|None=None,
+            step_statement:AstValue|None=None,
+
+            parent:Block|None=None,
+        ):
+            super().__init__(parent=parent)
+            self.init=init_statement
+            self.condition=condition
+            self.step=step_statement
+
+            self.addStatement(self.init)
+
+        @tp.override
+        def print(self,indent:int):
+            print(" "*indent+"for:")
+            print(" "*(indent+1)+"init:")
+            self.init.print(indent+2)
+            print(" "*(indent+1)+"cond:")
+            if self.condition is not None:
+                self.condition.print(indent+2)
+            print(" "*(indent+1)+"step:")
+            if self.step is not None:
+                self.step.print(indent+2)
+
+    class AstBlock(Block,Statement):
+        def __init__(self,
+            parent:Block|None=None,
+        ):
+            super().__init__(parent=parent)
+
+        @tp.override
+        def print(self,indent:int):
+            print(" "*indent+"block:")
+            Block.print(self,indent+1)
+
+    class AstFunction(Block,Statement):
+        def __init__(self,func_type:CTypeFunction,**kwargs:tp.Any|None):
+            super().__init__(**kwargs)
+            self.func_type=func_type
+
+            for arg in self.func_type.arguments:
+                self.addSymbol(arg)
+
+        @tp.override
+        def print(self,indent:int):
+            self.func_type.print(indent)
+            for statement in self.statements:
+                statement.print(indent+1)
 
     class Ast:
-        @property
-        def empty(self)->bool:
-            return self.token_index>=len(self.tokens)
+        "represents one "
+        def __init__(self,tokens:list[Token]):
+            self.t=Iter(tokens)
 
-        def __init__(self,tokens:tp.List[Token]):
-            self.tokens=tokens
-
-            self.token_index=0
-
-            self.block=Block(types={
-                "void":CType(),
-                "int":CType(),
-                "bool":CType(),
+            self.block:Block=Block(types={
+                n:CTypePrimitive(n)
+                for n
+                in ["void","char","int","bool"]
             })
 
+            self.parse_block()
+
+            if not self.t.empty:
+                fatal(f"leftover tokens at end of file: {str(self.t[0])} ...")
+
+        def parse_block(self):
+            "parse tokens as a series of statements into self.block, stop when something that is not valid syntax is encountered"
+            while not self.t.empty:
+                statement=self.parse_statement()
+                if statement is None:
+                    break
+
+                if not isinstance(statement,AstFunction):
+                    self.block.addStatement(statement,ingest_symbols=False)
+                else:
+                    self.block.addStatement(statement)
+
+        def parse_statement(self)->Statement|None:
+            """
+            parse a terminated statement
+            """
+
+            old_t=self.t.copy()
+
+            match self.tok.s:
+                case "{":
+                    self.t+=1
+
+                    old_block=self.block
+                    
+                    astblock=AstBlock(parent=self.block)
+                    self.block=astblock
+                    self.parse_block()
+
+                    assert self.t[0].s=="}", f"got instead {self.t[0].s}"
+                    self.t+=1
+
+                    self.block=old_block
+
+                    return astblock
+
+                case "typedef":
+                    fatal("typedef unimplemented")
+
+                case "switch":
+                    fatal("switch unimplemented")
+                case "while":
+                    fatal("while unimplemented")
+                case "for":
+                    self.t+=1
+
+                    assert self.t[0].s=="("
+                    self.t+=1
+
+                    # parse for init
+                    init_statement=self.parse_statement()
+                    assert init_statement is not None
+
+                    for_block=AstForLoop(init_statement,parent=self.block)
+
+                    old_block=self.block
+                    self.block=for_block
+
+                    # parse for condition
+                    condition=self.parse_value()
+                    for_block.condition=condition
+
+                    assert self.t[0].s==";", f"got instead {self.t[0].s}"
+                    self.t+=1
+
+                    # parse for step
+                    step_statement=self.parse_value()
+                    for_block.step=step_statement
+
+                    assert self.t[0].s==")", f"got instead {self.t[0].s}"
+                    self.t+=1
+
+                    for_body_statement=self.parse_statement()
+                    assert for_body_statement is not None
+                    for_body_statement.print(0)
+
+                    self.block=old_block
+
+                    return for_body_statement
+                    
+                case "break":
+                    fatal("break unimplemented")
+                case "continue":
+                    fatal("continue unimplemented")
+
+                case "return":
+                    self.t+=1
+
+                    value=self.parse_value()
+
+                    assert self.t[0].s==";", f"expected ; got instead {self.t[0].s}"
+                    self.t+=1
+
+                    return StatementReturn(value)
+
+                case "goto":
+                    fatal("goto unimplemented")
+
+                case _:
+                    symbol_def=self.parse_symbol_definition()
+                    if symbol_def is not None:
+                        self.block.addSymbol(symbol_def.symbol)
+
+                        if isinstance(symbol_def.symbol.ctype,CTypeFunction):
+                            func_def=self.parse_function_definition(func_type=symbol_def.symbol.ctype)
+                            if func_def is None:
+                                print("failed to parse function definition for decl:")
+                                symbol_def.symbol.ctype.print(0)
+                                fatal(f"at {symbol_def.symbol.name.s if symbol_def.symbol.name is not None else '<anon>'}")
+
+                            return func_def
+
+                        assert self.t[0].s==";"
+                        self.t+=1
+
+                        return symbol_def
+
+                    value=self.parse_value()
+                    if value is not None:
+                        assert self.t[0].s==";"
+                        self.t+=1
+
+                        return StatementValue(value)
+
+                    symdef=self.parse_symbol_definition()
+                    if symdef is not None:
+                        assert self.t[0].s==";"
+                        self.t+=1
+
+                        return symdef
+
+            self.t=old_t
+            return None
+
+        def parse_value(self)->AstValue|None:
+            old_t=self.t.copy()
+
+            ret=None
             while 1:
-                match self.tok.s:
-                    case "typedef":
-                        fatal("typedef unimplemented")
+                match self.t[0].token_type:
+                    case TokenType.LITERAL_CHAR:
+                        if ret is not None: break
 
-                    case "switch":
-                        fatal("switch unimplemented")
-                    case "while":
-                        fatal("while unimplemented")
-                    case "for":
-                        fatal("for unimplemented")
+                        chartype=self.block.getTypeByName("char")
+                        assert chartype is not None
+                        ret=AstValueNumericLiteral(self.t[0].s,chartype)
+                        self.t+=1
+
+                    case TokenType.LITERAL_NUMBER:
+                        if ret is not None: break
                         
-                    case "break":
-                        fatal("break unimplemented")
-                    case "continue":
-                        fatal("continue unimplemented")
-                    case "return":
-                        fatal("return unimplemented")
+                        # TODO actually decide the type of the numeric
+                        numtype=self.block.getTypeByName("int")
+                        assert numtype is not None
+                        ret=AstValueNumericLiteral(self.t[0].s,numtype)
+                        self.t+=1
 
-                    case "goto":
-                        fatal("goto unimplemented")
+                    case TokenType.LITERAL_STRING:
+                        if ret is not None: break
+                        
+                        # TODO actually decide the type of the numeric
+                        cstring_type=self.block.getTypeByName("char")
+                        assert cstring_type is not None
+                        cstring_type=CTypePointer(cstring_type)
+                        ret=AstValueNumericLiteral(self.t[0].s,cstring_type)
+                        self.t+=1
+
+                    case TokenType.SYMBOL:
+                        if ret is not None: break
+
+                        symbol=self.block.getSymbolByName(self.t[0].s)
+                        if symbol is None:
+                            break
+
+                        ret=AstValueSymbolref(symbol)
+                        self.t+=1
+
+                    case TokenType.OPERATOR_PUNCTUATION:
+                        match self.t[0].s:
+                            case "+":
+                                op_str=self.t[0].s
+
+                                self.t+=1
+
+                                if ret is None:
+                                    ret=self.parse_value()
+                                    if ret is None: break
+                                    ret=AstOperation(op_str,ret)
+                                    continue
+
+                                rhv=self.parse_value()
+                                if rhv is None: break
+                                ret=AstOperation(op_str,ret,rhv)
+
+                            case "-":
+                                op_str=self.t[0].s
+
+                                self.t+=1
+
+                                if ret is None:
+                                    ret=self.parse_value()
+                                    if ret is None: break
+                                    ret=AstOperation(op_str,ret)
+                                    continue
+
+                                rhv=self.parse_value()
+                                if rhv is None: break
+                                ret=AstOperation(op_str,ret,rhv)
+
+                            case "<":
+                                if ret is None: break
+
+                                self.t+=1
+
+                                rhv=self.parse_value()
+                                if rhv is None: break
+                                ret=AstOperation("<",ret,rhv)
+
+                            case "++":
+                                self.t+=1
+
+                                if ret is None:
+                                    ret=self.parse_value()
+
+                                if ret is None: break
+
+                                ret=AstOperation("++",ret)
+
+                            case "(":
+                                if ret is None:
+                                    fatal("unimplemented ( precedence override")
+
+                                # TODO check that ret is callable
+
+                                self.t+=1
+
+                                argument_values:list[AstValue]=[]
+                                while arg_value:=self.parse_value():
+                                    argument_values.append(arg_value)
+
+                                    if self.t[0].s==",":
+                                        self.t+=1
+                                        continue
+
+                                    break
+
+                                assert self.t[0].s==")"
+                                self.t+=1
+
+                                ret=AstFunctionCall(ret,argument_values)
+
+                            case ";":
+                                break
+
+                            case _:
+                                break
 
                     case other:
-                        found_typedecl=other in self.block.types or other in set(("extern","static","signed","unsigned","struct","enum","union"))
-                        if found_typedecl:
-                            ctype=CType()
-                            while not self.empty:
-                                match self.tok.s:
-                                    case "extern":
-                                        ctype.is_extern=True
-                                    case "static":
-                                        ctype.is_static=True
-                                    case "signed":
-                                        ctype.is_signed=True
-                                    case "unsigned":
-                                        ctype.is_signed=False
-                                    case other:
-                                        if other in set(("(",")")):
-                                            fatal(f"unimplemented - {other}")
+                        fatal(f"unimplemented : {other}")
 
-                                        if other=="struct":
-                                            ctype.is_explicit_struct=True
-                                            self.token_index+=1
-                                        elif other=="enum":
-                                            ctype.is_explicit_enum=True
-                                            self.token_index+=1
-                                        elif other=="union":
-                                            ctype.is_explicit_union=True
-                                            self.token_index+=1
+            if ret is None:
+                self.t=old_t
 
-                                        if other in self.block.types:
-                                            ctype.base_type=self.block.types[other]
-                                        elif ctype.is_explicit_struct and other in self.block.struct_types:
-                                            ctype.base_type=self.block.struct_types[other]
-                                        elif ctype.is_explicit_enum and other in self.block.enum_types:
-                                            ctype.base_type=self.block.enum_types[other]
-                                        elif ctype.is_explicit_union and other in self.block.union_types:
-                                            ctype.base_type=self.block.union_types[other]
-                                        else:
-                                            symbol=Symbol(ctype=ctype,name=self.tok)
-                                            fatal("unimplemented - handle symbol definition")
+            return ret
 
-                                self.token_index+=1
+        def parse_function_definition(self,func_type:CTypeFunction)->AstFunction|None:
+            if self.t[0].s!="{":
+                return None
 
-                            fatal("unimplemented - symbol definition")
+            self.t+=1
 
-                        if other in self.block.symbols:
-                            fatal("unimplemented - some value based off a symbol")
+            outer_block=self.block
 
-                        fatal(f"unimplemented: {other}")
+            func_block=AstFunction(func_type,parent=outer_block)
+            self.block=func_block
+            self.parse_block()
+
+            self.block=outer_block
+
+            assert self.t[0].s=="}", f"got instead {self.t[0].s}"
+
+            self.t+=1
+
+            return func_block
+
+        def parse_symbol_definition(self)->SymbolDef|None:
+            old_t=self.t.copy()
+
+            ctype:CType=CType()
+            symbol:Symbol|None=None
+
+            while not self.t.empty:
+                match self.tok.s:
+                    case "extern":
+                        ctype.is_extern=True
+                        self.t+=1
+                        continue
+
+                    case "static":
+                        ctype.is_static=True
+                        self.t+=1
+                        continue
+
+                    case "signed":
+                        ctype.is_signed=True
+                        self.t+=1
+                        continue
+
+                    case "unsigned":
+                        ctype.is_signed=False
+                        self.t+=1
+                        continue
+
+                    case "*":
+                        ctype=CTypePointer(ctype)
+                        self.t+=1
+                        continue
+
+                    case "struct":
+                        ctype.is_explicit_struct=True
+                        self.t+=1
+                        continue
+
+                    case "enum":
+                        ctype.is_explicit_enum=True
+                        self.t+=1
+                        continue
+
+                    case "union":
+                        ctype.is_explicit_union=True
+                        self.t+=1
+                        continue
+
+                    case other:
+                        if other =="(":
+                            if symbol is not None:
+                                arguments:list[Symbol]=[]
+
+                                self.t+=1
+                                while self.tok.s!=")":
+                                    symbol_def=self.parse_symbol_definition()
+                                    if symbol_def is None:
+                                        break
+
+                                    arguments.append(symbol_def.symbol)
+                                    if self.tok.s==",":
+                                        self.t+=1
+                                        continue
+
+                                    break
+
+                                assert self.tok.s==")"
+
+                                ctype=CTypeFunction(ctype,arguments)
+                                symbol.ctype=ctype
+
+                                self.t+=1
+                                continue
+
+                            fatal(f"unimplemented - {other}")
+
+                        other_as_type=self.block.getTypeByName(other)
+                        if other_as_type is not None:
+                            ctype.base_type=other_as_type
+                            self.t+=1
+                            continue
+
+                        elif ctype.is_explicit_struct and other in self.block.struct_types:
+                            ctype.base_type=self.block.struct_types[other]
+                            self.t+=1
+                            continue
+
+                        elif ctype.is_explicit_enum and other in self.block.enum_types:
+                            ctype.base_type=self.block.enum_types[other]
+                            self.t+=1
+                            continue
+
+                        elif ctype.is_explicit_union and other in self.block.union_types:
+                            ctype.base_type=self.block.union_types[other]
+                            self.t+=1
+                            continue
+
+                        elif other=="=":
+                            self.t+=1
+                            value=self.parse_value()
+                            assert value is not None, "no value for symbol init"
+                            continue
+
+                        else:
+                            if not self.tok.is_valid_symbol():
+                                break
+
+                            if ctype.is_empty_default():
+                                break
+
+                            symbol=Symbol(ctype=ctype,name=self.tok)
+                            self.t+=1
+                            continue
+
+                break
+
+            if symbol is None:
+                self.t=old_t
+                return None
+
+            return SymbolDef(symbol)
 
         @property
         def tok(self)->Token:
-            return self.tokens[self.token_index]
+            return self.t.item
 
-    Ast(tokens)
+    ast=Ast(tokens)
+
+    print(f"{GREEN}ast:{RESET}")
+    ast.block.print(0)
 
     # phase 8 - linking
 
     return
 
-
 if __name__=="__main__":
     start_time=time.perf_counter()
 
-    main()
+    test_files=Path("test").glob("test*.c")
+    test_files=sorted(test_files)
+
+    for f_path in test_files[:9]:
+        f=str(f_path)
+
+        print(f"{ORANGE}{f}{RESET}")
+        main(f)
 
     end_time=time.perf_counter()
 

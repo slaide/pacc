@@ -57,7 +57,7 @@
         },
         {
             "name": "alternative_implementation",
-            "shell_cmd": "bash env.run timeout 3 python3 eval_ast.py test/test053.c",
+            "shell_cmd": "bash env.run timeout 3 python3 eval_ast.py",
             "working_dir": "$project_path",
             
             "target": "ansi_color_build",
