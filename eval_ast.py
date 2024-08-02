@@ -5,9 +5,13 @@ from enum import Enum
 from pathlib import Path
 import inspect
 import re
-import glob
 
 from libbuild import RED,GREEN,RESET,LIGHT_GRAY,ORANGE
+
+def ind(n:int)->str:
+    # U+FF5C ｜
+    # U+007C |
+    return LIGHT_GRAY+("｜"*n)+RESET
 
 def fatal(message:str="",exit_code:int=-1)->tp.NoReturn:
     current_frame=inspect.currentframe()
@@ -217,7 +221,7 @@ def print_tokens(
         elif mode=="logical":
             padding_size=token.log_loc.col-last_loc.col
         if padding_size>0:
-            print(" "*padding_size,end="")
+            print(ind(padding_size),end="")
 
         if token.token_type==TokenType.COMMENT:
             color=LIGHT_GRAY
@@ -1421,7 +1425,7 @@ def main(filename:str|None=None):
                                     if tok.s==">":
                                         break
                                     if tok.log_loc.col!=col_index:
-                                        global_include_str+=" "*(tok.log_loc.col-col_index)
+                                        global_include_str+=ind(tok.log_loc.col-col_index)
                                     global_include_str+=tok.s
                                     col_index+=len(tok.s)
 
@@ -1578,19 +1582,22 @@ def main(filename:str|None=None):
 
             self.is_atomic:bool=False
 
+            self.length_mod:int|None=None
             self.is_const:bool=False
 
             self.is_signed:bool|None=None
-
-            self.is_explicit_struct:bool=False
-            self.is_explicit_enum:bool=False
-            self.is_explicit_union:bool=False
 
             self.base_type:CType|None=None
 
         def is_empty_default(self)->bool:
             "returns True if the type has every field set to its default"
-            return self.is_static==False and self.is_extern==False and self.is_atomic==False and self.is_const==False and self.is_signed==None and self.base_type==None
+            return self.is_static==False and \
+                self.is_extern==False and \
+                self.is_atomic==False and \
+                self.is_const==False and \
+                self.is_signed==None and \
+                self.length_mod==None and \
+                self.base_type==None
 
         @tp.override
         def __str__(self)->str:
@@ -1609,12 +1616,18 @@ def main(filename:str|None=None):
                 else:
                     ret+="unsigned "
 
-            if self.is_explicit_struct:
-                ret+="struct "
-            if self.is_explicit_enum:
-                ret+="enum "
-            if self.is_explicit_union:
-                ret+="union "
+            if self.length_mod is not None:
+                match self.length_mod:
+                    case 2:
+                        ret+="long long "
+                    case 1:
+                        ret+="long "
+                    case -2:
+                        ret+="short short "
+                    case -1:
+                        ret+="short "
+                    case _:
+                        pass
 
             return ret
 
@@ -1623,12 +1636,107 @@ def main(filename:str|None=None):
             if len(name_str)>0:
                 name_str+=" "
 
-            print(" "*indent+name_str,end="")
+            print(ind(indent)+name_str,end="")
             if self.base_type is not None:
                 print("base:")
                 self.base_type.print(indent+1)
             else:
                 print("")
+
+    class CTypeStruct(CType):
+        "name may be none, and if fields are none, the type is considered incomplete"
+        def __init__(self,name:Token|None,fields:list["Symbol"]|None):
+            super().__init__()
+            self.name=name
+            self.fields=fields
+
+        @property
+        def is_incomplete(self)->bool:
+            return self.fields is None
+
+        @tp.override
+        def is_empty_default(self)->bool:
+            return False
+
+        @tp.override
+        def print(self,indent:int):
+            print(ind(indent)+"struct:")
+            if self.name is not None:
+                print(ind(indent+1)+f"name: {self.name.s}")
+
+            if self.fields is None:
+                print(ind(indent+1)+f"fields: <type is incomplete>")
+            else:
+                print(ind(indent+1)+f"fields:")
+                for field in self.fields:
+                    print(ind(indent+2)+"field:")
+                    if field.name is not None:
+                        print(ind(indent+3)+f"name: {field.name.s}")
+                    print(ind(indent+3)+f"type:")
+                    field.ctype.print(indent+4)
+
+    class CTypeUnion(CType):
+        "name may be none, and if fields are none, the type is considered incomplete"
+        def __init__(self,name:Token|None,fields:list["Symbol"]|None):
+            super().__init__()
+            self.name=name
+            self.fields=fields
+
+        @property
+        def is_incomplete(self)->bool:
+            return self.fields is None
+
+        @tp.override
+        def is_empty_default(self)->bool:
+            return False
+
+        @tp.override
+        def print(self,indent:int):
+            print(ind(indent)+"union:")
+            if self.name is not None:
+                print(ind(indent+1)+f"name: {self.name.s}")
+
+            if self.fields is None:
+                print(ind(indent+1)+f"fields: <type is incomplete>")
+            else:
+                print(ind(indent+1)+f"fields:")
+                for field in self.fields:
+                    print(ind(indent+2)+"field:")
+                    if field.name is not None:
+                        print(ind(indent+3)+f"name: {field.name.s}")
+                    print(ind(indent+3)+f"type:")
+                    field.ctype.print(indent+4)
+
+    class CTypeEnum(CType):
+        "name may be none, and if fields are none, the type is considered incomplete"
+        def __init__(self,name:Token|None,fields:list[tuple[str,"AstValue|None"]]|None):
+            super().__init__()
+            self.name=name
+            self.fields=fields
+
+        @property
+        def is_incomplete(self)->bool:
+            return self.fields is None
+
+        @tp.override
+        def is_empty_default(self)->bool:
+            return False
+
+        @tp.override
+        def print(self,indent:int):
+            print(ind(indent)+"union:")
+            if self.name is not None:
+                print(ind(indent+1)+f"name: {self.name.s}")
+
+            if self.fields is None:
+                print(ind(indent+1)+f"fields: <type is incomplete>")
+            else:
+                print(ind(indent+1)+f"fields:")
+                for fieldname,field_value in self.fields:
+                    print(ind(indent+2)+"field:")
+                    print(ind(indent+3)+f"name: {fieldname}")
+                    print(ind(indent+3)+f"value: {field_value}")
+
 
     class CTypePrimitive(CType):
         def __init__(self,name:str):
@@ -1636,8 +1744,12 @@ def main(filename:str|None=None):
             self.name=name
 
         @tp.override
+        def is_empty_default(self)->bool:
+            return False
+
+        @tp.override
         def print(self,indent:int):
-            print(" "*indent+self.name)
+            print(ind(indent)+self.name)
 
     class CTypePointer(CType):
         "pointer to some other type (uses CType.base_type as base)"
@@ -1646,31 +1758,62 @@ def main(filename:str|None=None):
             self.base_type=base_type
 
         @tp.override
-        def print(self,indent:int):
-            assert self.base_type is not None
-            print(" "*indent+"ptr to:")
-            self.base_type.print(indent+1)
-
-    class CTypeFunction(CType):
-        "function type"
-        def __init__(self,return_type:CType,arguments:list["Symbol"]):
-            super().__init__()
-            self.return_type=return_type
-            self.arguments=arguments
+        def is_empty_default(self)->bool:
+            return False
 
         @tp.override
         def print(self,indent:int):
-            print(" "*indent+f"fn:")
-            print(" "*(indent+1)+"args:")
+            assert self.base_type is not None
+            print(ind(indent)+"ptr to:")
+            self.base_type.print(indent+1)
+
+    class CTypeArray(CType):
+        def __init__(self,base_type:CType,length:"AstValue|None"):
+            super().__init__()
+            self.base_type=base_type
+            self.length=length
+
+        @tp.override
+        def is_empty_default(self)->bool:
+            return False
+
+        @tp.override
+        def print(self,indent:int):
+            print(ind(indent)+"array:")
+            print(ind(indent+1)+"base_type:")
+            assert self.base_type is not None
+            self.base_type.print(indent+2)
+            if self.length is None:
+                print(ind(indent+1)+"length: <undefined>")
+            else:
+                print(ind(indent+1)+"length:")
+                self.length.print(indent+2)
+
+    class CTypeFunction(CType):
+        "function type"
+        def __init__(self,return_type:CType,arguments:list["Symbol"],has_vararg:bool=False):
+            super().__init__()
+            self.return_type=return_type
+            self.arguments=arguments
+            self.has_vararg=has_vararg
+
+        @tp.override
+        def is_empty_default(self)->bool:
+            return False
+
+        @tp.override
+        def print(self,indent:int):
+            print(ind(indent)+f"fn:")
+            print(ind(indent+1)+"args:")
             for arg in self.arguments:
                 if arg.name is None:
-                    print(" "*(indent+2)+f"<anon>:")
+                    print(ind(indent+2)+f"<anon>:")
                     arg.ctype.print(indent+3)
                 else:
-                    print(" "*(indent+2)+f"{arg.name.s}:")
+                    print(ind(indent+2)+f"{arg.name.s}:")
                     arg.ctype.print(indent+3)
 
-            print(" "*(indent+1)+"ret:")
+            print(ind(indent+1)+"ret:")
             self.return_type.print(indent+2)
 
 
@@ -1701,9 +1844,9 @@ def main(filename:str|None=None):
 
         @tp.override
         def print(self,indent:int):
-            print(" "*indent+"number:")
-            print(" "*(indent+1)+"literal: "+str(self.value))
-            print(" "*(indent+1)+"type: ")
+            print(ind(indent)+"number:")
+            print(ind(indent+1)+"literal: "+str(self.value))
+            print(ind(indent+1)+"type: ")
             self.ctype.print(indent+2)
 
     class AstValueSymbolref(AstValue):
@@ -1714,7 +1857,7 @@ def main(filename:str|None=None):
         @tp.override
         def print(self,indent:int):
             assert self.symbol.name is not None, "should be unreachable"
-            print(" "*indent+"ref sym: "+self.symbol.name.s)
+            print(ind(indent)+"ref sym: "+self.symbol.name.s)
 
     class AstFunctionCall(AstValue):
         def __init__(self,func:AstValue,arguments:list[AstValue]):
@@ -1724,10 +1867,10 @@ def main(filename:str|None=None):
 
         @tp.override
         def print(self,indent:int):
-            print(" "*indent+"call:")
+            print(ind(indent)+"call:")
             self.func.print(indent+1)
 
-            print(" "*(indent+1)+"args:")
+            print(ind(indent+1)+"args:")
             for arg in self.arguments:
                 arg.print(indent+2)
 
@@ -1753,9 +1896,9 @@ def main(filename:str|None=None):
         def print(self,indent:int):
             match self.operation:
                 case AstOperationKind.GREATER_THAN:
-                    print(" "*indent+"op:")
+                    print(ind(indent)+"op:")
                     self.val0.print(indent+1)
-                    print(" "*(indent+1)+">")
+                    print(ind(indent+1)+">")
                     assert self.val1 is not None
                     self.val1.print(indent+1)
                 case _:
@@ -1774,7 +1917,7 @@ def main(filename:str|None=None):
 
         @tp.override
         def print(self,indent:int):
-            p=" "*indent+"return"
+            p=ind(indent)+"return"
             if self.value is not None:
                 p+=":"
 
@@ -1789,8 +1932,19 @@ def main(filename:str|None=None):
 
         @tp.override
         def print(self,indent:int):
-            print(" "*indent+"value:")
+            print(ind(indent)+"value:")
             self.value.print(indent+1)
+
+    class StatementTypedef(Statement):
+        def __init__(self,symbol:Symbol):
+            super().__init__()
+            self.symbol=symbol
+
+        @tp.override
+        def print(self,indent:int):
+            print(ind(indent)+f"typedef alias {self.symbol.name.s}")
+            self.symbol.ctype.print(indent+1)
+
 
     class SymbolDef(Statement):
         "statement symbol definition"
@@ -1801,9 +1955,9 @@ def main(filename:str|None=None):
         @tp.override
         def print(self,indent:int):
             if self.symbol.name is None:
-                print(" "*indent+f"def <anon>:")
+                print(ind(indent)+f"def <anon>:")
             else:
-                print(" "*indent+f"def {self.symbol.name.s}:")
+                print(ind(indent)+f"def {self.symbol.name.s}:")
 
             self.symbol.ctype.print(indent+1)
 
@@ -1835,12 +1989,25 @@ def main(filename:str|None=None):
             for statement in self.statements:
                 statement.print(indent)
 
-        def getTypeByName(self,name:str)->CType|None:
-            if name in self.types:
+        def getTypeByName(self,name:str,e_struct:bool=False,e_enum:bool=False,e_union:bool=False)->CType|None:
+            typename_is_explicit_flag=sum((int(v) for v in(e_struct,e_enum,e_union)))
+            assert typename_is_explicit_flag<=1
+
+            typename_is_explicit=typename_is_explicit_flag==1
+
+            if typename_is_explicit:
+                if e_struct and name in self.struct_types:
+                    return self.struct_types[name]
+                elif e_enum and name in self.enum_types:
+                    return self.enum_types[name]
+                elif e_union and name in self.union_types:
+                    return self.union_types[name]
+
+            elif name in self.types:
                 return self.types[name]
 
             if self.parent is not None:
-                return self.parent.getTypeByName(name)
+                return self.parent.getTypeByName(name,e_struct=e_struct,e_enum=e_enum,e_union=e_union)
 
             return None
 
@@ -1854,8 +2021,21 @@ def main(filename:str|None=None):
             return None
 
         def addStatement(self,statement:Statement,ingest_symbols:bool=True):
-            if ingest_symbols and isinstance(statement,SymbolDef):
-                self.addSymbol(statement.symbol)
+            if ingest_symbols:
+                if isinstance(statement,SymbolDef):
+                    self.addSymbol(statement.symbol)
+
+                elif isinstance(statement,StatementTypedef):
+                    if isinstance(statement.symbol.ctype,CTypeStruct):
+                        if statement.symbol.ctype.name is not None:
+                            self.struct_types[statement.symbol.ctype.name.s]=statement.symbol.ctype
+
+                    elif isinstance(statement.symbol.ctype,CTypeUnion):
+                        if statement.symbol.ctype.name is not None:
+                            self.union_types[statement.symbol.ctype.name.s]=statement.symbol.ctype
+
+                    if statement.symbol.name is not None:
+                        self.types[statement.symbol.name.s]=statement.symbol.ctype
 
             self.statements.append(statement)
 
@@ -1880,13 +2060,13 @@ def main(filename:str|None=None):
 
         @tp.override
         def print(self,indent:int):
-            print(" "*indent+"for:")
-            print(" "*(indent+1)+"init:")
+            print(ind(indent)+"for:")
+            print(ind(indent+1)+"init:")
             self.init.print(indent+2)
-            print(" "*(indent+1)+"cond:")
+            print(ind(indent+1)+"cond:")
             if self.condition is not None:
                 self.condition.print(indent+2)
-            print(" "*(indent+1)+"step:")
+            print(ind(indent+1)+"step:")
             if self.step is not None:
                 self.step.print(indent+2)
 
@@ -1898,7 +2078,7 @@ def main(filename:str|None=None):
 
         @tp.override
         def print(self,indent:int):
-            print(" "*indent+"block:")
+            print(ind(indent)+"block:")
             Block.print(self,indent+1)
 
     class AstFunction(Block,Statement):
@@ -1923,7 +2103,7 @@ def main(filename:str|None=None):
             self.block:Block=Block(types={
                 n:CTypePrimitive(n)
                 for n
-                in ["void","char","int","bool"]
+                in ["void","char","int","float","double","bool","__builtin_va_list"]
             })
 
             self.parse_block()
@@ -1938,7 +2118,7 @@ def main(filename:str|None=None):
                 if statement is None:
                     break
 
-                if not isinstance(statement,AstFunction):
+                if isinstance(statement,AstFunction):
                     self.block.addStatement(statement,ingest_symbols=False)
                 else:
                     self.block.addStatement(statement)
@@ -1968,7 +2148,17 @@ def main(filename:str|None=None):
                     return astblock
 
                 case "typedef":
-                    fatal("typedef unimplemented")
+                    self.t+=1
+
+                    typedef=self.parse_symbol_definition()
+                    
+                    assert self.t[0].s==";", f"got instead {self.t[0]}"
+                    self.t+=1
+
+                    if typedef is None:
+                        return None
+
+                    return StatementTypedef(typedef.symbol)
 
                 case "switch":
                     fatal("switch unimplemented")
@@ -2021,7 +2211,7 @@ def main(filename:str|None=None):
 
                     value=self.parse_value()
 
-                    assert self.t[0].s==";", f"expected ; got instead {self.t[0].s}"
+                    assert self.t[0].s==";", f"expected ; got instead {self.t[0]}"
                     self.t+=1
 
                     return StatementReturn(value)
@@ -2035,13 +2225,14 @@ def main(filename:str|None=None):
                         self.block.addSymbol(symbol_def.symbol)
 
                         if isinstance(symbol_def.symbol.ctype,CTypeFunction):
-                            func_def=self.parse_function_definition(func_type=symbol_def.symbol.ctype)
-                            if func_def is None:
-                                print("failed to parse function definition for decl:")
-                                symbol_def.symbol.ctype.print(0)
-                                fatal(f"at {symbol_def.symbol.name.s if symbol_def.symbol.name is not None else '<anon>'}")
+                            if self.t[0].s!=";":
+                                func_def=self.parse_function_definition(func_type=symbol_def.symbol.ctype)
+                                if func_def is None:
+                                    print("failed to parse function definition for decl:")
+                                    symbol_def.symbol.ctype.print(0)
+                                    fatal(f"at {symbol_def.symbol.name.s if symbol_def.symbol.name is not None else '<anon>'}")
 
-                            return func_def
+                                return func_def
 
                         assert self.t[0].s==";"
                         self.t+=1
@@ -2229,6 +2420,11 @@ def main(filename:str|None=None):
                         self.t+=1
                         continue
 
+                    case "const":
+                        ctype.is_const=True
+                        self.t+=1
+                        continue
+
                     case "static":
                         ctype.is_static=True
                         self.t+=1
@@ -2249,18 +2445,105 @@ def main(filename:str|None=None):
                         self.t+=1
                         continue
 
-                    case "struct":
-                        ctype.is_explicit_struct=True
+                    case "[":
                         self.t+=1
+
+                        array_len=self.parse_value()
+
+                        ctype=CTypeArray(ctype,array_len)
+                        if symbol is not None:
+                            symbol.ctype=ctype
+
+                        assert self.t[0].s=="]"
+                        self.t+=1
+
                         continue
 
-                    case "enum":
-                        ctype.is_explicit_enum=True
+                    case "struct":
                         self.t+=1
+
+                        struct_name:Token|None=None
+                        struct_fields:list[Symbol]|None=None
+                        if self.t[0].token_type==TokenType.SYMBOL:
+                            struct_name=self.t[0]
+                            self.t+=1
+
+                        if self.t[0].s=="{":
+                            self.t+=1
+                            fields=[]
+                            while field_symdef:=self.parse_symbol_definition():
+                                fields.append(field_symdef)
+
+                            assert self.t[0].s=="}", f"got instead {self.t[0]}"
+
+                        struct_base=CTypeStruct(struct_name,struct_fields)
+                        ctype.base_type=struct_base
+
+                        print("parsed struct")
+                        ctype.print(0)
+
                         continue
 
                     case "union":
-                        ctype.is_explicit_union=True
+                        self.t+=1
+
+                        union_name:Token|None=None
+                        union_fields:list[Symbol]|None=None
+                        if self.t[0].token_type==TokenType.SYMBOL:
+                            union_name=self.t[0]
+                            self.t+=1
+
+                        if self.t[0].s=="{":
+                            union_fields=[]
+
+                            self.t+=1
+                            while field_symdef:=self.parse_symbol_definition():
+                                assert self.t[0].s==";", f"got instead {self.t[0]}"
+                                self.t+=1
+
+                                union_fields.append(field_symdef.symbol)
+
+                            assert self.t[0].s=="}", f"got instead {self.t[0]}"
+                            self.t+=1
+
+                        union_base=CTypeUnion(union_name,union_fields)
+                        ctype.base_type=union_base
+
+                        #ctype.print(0)
+                        #fatal("found union type")
+
+                        continue
+
+                    case "enum":
+                        self.t+=1
+
+                        enum_name:Token|None=None
+                        enum_fields:list[Symbol]|None=None
+                        if self.t[0].token_type==TokenType.SYMBOL:
+                            enum_name=self.t[0]
+                            self.t+=1
+
+                        if self.t[0].s=="{":
+                            fatal("TODO parse enum fields")
+
+                        enum_base=CTypeEnum(enum_name,enum_fields)
+                        ctype.base_type=enum_base
+
+                        continue
+
+                    case "long":
+                        if ctype.length_mod is None:
+                            ctype.length_mod=1
+                        else:
+                            ctype.length_mod+=1
+                        self.t+=1
+                        continue
+
+                    case "short":
+                        if ctype.length_mod is None:
+                            ctype.length_mod=-1
+                        else:
+                            ctype.length_mod-=1
                         self.t+=1
                         continue
 
@@ -2268,9 +2551,15 @@ def main(filename:str|None=None):
                         if other =="(":
                             if symbol is not None:
                                 arguments:list[Symbol]=[]
+                                has_vararg=False
 
                                 self.t+=1
                                 while self.tok.s!=")":
+                                    if self.tok.s=="...":
+                                        has_vararg=True
+                                        self.t+=1
+                                        break
+
                                     symbol_def=self.parse_symbol_definition()
                                     if symbol_def is None:
                                         break
@@ -2282,9 +2571,9 @@ def main(filename:str|None=None):
 
                                     break
 
-                                assert self.tok.s==")"
+                                assert self.tok.s==")", f"got instead {self.tok}"
 
-                                ctype=CTypeFunction(ctype,arguments)
+                                ctype=CTypeFunction(ctype,arguments,has_vararg=has_vararg)
                                 symbol.ctype=ctype
 
                                 self.t+=1
@@ -2295,21 +2584,6 @@ def main(filename:str|None=None):
                         other_as_type=self.block.getTypeByName(other)
                         if other_as_type is not None:
                             ctype.base_type=other_as_type
-                            self.t+=1
-                            continue
-
-                        elif ctype.is_explicit_struct and other in self.block.struct_types:
-                            ctype.base_type=self.block.struct_types[other]
-                            self.t+=1
-                            continue
-
-                        elif ctype.is_explicit_enum and other in self.block.enum_types:
-                            ctype.base_type=self.block.enum_types[other]
-                            self.t+=1
-                            continue
-
-                        elif ctype.is_explicit_union and other in self.block.union_types:
-                            ctype.base_type=self.block.union_types[other]
                             self.t+=1
                             continue
 
@@ -2327,14 +2601,18 @@ def main(filename:str|None=None):
                                 break
 
                             symbol=Symbol(ctype=ctype,name=self.tok)
+
                             self.t+=1
                             continue 
 
                 break
 
-            if symbol is None:
+            if ctype.is_empty_default():
                 self.t=old_t
                 return None
+
+            if symbol is None:
+                symbol=Symbol(ctype,name=None)
 
             return SymbolDef(symbol)
 
