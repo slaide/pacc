@@ -871,7 +871,7 @@ def main(filename:str|None=None):
                         @property
                         @tp.override
                         def val(self)->int:
-                            return int(bool(self.left.val) > bool(self.right.val))
+                            return int(self.left.val > self.right.val)
                             
                         @tp.override
                         def print(self,indent:int=0):
@@ -888,11 +888,11 @@ def main(filename:str|None=None):
                         @property
                         @tp.override
                         def val(self)->int:
-                            return int(bool(self.left.val) >= bool(self.right.val))
+                            return int(self.left.val >= self.right.val)
                             
                         @tp.override
                         def print(self,indent:int=0):
-                            print(f"{' '*indent}greater: {self.val}")
+                            print(f"{' '*indent}greater or equal: {self.val}")
                             self.left.print(indent=indent+1)
                             print(f"{' '*indent}>=")
                             self.right.print(indent=indent+1)
@@ -905,7 +905,7 @@ def main(filename:str|None=None):
                         @property
                         @tp.override
                         def val(self)->int:
-                            return int(bool(self.left.val) < bool(self.right.val))
+                            return int(self.left.val < self.right.val)
                             
                         @tp.override
                         def print(self,indent:int=0):
@@ -922,13 +922,47 @@ def main(filename:str|None=None):
                         @property
                         @tp.override
                         def val(self)->int:
-                            return int(bool(self.left.val) <= bool(self.right.val))
+                            return int(self.left.val <= self.right.val)
                             
                         @tp.override
                         def print(self,indent:int=0):
                             print(f"{' '*indent}less: {self.val}")
                             self.left.print(indent=indent+1)
                             print(f"{' '*indent}<=")
+                            self.right.print(indent=indent+1)
+
+                    @dataclass
+                    class ExpressionEqual(Expression):
+                        left:Expression
+                        right:Expression
+
+                        @property
+                        @tp.override
+                        def val(self)->int:
+                            return int(self.left.val == self.right.val)
+                            
+                        @tp.override
+                        def print(self,indent:int=0):
+                            print(f"{' '*indent}equal: {self.val}")
+                            self.left.print(indent=indent+1)
+                            print(f"{' '*indent}==")
+                            self.right.print(indent=indent+1)
+
+                    @dataclass
+                    class ExpressionUnequal(Expression):
+                        left:Expression
+                        right:Expression
+
+                        @property
+                        @tp.override
+                        def val(self)->int:
+                            return int(self.left.val != self.right.val)
+                            
+                        @tp.override
+                        def print(self,indent:int=0):
+                            print(f"{' '*indent}unequal: {self.val}")
+                            self.left.print(indent=indent+1)
+                            print(f"{' '*indent}!=")
                             self.right.print(indent=indent+1)
 
                     class OperatorPrecedence(int,Enum):
@@ -946,6 +980,9 @@ def main(filename:str|None=None):
 
                         LESS_OR_EQUAL=0,
                         GREATER_OR_EQUAL=0,
+
+                        EQUAL=0,
+                        UNEQUAL=0,
 
                         NONE=20
 
@@ -1016,6 +1053,24 @@ def main(filename:str|None=None):
                                 right,tokens=parse_expression(tokens,OperatorPrecedence.LESS_OR_EQUAL)
 
                                 ret=ExpressionLessOrEqual(ret,right)
+                                continue
+
+                            elif tok.s=="==":
+                                if current_operator_precedence<OperatorPrecedence.EQUAL:
+                                    break
+                                tokens=tokens[1:]
+                                right,tokens=parse_expression(tokens,OperatorPrecedence.EQUAL)
+
+                                ret=ExpressionEqual(ret,right)
+                                continue
+
+                            elif tok.s=="!=":
+                                if current_operator_precedence<OperatorPrecedence.UNEQUAL:
+                                    break
+                                tokens=tokens[1:]
+                                right,tokens=parse_expression(tokens,OperatorPrecedence.UNEQUAL)
+
+                                ret=ExpressionUnequal(ret,right)
                                 continue
 
                             elif tok.s=="&&":
