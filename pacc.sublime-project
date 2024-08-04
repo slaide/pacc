@@ -2,7 +2,7 @@
     /* recommended packages:
 
        ANSIescape - for ansi color sequences in build commands
-       LSP
+       LSP - for general LSP support
        LSP-clangd - for c syntax support
        LSP-pyright - for python syntax support
        requirementstxt - for requirements.txt syntax support

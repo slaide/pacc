@@ -26,6 +26,8 @@ def fatal(message:str="",exit_code:int=-1)->tp.NoReturn:
     # and reverse to print lowest stack information last
     frames=reversed(frames[1:-2])
 
+    print()
+
     _=sys.stdout.write("FATAL >>>\n")
 
     for current_frame in frames:
@@ -1698,12 +1700,41 @@ def main(filename:str|None=None):
             else:
                 print("")
 
-    class CTypeStruct(CType):
-        "name may be none, and if fields are none, the type is considered incomplete"
-        def __init__(self,name:Token|None,fields:list["Symbol"]|None):
+        def get_field_by_name(self,field_name:str)->"CTypeField|None":
+            if self.base_type is not None:
+                return self.base_type.get_field_by_name(field_name)
+
+            raise TypeError("type does not have any fields")
+
+    class CTypeField(CType):
+        "information on a field of a compound type"
+        def __init__(self,name:Token|None,ctype:CType,parent_ctype:CType):
             super().__init__()
             self.name=name
+            "optional name of the field"
+            self.ctype=ctype
+            "type of the field"
+            self.parent_ctype=parent_ctype
+            "compound type which this field is part of"
+
+        @tp.override
+        def print(self,indent:int):
+            print(ind(indent)+"field:")
+            if self.name is None:
+                print(ind(indent+1)+f"name: <anon>")
+            else:
+                print(ind(indent+1)+f"name: {self.name.s}")
+            print(ind(indent+1)+f"type:")
+            self.ctype.print(indent+2)
+
+    class CTypeStruct(CType):
+        "name may be none, and if fields are none, the type is considered incomplete"
+        def __init__(self,name:Token|None,fields:list[CTypeField]|None):
+            super().__init__()
+            self.name=name
+            "optional name of this struct type"
             self.fields=fields
+            "fields of the struct. may be none (no list present) on an incomplete type, e.g. forward declaration or opaque type"
 
         @property
         def is_incomplete(self)->bool:
@@ -1730,9 +1761,20 @@ def main(filename:str|None=None):
                     print(ind(indent+3)+f"type:")
                     field.ctype.print(indent+4)
 
+        @tp.override
+        def get_field_by_name(self,field_name:str)->"CTypeField|None":
+            if self.fields is None:
+                raise RuntimeError(f"type {self.name=} is incomplete, cannot have any types")
+
+            for field in self.fields:
+                if field.name is not None and field.name.s==field_name:
+                    return field
+
+            return None
+
     class CTypeUnion(CType):
         "name may be none, and if fields are none, the type is considered incomplete"
-        def __init__(self,name:Token|None,fields:list["Symbol"]|None):
+        def __init__(self,name:Token|None,fields:list[CTypeField]|None):
             super().__init__()
             self.name=name
             self.fields=fields
@@ -1761,6 +1803,17 @@ def main(filename:str|None=None):
                         print(ind(indent+3)+f"name: {field.name.s}")
                     print(ind(indent+3)+f"type:")
                     field.ctype.print(indent+4)
+
+        @tp.override
+        def get_field_by_name(self,field_name:str)->"CTypeField|None":
+            if self.fields is None:
+                raise RuntimeError("type is incomplete, cannot have any types")
+
+            for field in self.fields:
+                if field.name is not None and field.name.s==field_name:
+                    return field
+
+            return None
 
     class CTypeEnum(CType):
         "name may be none, and if fields are none, the type is considered incomplete"
@@ -1891,6 +1944,19 @@ def main(filename:str|None=None):
         def print(self,indent:int):
             pass
 
+        def get_ctype(self)->"CType":
+            raise RuntimeError("raw AstValue cannot have a type")
+
+    class AstValueField(AstValue):
+        "operator value to access a field of a value, i.e. this is ensured to exist and the type is resolved"
+        def __init__(self,field:CTypeField):
+            super().__init__()
+            self.field=field
+
+        @tp.override
+        def get_ctype(self)->"CType":
+            return self.field.ctype
+
     class AstValueNumericLiteral(AstValue):
         def __init__(self,value:str|int|float,ctype:CType):
             super().__init__()
@@ -1900,9 +1966,13 @@ def main(filename:str|None=None):
         @tp.override
         def print(self,indent:int):
             print(ind(indent)+"number:")
-            print(ind(indent+1)+"literal: "+str(self.value))
+            print(ind(indent+1)+"literal: "+repr(self.value))
             print(ind(indent+1)+"type: ")
             self.ctype.print(indent+2)
+
+        @tp.override
+        def get_ctype(self)->"CType":
+            return self.ctype
 
     class AstValueSymbolref(AstValue):
         def __init__(self,symbol_to_ref:Symbol):
@@ -1913,6 +1983,10 @@ def main(filename:str|None=None):
         def print(self,indent:int):
             assert self.symbol.name is not None, "should be unreachable"
             print(ind(indent)+"ref sym: "+self.symbol.name.s)
+
+        @tp.override
+        def get_ctype(self)->"CType":
+            return self.symbol.ctype
 
     class AstFunctionCall(AstValue):
         def __init__(self,func:AstValue,arguments:list[AstValue]):
@@ -1929,15 +2003,89 @@ def main(filename:str|None=None):
             for arg in self.arguments:
                 arg.print(indent+2)
 
+        @tp.override
+        def get_ctype(self)->"CType":
+            func_type=self.func.get_ctype()
+            if not isinstance(func_type,CTypeFunction):
+                raise RuntimeError("should not happen, attempting to call non-function")
+
+            return func_type.return_type
+
     class AstOperationKind(str,Enum):
         GREATER_THAN=">"
+        GREATER_THAN_OR_EQUAL=">="
         LESS_THAN="<"
-        PLUS="+"
-        MINUS="-"
-        INCREMENT="++"
-        DECREMENT="--"
+        LESS_THAN_OR_EQUAL="<="
 
-        SUBSCRIPT="subscript"
+        LOGICAL_NOT="!"
+        BITWISE_NOT="~"
+
+        ADD="+"
+        SUBTRACT="-"
+
+        UNARY_PLUS="+"
+        UNARY_MINUS="-"
+
+        MULTIPLY="*"
+        DIVIDE="/"
+
+        EQUAL="=="
+        UNEQUAL="!="
+
+        DOT="."
+        ARROW="->"
+
+        ADDROF="&"
+        DEREFERENCE="*"
+
+        POSTFIX_INCREMENT=".++"
+        POSTFIX_DECREMENT=".--"
+        PREFIX_INCREMENT="++."
+        PREFIX_DECREMENT="--."
+
+        SUBSCRIPT="["
+        NESTED="("
+        CAST="(t)"
+
+        @property
+        def precedence(self)->int:
+            "returns precedence. operands for operators with lower precedence are parsed until an operator with same or higher precedence is encountered"
+            match self:
+                case AstOperationKind.POSTFIX_INCREMENT:
+                    return 1
+                case AstOperationKind.POSTFIX_DECREMENT:
+                    return 1
+                case AstOperationKind.NESTED:
+                    return 1
+                case AstOperationKind.SUBSCRIPT:
+                    return 1
+                case AstOperationKind.DOT:
+                    return 1
+                case AstOperationKind.ARROW:
+                    return 1
+
+                case AstOperationKind.PREFIX_INCREMENT:
+                    return 2
+                case AstOperationKind.PREFIX_DECREMENT:
+                    return 2
+                case AstOperationKind.UNARY_MINUS:
+                    return 2
+                case AstOperationKind.UNARY_PLUS:
+                    return 2
+                case AstOperationKind.LOGICAL_NOT:
+                    return 2
+                case AstOperationKind.BITWISE_NOT:
+                    return 2
+                case AstOperationKind.CAST:
+                    return 2
+                case AstOperationKind.DEREFERENCE:
+                    return 2
+                case AstOperationKind.ADDROF:
+                    return 2
+
+                case _:
+                    fatal(f"unimplemented {self}")
+
 
     class AstOperation(AstValue):
         def __init__(self,operation:str|AstOperationKind,val0:AstValue,val1:AstValue|None=None,val2:AstValue|None=None):
@@ -1949,15 +2097,90 @@ def main(filename:str|None=None):
 
         @tp.override
         def print(self,indent:int):
+            def print_op(num_args:int):
+                print(ind(indent)+f"op: {self.operation.value}")
+                self.val0.print(indent+1)
+
+                match num_args:
+                    case 1:
+                        assert self.val1 is None
+                        assert self.val2 is None
+                    case 2:
+                        assert self.val1 is not None
+                        assert self.val2 is None
+                        self.val1.print(indent+1)
+                    case 3:
+                        assert self.val1 is not None
+                        assert self.val2 is not None
+                        self.val1.print(indent+1)
+                        self.val2.print(indent+1)
+                    case _:
+                        fatal("unreachable")
+
             match self.operation:
                 case AstOperationKind.GREATER_THAN:
-                    print(ind(indent)+"op:")
-                    self.val0.print(indent+1)
-                    print(ind(indent+1)+">")
+                    print_op(2)
+                case AstOperationKind.LESS_THAN:
+                    print_op(2)
+                case AstOperationKind.PREFIX_INCREMENT:
+                    print_op(1)
+                case AstOperationKind.POSTFIX_INCREMENT:
+                    print_op(1)
+                case AstOperationKind.ARROW:
+                    print_op(2)
+
+                case AstOperationKind.POSTFIX_DECREMENT:
+                    print_op(1)
+                case AstOperationKind.POSTFIX_INCREMENT:
+                    print_op(1)
+                case AstOperationKind.PREFIX_DECREMENT:
+                    print_op(1)
+                case AstOperationKind.PREFIX_INCREMENT:
+                    print_op(1)
+
+                case other:
+                    fatal(f"unimplemented {other}")
+
+        @tp.override
+        def get_ctype(self)->"CType":
+            match self.operation:
+                case AstOperationKind.DOT:
                     assert self.val1 is not None
-                    self.val1.print(indent+1)
-                case _:
-                    fatal("unimplemented")
+                    return self.val1.get_ctype()
+
+                case AstOperationKind.ARROW:
+                    assert self.val1 is not None
+                    return self.val1.get_ctype()
+
+                case AstOperationKind.POSTFIX_DECREMENT:
+                    return self.val0.get_ctype()
+                case AstOperationKind.POSTFIX_INCREMENT:
+                    return self.val0.get_ctype()
+                case AstOperationKind.PREFIX_DECREMENT:
+                    return self.val0.get_ctype()
+                case AstOperationKind.PREFIX_INCREMENT:
+                    return self.val0.get_ctype()
+
+                case other:
+                    # TODO actually calculate this approriately, e.g. taking implicit conversion into account, and overloaded operations like pointer arithmetic
+                    return self.val0.get_ctype()
+
+    class AstOperationCast(AstOperation):
+        def __init__(self,cast_to_type:CType,value:AstValue):
+            super().__init__(operation=AstOperationKind.CAST,val0=value)
+            self.cast_to_type=cast_to_type
+
+        @tp.override
+        def print(self,indent:int):
+            print(ind(indent)+"cast:")
+            print(ind(indent+1)+"value:")
+            self.val0.print(indent+2)
+            print(ind(indent+1)+"to type:")
+            self.cast_to_type.print(indent+2)
+
+        @tp.override
+        def get_ctype(self)->"CType":
+            return self.cast_to_type
 
     class Statement:
         "base class for any statement"
@@ -1997,7 +2220,10 @@ def main(filename:str|None=None):
 
         @tp.override
         def print(self,indent:int):
-            print(ind(indent)+f"typedef alias {self.symbol.name.s}")
+            if self.symbol.name is None:
+                print(ind(indent)+f"typedef alias <anon>")
+            else:
+                print(ind(indent)+f"typedef alias {self.symbol.name.s}")
             self.symbol.ctype.print(indent+1)
 
 
@@ -2075,12 +2301,26 @@ def main(filename:str|None=None):
 
             return None
 
+        def addType(self,ctype:CType):
+            "make type public, intended for use in symbol definitions to publicize a symbol type"
+            if isinstance(ctype,CTypeStruct):
+                if ctype.name is not None:
+                    self.struct_types[ctype.name.s]=ctype
+            elif isinstance(ctype,CTypeUnion):
+                if ctype.name is not None:
+                    self.union_types[ctype.name.s]=ctype
+
+            if ctype.base_type is not None:
+                self.addType(ctype.base_type)
+
         def addStatement(self,statement:Statement,ingest_symbols:bool=True):
             if ingest_symbols:
                 if isinstance(statement,SymbolDef):
                     self.addSymbol(statement.symbol)
 
                 elif isinstance(statement,StatementTypedef):
+                    self.addType(statement.symbol.ctype)
+
                     if isinstance(statement.symbol.ctype,CTypeStruct):
                         if statement.symbol.ctype.name is not None:
                             self.struct_types[statement.symbol.ctype.name.s]=statement.symbol.ctype
@@ -2095,10 +2335,628 @@ def main(filename:str|None=None):
             self.statements.append(statement)
 
         def addSymbol(self,symbol:Symbol):
+            self.addType(symbol.ctype)
+
             if symbol.name is not None:
                 self.symbols[symbol.name.s]=symbol
 
+        def parse(self,t:Iter[Token])->Iter[Token]:
+            "parse tokens as a series of statements into self.block, stop when something that is not valid syntax is encountered"
+            while not t.empty:
+                t,statement=self.parse_statement(t)
+                if statement is None:
+                    break
+
+                if isinstance(statement,AstFunction):
+                    self.addStatement(statement,ingest_symbols=False)
+                else:
+                    self.addStatement(statement)
+
+            return t
+
+        def parse_statement(self,t:Iter[Token])->tuple[Iter[Token],Statement|None]:
+            """
+            parse a terminated statement
+            """
+
+            match t[0].s:
+                case "{":
+                    t+=1
+                    
+                    astblock=AstBlock(parent=self)
+                    t=astblock.parse(t)
+
+                    assert t[0].s=="}", f"got instead {t[0]}"
+                    t+=1
+
+                    return t,astblock
+
+                case "typedef":
+                    t+=1
+
+                    t,typedef=self.parse_symbol_definition(t)
+                    
+                    assert t[0].s==";", f"got instead {t[0]}"
+                    t+=1
+
+                    if typedef is None:
+                        return t,None
+
+                    return t,StatementTypedef(typedef.symbol)
+
+                case "switch":
+                    fatal("switch unimplemented")
+
+                case "while":
+                    fatal("while unimplemented")
+
+                case "for":
+                    t+=1
+
+                    assert t[0].s=="("
+                    t+=1
+
+                    # parse for init
+                    t,init_statement=self.parse_statement(t)
+                    assert init_statement is not None
+
+                    for_block=AstForLoop(init_statement,parent=self)
+
+                    # parse for condition
+                    t,condition=for_block.parse_value(t)
+                    for_block.condition=condition
+
+                    assert t[0].s==";", f"got instead {t[0]}"
+                    t+=1
+
+                    # parse for step
+                    t,step_statement=for_block.parse_value(t)
+                    for_block.step=step_statement
+
+                    assert t[0].s==")", f"got instead {t[0]}"
+                    t+=1
+
+                    t,for_body_statement=for_block.parse_statement(t)
+                    assert for_body_statement is not None
+
+                    for_block.addStatement(for_body_statement)
+
+                    return t,for_block
+                    
+                case "break":
+                    fatal("break unimplemented")
+                case "continue":
+                    fatal("continue unimplemented")
+
+                case "return":
+                    t+=1
+
+                    t,value=self.parse_value(t)
+
+                    assert t[0].s==";", f"expected ; got instead {t[0]}"
+                    t+=1
+
+                    return t,StatementReturn(value)
+
+                case "goto":
+                    fatal("goto unimplemented")
+
+                case _:
+                    t,symbol_def=self.parse_symbol_definition(t)
+                    if symbol_def is not None:
+                        self.addSymbol(symbol_def.symbol)
+
+                        if isinstance(symbol_def.symbol.ctype,CTypeFunction):
+                            if t[0].s!=";":
+                                t,func_def=self.parse_function_definition(func_type=symbol_def.symbol.ctype,t=t)
+                                if func_def is None:
+                                    print("failed to parse function definition for decl:")
+                                    symbol_def.symbol.ctype.print(0)
+                                    fatal(f"at {symbol_def.symbol.name.s if symbol_def.symbol.name is not None else '<anon>'}")
+
+                                return t,func_def
+
+                        assert t[0].s==";", f"got instead {t[0]}"
+                        t+=1
+
+                        return t,symbol_def
+
+                    t,value=self.parse_value(t)
+                    if value is not None:
+                        assert t[0].s==";"
+                        t+=1
+
+                        return t,StatementValue(value)
+
+                    t,symdef=self.parse_symbol_definition(t)
+                    if symdef is not None:
+                        assert t[0].s==";"
+                        t+=1
+
+                        return t,symdef
+
+            return t,None
+
+        def parse_value(self,t:Iter[Token])->tuple[Iter[Token],AstValue|None]:
+            ret=None
+            while 1:
+                match t[0].token_type:
+                    case TokenType.LITERAL_CHAR:
+                        if ret is not None: break
+
+                        chartype=self.getTypeByName("char")
+                        assert chartype is not None
+                        ret=AstValueNumericLiteral(t[0].s,chartype)
+                        t+=1
+
+                    case TokenType.LITERAL_NUMBER:
+                        if ret is not None: break
+                        
+                        # TODO actually decide the type of the numeric
+                        numtype=self.getTypeByName("int")
+                        assert numtype is not None
+                        ret=AstValueNumericLiteral(t[0].s,numtype)
+                        t+=1
+
+                    case TokenType.LITERAL_STRING:
+                        if ret is not None: break
+                        
+                        # TODO actually decide the type of the numeric
+                        cstring_type=self.getTypeByName("char")
+                        assert cstring_type is not None
+                        cstring_type=CTypePointer(cstring_type)
+                        ret=AstValueNumericLiteral(t[0].s,cstring_type)
+                        t+=1
+
+                    case TokenType.SYMBOL:
+                        if ret is not None: break
+
+                        symbol=self.getSymbolByName(t[0].s)
+                        if symbol is None:
+                            break
+
+                        ret=AstValueSymbolref(symbol)
+                        t+=1
+
+                    case TokenType.OPERATOR_PUNCTUATION:
+                        match t[0].s:
+                            case "+":
+                                op_str=t[0].s
+
+                                t+=1
+
+                                if ret is None:
+                                    t,ret=self.parse_value(t)
+                                    if ret is None: break
+                                    ret=AstOperation(op_str,ret)
+                                    continue
+
+                                t,rhv=self.parse_value(t)
+                                if rhv is None: break
+                                ret=AstOperation(op_str,ret,rhv)
+
+                            case "&":
+                                op_str=t[0].s
+
+                                t+=1
+
+                                if ret is not None:
+                                    break
+
+                                t,rhv=self.parse_value(t)
+                                if rhv is None: break
+                                ret=AstOperation(op_str,rhv)
+
+                            case ".":
+                                op_str=t[0].s
+
+                                t+=1
+
+                                if ret is None:
+                                    break
+
+                                assert t[0].token_type==TokenType.SYMBOL
+
+                                val_field=ret.get_ctype().get_field_by_name(t[0].s)
+                                assert val_field is not None
+
+                                t+=1
+
+                                ret=AstOperation(op_str,ret,val_field) #type:ignore
+
+                            case "->":
+                                op_str=t[0].s
+
+                                t+=1
+
+                                if ret is None:
+                                    break
+
+                                assert t[0].token_type==TokenType.SYMBOL
+
+                                val_field=ret.get_ctype().base_type.get_field_by_name(t[0].s) #type:ignore
+                                assert val_field is not None
+
+                                t+=1
+
+                                ret=AstOperation(op_str,ret,val_field) #type:ignore
+
+                            case "-":
+                                op_str=t[0].s
+
+                                t+=1
+
+                                if ret is None:
+                                    t,ret=self.parse_value(t)
+                                    if ret is None: break
+                                    ret=AstOperation(op_str,ret)
+                                    continue
+
+                                t,rhv=self.parse_value(t)
+                                if rhv is None: break
+                                ret=AstOperation(op_str,ret,rhv)
+
+                            case "[":
+                                if ret is None:break
+
+                                t+=1
+
+                                t,index_value=self.parse_value(t)
+                                if index_value is None:
+                                    fatal(f"invalid index at {t[0]}")
+
+                                assert t[0].s=="]"
+                                t+=1
+
+                                ret=AstOperation(AstOperationKind.SUBSCRIPT,ret,index_value)
+
+                            case "<":
+                                if ret is None: break
+
+                                t+=1
+
+                                t,rhv=self.parse_value(t)
+                                if rhv is None: break
+                                ret=AstOperation("<",ret,rhv)
+
+                            case "++":
+                                t+=1
+
+                                if ret is not None:
+                                    ret=AstOperation(AstOperationKind.POSTFIX_INCREMENT,ret)
+                                    continue
+
+                                t,ret=self.parse_value(t)
+
+                                if ret is None: break
+
+                                ret=AstOperation(AstOperationKind.PREFIX_INCREMENT,ret)
+
+                            case "--":
+                                t+=1
+
+                                if ret is not None:
+                                    ret=AstOperation(AstOperationKind.POSTFIX_DECREMENT,ret)
+                                    continue
+
+                                t,ret=self.parse_value(t)
+
+                                if ret is None: break
+
+                                ret=AstOperation(AstOperationKind.PREFIX_DECREMENT,ret)
+
+                            case "(":
+                                t+=1
+
+                                # cases:
+                                # 1) ret is not none, then this is a call operator
+                                # 2) ret is none, and a symbol can be parsed from the token iterator that just names a type without a symbol name -> cast operator
+                                # 3) else: this is a nesting operator to override operator precedence
+
+                                if ret is None:
+                                    ts,symbol_def=self.parse_symbol_definition(t)
+                                    if symbol_def is not None:
+                                        t=ts
+
+                                        assert symbol_def.symbol.name is None, f"cast to symbol declaration is invalid at {t[0]}"
+                                        
+                                        assert t[0].s==")", f"got instead {t[0]}"
+                                        t+=1
+
+                                        t,cast_value=self.parse_value(t)
+                                        assert cast_value is not None
+
+                                        ret=AstOperationCast(cast_to_type=symbol_def.symbol.ctype,value=cast_value)
+                                        continue
+
+                                # TODO check that ret is callable
+
+                                argument_values:list[AstValue]=[]
+                                while 1:
+                                    t,arg_value=self.parse_value(t)
+                                    if arg_value is None:
+                                        break
+
+                                    argument_values.append(arg_value)
+
+                                    if t[0].s==",":
+                                        t+=1
+                                        continue
+
+                                    break
+
+                                assert t[0].s==")", f"got instead {t[0]}"
+                                t+=1
+
+                                ret=AstFunctionCall(ret,argument_values)
+
+                            case ";":
+                                break
+
+                            case _:
+                                break
+
+                    case other:
+                        fatal(f"unimplemented : {other}")
+
+            return t,ret
+
+        def parse_function_definition(self,func_type:CTypeFunction,t:Iter[Token])->tuple[Iter[Token],"AstFunction|None"]:
+            if t[0].s!="{":
+                return t,None
+
+            t+=1
+
+            func_block=AstFunction(func_type,parent=self)
+            t=func_block.parse(t)
+
+            assert t[0].s=="}", f"got instead {t[0].s}"
+            t+=1
+
+            return t,func_block
+
+        def parse_symbol_definition(self,t:Iter[Token])->tuple[Iter[Token],SymbolDef|None]:
+            "try parsing a symbol definition from self.t, internally advances self.t when return value is not None"
+
+            ctype:CType=CType()
+            symbol:Symbol|None=None
+
+            while not t.empty:
+                match t[0].s:
+                    case "extern":
+                        ctype.is_extern=True
+                        t+=1
+                        continue
+
+                    case "const":
+                        ctype.is_const=True
+                        t+=1
+                        continue
+
+                    case "static":
+                        ctype.is_static=True
+                        t+=1
+                        continue
+
+                    case "signed":
+                        ctype.is_signed=True
+                        t+=1
+                        continue
+
+                    case "unsigned":
+                        ctype.is_signed=False
+                        t+=1
+                        continue
+
+                    case "*":
+                        ctype=CTypePointer(ctype)
+                        t+=1
+                        continue
+
+                    case "[":
+                        t+=1
+
+                        t,array_len=self.parse_value(t)
+
+                        ctype=CTypeArray(ctype,array_len)
+                        if symbol is not None:
+                            symbol.ctype=ctype
+
+                        assert t[0].s=="]"
+                        t+=1
+
+                        continue
+
+                    case "struct":
+                        t+=1
+
+                        struct_name:Token|None=None
+                        if t[0].token_type==TokenType.SYMBOL:
+                            struct_name=t[0]
+                            t+=1
+
+                        struct_base=CTypeStruct(struct_name,None)
+
+                        ctype.base_type=struct_base
+
+                        if t[0].s=="{":
+                            t+=1
+
+                            struct_base.fields=[]
+
+                            while 1:
+                                t,field_symdef=self.parse_symbol_definition(t)
+                                if field_symdef is None:
+                                    break
+
+                                assert t[0].s==";", f"got instead {t[0]}"
+                                t+=1
+
+                                struct_base.fields.append(CTypeField(field_symdef.symbol.name,field_symdef.symbol.ctype,parent_ctype=struct_base))
+
+                            assert t[0].s=="}", f"got instead {t[0]}"
+                            t+=1
+                        else:
+                            # type not defined inline, then must be named
+                            assert struct_name is not None
+
+                            # check if inline incomplete type references complete type
+                            complete_type=self.getTypeByName(struct_name.s,e_struct=True)
+                            if complete_type is not None:
+                                ctype.base_type=complete_type
+
+                        continue
+
+                    case "union":
+                        t+=1
+
+                        union_name:Token|None=None
+                        if t[0].token_type==TokenType.SYMBOL:
+                            union_name=t[0]
+                            t+=1
+
+                        union_base=CTypeUnion(union_name,None)
+
+                        ctype.base_type=union_base
+
+                        if t[0].s=="{":
+                            t+=1
+                            
+                            union_base.fields=[]
+
+                            while 1:
+                                t,field_symdef=self.parse_symbol_definition(t)
+                                if field_symdef is None:
+                                    break
+
+                                assert t[0].s==";", f"got instead {t[0]}"
+                                t+=1
+
+                                union_base.fields.append(CTypeField(field_symdef.symbol.name,field_symdef.symbol.ctype,parent_ctype=union_base))
+
+                            assert t[0].s=="}", f"got instead {t[0]}"
+                            t+=1
+                        else:
+                            # type not defined inline, then must be named
+                            assert union_name is not None
+
+                            # check if inline incomplete type references complete type
+                            complete_type=self.getTypeByName(union_name.s,e_union=True)
+                            if complete_type is not None:
+                                ctype.base_type=complete_type
+
+                        continue
+
+                    case "enum":
+                        t+=1
+
+                        enum_name:Token|None=None
+                        enum_fields:list[Symbol]|None=None
+                        if t[0].token_type==TokenType.SYMBOL:
+                            enum_name=t[0]
+                            t+=1
+
+                        if t[0].s=="{":
+                            fatal("TODO parse enum fields")
+
+                        enum_base=CTypeEnum(enum_name,enum_fields)
+                        ctype.base_type=enum_base
+
+                        continue
+
+                    case "long":
+                        if ctype.length_mod is None:
+                            ctype.length_mod=1
+                        else:
+                            ctype.length_mod+=1
+                        t+=1
+                        continue
+
+                    case "short":
+                        if ctype.length_mod is None:
+                            ctype.length_mod=-1
+                        else:
+                            ctype.length_mod-=1
+                        t+=1
+                        continue
+
+                    case other:
+                        if other =="(":
+                            if symbol is not None:
+                                arguments:list[Symbol]=[]
+                                has_vararg=False
+
+                                t+=1
+                                while t[0].s!=")":
+                                    if t[0].s=="...":
+                                        has_vararg=True
+                                        t+=1
+                                        break
+
+                                    t,symbol_def=self.parse_symbol_definition(t)
+                                    if symbol_def is None:
+                                        break
+
+                                    arguments.append(symbol_def.symbol)
+                                    if t[0].s==",":
+                                        t+=1
+                                        continue
+
+                                    break
+
+                                assert t[0].s==")", f"got instead {t[0]}"
+
+                                ctype=CTypeFunction(ctype,arguments,has_vararg=has_vararg)
+                                symbol.ctype=ctype
+
+                                t+=1
+                                continue
+
+                            fatal(f"unimplemented - {other}")
+
+                        other_as_type=self.getTypeByName(other)
+                        if other_as_type is not None:
+                            ctype.base_type=other_as_type
+                            t+=1
+                            continue
+
+                        elif other=="=":
+                            t+=1
+                            t,value=self.parse_value(t)
+                            assert value is not None, "no value for symbol init"
+                            continue
+
+                        else:
+                            if not t[0].is_valid_symbol():
+                                break
+
+                            if ctype.is_empty_default():
+                                break
+
+                            symbol=Symbol(ctype=ctype,name=t[0])
+
+                            t+=1
+                            continue 
+
+                break
+
+            if ctype.is_empty_default():
+                return t,None
+
+            if symbol is None:
+                symbol=Symbol(ctype,name=None)
+
+            return t,SymbolDef(symbol)
+
+
     class AstForLoop(Block,Statement):
+        """
+        for loop
+
+        hacky: always has two statements.
+        - first statement is init statement (is in self.statment list because ingest into that list adds symbols defined there to loop scope)
+        - second statement is the loop body
+        """
         def __init__(self,
             init_statement:Statement,
             condition:AstValue|None=None,
@@ -2125,6 +2983,10 @@ def main(filename:str|None=None):
             if self.step is not None:
                 self.step.print(indent+2)
 
+            print(ind(indent+1)+"body:")
+            assert len(self.statements)==2, f"{len(self.statements)}"
+            self.statements[1].print(indent+2)
+
     class AstBlock(Block,Statement):
         def __init__(self,
             parent:Block|None=None,
@@ -2134,7 +2996,8 @@ def main(filename:str|None=None):
         @tp.override
         def print(self,indent:int):
             print(ind(indent)+"block:")
-            Block.print(self,indent+1)
+            for statement in self.statements:
+                statement.print(indent+1)
 
     class AstFunction(Block,Statement):
         def __init__(self,func_type:CTypeFunction,**kwargs:tp.Any|None):
@@ -2161,519 +3024,10 @@ def main(filename:str|None=None):
                 in ["void","char","int","float","double","bool","__builtin_va_list"]
             })
 
-            self.parse_block()
+            self.t=self.block.parse(self.t)
 
             if not self.t.empty:
                 fatal(f"leftover tokens at end of file: {str(self.t[0])} ...")
-
-        def parse_block(self):
-            "parse tokens as a series of statements into self.block, stop when something that is not valid syntax is encountered"
-            while not self.t.empty:
-                statement=self.parse_statement()
-                if statement is None:
-                    break
-
-                if isinstance(statement,AstFunction):
-                    self.block.addStatement(statement,ingest_symbols=False)
-                else:
-                    self.block.addStatement(statement)
-
-        def parse_statement(self)->Statement|None:
-            """
-            parse a terminated statement
-            """
-
-            old_t=self.t.copy()
-
-            match self.tok.s:
-                case "{":
-                    self.t+=1
-
-                    old_block=self.block
-                    
-                    astblock=AstBlock(parent=self.block)
-                    self.block=astblock
-                    self.parse_block()
-
-                    assert self.t[0].s=="}", f"got instead {self.t[0].s}"
-                    self.t+=1
-
-                    self.block=old_block
-
-                    return astblock
-
-                case "typedef":
-                    self.t+=1
-
-                    typedef=self.parse_symbol_definition()
-                    
-                    assert self.t[0].s==";", f"got instead {self.t[0]}"
-                    self.t+=1
-
-                    if typedef is None:
-                        return None
-
-                    return StatementTypedef(typedef.symbol)
-
-                case "switch":
-                    fatal("switch unimplemented")
-                case "while":
-                    fatal("while unimplemented")
-                case "for":
-                    self.t+=1
-
-                    assert self.t[0].s=="("
-                    self.t+=1
-
-                    # parse for init
-                    init_statement=self.parse_statement()
-                    assert init_statement is not None
-
-                    for_block=AstForLoop(init_statement,parent=self.block)
-
-                    old_block=self.block
-                    self.block=for_block
-
-                    # parse for condition
-                    condition=self.parse_value()
-                    for_block.condition=condition
-
-                    assert self.t[0].s==";", f"got instead {self.t[0].s}"
-                    self.t+=1
-
-                    # parse for step
-                    step_statement=self.parse_value()
-                    for_block.step=step_statement
-
-                    assert self.t[0].s==")", f"got instead {self.t[0].s}"
-                    self.t+=1
-
-                    for_body_statement=self.parse_statement()
-                    assert for_body_statement is not None
-                    for_body_statement.print(0)
-
-                    self.block=old_block
-
-                    return for_body_statement
-                    
-                case "break":
-                    fatal("break unimplemented")
-                case "continue":
-                    fatal("continue unimplemented")
-
-                case "return":
-                    self.t+=1
-
-                    value=self.parse_value()
-
-                    assert self.t[0].s==";", f"expected ; got instead {self.t[0]}"
-                    self.t+=1
-
-                    return StatementReturn(value)
-
-                case "goto":
-                    fatal("goto unimplemented")
-
-                case _:
-                    symbol_def=self.parse_symbol_definition()
-                    if symbol_def is not None:
-                        self.block.addSymbol(symbol_def.symbol)
-
-                        if isinstance(symbol_def.symbol.ctype,CTypeFunction):
-                            if self.t[0].s!=";":
-                                func_def=self.parse_function_definition(func_type=symbol_def.symbol.ctype)
-                                if func_def is None:
-                                    print("failed to parse function definition for decl:")
-                                    symbol_def.symbol.ctype.print(0)
-                                    fatal(f"at {symbol_def.symbol.name.s if symbol_def.symbol.name is not None else '<anon>'}")
-
-                                return func_def
-
-                        assert self.t[0].s==";"
-                        self.t+=1
-
-                        return symbol_def
-
-                    value=self.parse_value()
-                    if value is not None:
-                        assert self.t[0].s==";"
-                        self.t+=1
-
-                        return StatementValue(value)
-
-                    symdef=self.parse_symbol_definition()
-                    if symdef is not None:
-                        assert self.t[0].s==";"
-                        self.t+=1
-
-                        return symdef
-
-            self.t=old_t
-            return None
-
-        def parse_value(self)->AstValue|None:
-            old_t=self.t.copy()
-
-            ret=None
-            while 1:
-                match self.t[0].token_type:
-                    case TokenType.LITERAL_CHAR:
-                        if ret is not None: break
-
-                        chartype=self.block.getTypeByName("char")
-                        assert chartype is not None
-                        ret=AstValueNumericLiteral(self.t[0].s,chartype)
-                        self.t+=1
-
-                    case TokenType.LITERAL_NUMBER:
-                        if ret is not None: break
-                        
-                        # TODO actually decide the type of the numeric
-                        numtype=self.block.getTypeByName("int")
-                        assert numtype is not None
-                        ret=AstValueNumericLiteral(self.t[0].s,numtype)
-                        self.t+=1
-
-                    case TokenType.LITERAL_STRING:
-                        if ret is not None: break
-                        
-                        # TODO actually decide the type of the numeric
-                        cstring_type=self.block.getTypeByName("char")
-                        assert cstring_type is not None
-                        cstring_type=CTypePointer(cstring_type)
-                        ret=AstValueNumericLiteral(self.t[0].s,cstring_type)
-                        self.t+=1
-
-                    case TokenType.SYMBOL:
-                        if ret is not None: break
-
-                        symbol=self.block.getSymbolByName(self.t[0].s)
-                        if symbol is None:
-                            break
-
-                        ret=AstValueSymbolref(symbol)
-                        self.t+=1
-
-                    case TokenType.OPERATOR_PUNCTUATION:
-                        match self.t[0].s:
-                            case "+":
-                                op_str=self.t[0].s
-
-                                self.t+=1
-
-                                if ret is None:
-                                    ret=self.parse_value()
-                                    if ret is None: break
-                                    ret=AstOperation(op_str,ret)
-                                    continue
-
-                                rhv=self.parse_value()
-                                if rhv is None: break
-                                ret=AstOperation(op_str,ret,rhv)
-
-                            case "-":
-                                op_str=self.t[0].s
-
-                                self.t+=1
-
-                                if ret is None:
-                                    ret=self.parse_value()
-                                    if ret is None: break
-                                    ret=AstOperation(op_str,ret)
-                                    continue
-
-                                rhv=self.parse_value()
-                                if rhv is None: break
-                                ret=AstOperation(op_str,ret,rhv)
-
-                            case "<":
-                                if ret is None: break
-
-                                self.t+=1
-
-                                rhv=self.parse_value()
-                                if rhv is None: break
-                                ret=AstOperation("<",ret,rhv)
-
-                            case "++":
-                                self.t+=1
-
-                                if ret is None:
-                                    ret=self.parse_value()
-
-                                if ret is None: break
-
-                                ret=AstOperation("++",ret)
-
-                            case "(":
-                                if ret is None:
-                                    fatal("unimplemented ( precedence override")
-
-                                # TODO check that ret is callable
-
-                                self.t+=1
-
-                                argument_values:list[AstValue]=[]
-                                while arg_value:=self.parse_value():
-                                    argument_values.append(arg_value)
-
-                                    if self.t[0].s==",":
-                                        self.t+=1
-                                        continue
-
-                                    break
-
-                                assert self.t[0].s==")"
-                                self.t+=1
-
-                                ret=AstFunctionCall(ret,argument_values)
-
-                            case ";":
-                                break
-
-                            case _:
-                                break
-
-                    case other:
-                        fatal(f"unimplemented : {other}")
-
-            if ret is None:
-                self.t=old_t
-
-            return ret
-
-        def parse_function_definition(self,func_type:CTypeFunction)->AstFunction|None:
-            if self.t[0].s!="{":
-                return None
-
-            self.t+=1
-
-            outer_block=self.block
-
-            func_block=AstFunction(func_type,parent=outer_block)
-            self.block=func_block
-            self.parse_block()
-
-            self.block=outer_block
-
-            assert self.t[0].s=="}", f"got instead {self.t[0].s}"
-
-            self.t+=1
-
-            return func_block
-
-        def parse_symbol_definition(self)->SymbolDef|None:
-            old_t=self.t.copy()
-
-            ctype:CType=CType()
-            symbol:Symbol|None=None
-
-            while not self.t.empty:
-                match self.tok.s:
-                    case "extern":
-                        ctype.is_extern=True
-                        self.t+=1
-                        continue
-
-                    case "const":
-                        ctype.is_const=True
-                        self.t+=1
-                        continue
-
-                    case "static":
-                        ctype.is_static=True
-                        self.t+=1
-                        continue
-
-                    case "signed":
-                        ctype.is_signed=True
-                        self.t+=1
-                        continue
-
-                    case "unsigned":
-                        ctype.is_signed=False
-                        self.t+=1
-                        continue
-
-                    case "*":
-                        ctype=CTypePointer(ctype)
-                        self.t+=1
-                        continue
-
-                    case "[":
-                        self.t+=1
-
-                        array_len=self.parse_value()
-
-                        ctype=CTypeArray(ctype,array_len)
-                        if symbol is not None:
-                            symbol.ctype=ctype
-
-                        assert self.t[0].s=="]"
-                        self.t+=1
-
-                        continue
-
-                    case "struct":
-                        self.t+=1
-
-                        struct_name:Token|None=None
-                        struct_fields:list[Symbol]|None=None
-                        if self.t[0].token_type==TokenType.SYMBOL:
-                            struct_name=self.t[0]
-                            self.t+=1
-
-                        if self.t[0].s=="{":
-                            self.t+=1
-                            fields=[]
-                            while field_symdef:=self.parse_symbol_definition():
-                                fields.append(field_symdef)
-
-                            assert self.t[0].s=="}", f"got instead {self.t[0]}"
-
-                        struct_base=CTypeStruct(struct_name,struct_fields)
-                        ctype.base_type=struct_base
-
-                        print("parsed struct")
-                        ctype.print(0)
-
-                        continue
-
-                    case "union":
-                        self.t+=1
-
-                        union_name:Token|None=None
-                        union_fields:list[Symbol]|None=None
-                        if self.t[0].token_type==TokenType.SYMBOL:
-                            union_name=self.t[0]
-                            self.t+=1
-
-                        if self.t[0].s=="{":
-                            union_fields=[]
-
-                            self.t+=1
-                            while field_symdef:=self.parse_symbol_definition():
-                                assert self.t[0].s==";", f"got instead {self.t[0]}"
-                                self.t+=1
-
-                                union_fields.append(field_symdef.symbol)
-
-                            assert self.t[0].s=="}", f"got instead {self.t[0]}"
-                            self.t+=1
-
-                        union_base=CTypeUnion(union_name,union_fields)
-                        ctype.base_type=union_base
-
-                        #ctype.print(0)
-                        #fatal("found union type")
-
-                        continue
-
-                    case "enum":
-                        self.t+=1
-
-                        enum_name:Token|None=None
-                        enum_fields:list[Symbol]|None=None
-                        if self.t[0].token_type==TokenType.SYMBOL:
-                            enum_name=self.t[0]
-                            self.t+=1
-
-                        if self.t[0].s=="{":
-                            fatal("TODO parse enum fields")
-
-                        enum_base=CTypeEnum(enum_name,enum_fields)
-                        ctype.base_type=enum_base
-
-                        continue
-
-                    case "long":
-                        if ctype.length_mod is None:
-                            ctype.length_mod=1
-                        else:
-                            ctype.length_mod+=1
-                        self.t+=1
-                        continue
-
-                    case "short":
-                        if ctype.length_mod is None:
-                            ctype.length_mod=-1
-                        else:
-                            ctype.length_mod-=1
-                        self.t+=1
-                        continue
-
-                    case other:
-                        if other =="(":
-                            if symbol is not None:
-                                arguments:list[Symbol]=[]
-                                has_vararg=False
-
-                                self.t+=1
-                                while self.tok.s!=")":
-                                    if self.tok.s=="...":
-                                        has_vararg=True
-                                        self.t+=1
-                                        break
-
-                                    symbol_def=self.parse_symbol_definition()
-                                    if symbol_def is None:
-                                        break
-
-                                    arguments.append(symbol_def.symbol)
-                                    if self.tok.s==",":
-                                        self.t+=1
-                                        continue
-
-                                    break
-
-                                assert self.tok.s==")", f"got instead {self.tok}"
-
-                                ctype=CTypeFunction(ctype,arguments,has_vararg=has_vararg)
-                                symbol.ctype=ctype
-
-                                self.t+=1
-                                continue
-
-                            fatal(f"unimplemented - {other}")
-
-                        other_as_type=self.block.getTypeByName(other)
-                        if other_as_type is not None:
-                            ctype.base_type=other_as_type
-                            self.t+=1
-                            continue
-
-                        elif other=="=":
-                            self.t+=1
-                            value=self.parse_value()
-                            assert value is not None, "no value for symbol init"
-                            continue
-
-                        else:
-                            if not self.tok.is_valid_symbol():
-                                break
-
-                            if ctype.is_empty_default():
-                                break
-
-                            symbol=Symbol(ctype=ctype,name=self.tok)
-
-                            self.t+=1
-                            continue 
-
-                break
-
-            if ctype.is_empty_default():
-                self.t=old_t
-                return None
-
-            if symbol is None:
-                symbol=Symbol(ctype,name=None)
-
-            return SymbolDef(symbol)
-
-        @property
-        def tok(self)->Token:
-            return self.t.item
 
     ast=Ast(tokens)
 
@@ -2690,7 +3044,7 @@ if __name__=="__main__":
     test_files=Path("test").glob("test*.c")
     test_files=sorted(test_files)
 
-    for f_path in test_files[:10]:
+    for f_path in test_files[:20]:
         f=str(f_path)
 
         print(f"{ORANGE}{f}{RESET}")
