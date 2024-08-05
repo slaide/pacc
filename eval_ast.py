@@ -1924,6 +1924,15 @@ def main(filename:str|None=None):
             print(ind(indent+1)+"ret:")
             self.return_type.print(indent+2)
 
+    class CTypeConstFn(CTypeFunction):
+        "compile time function, allows operating on the AST level"
+        def __init__(self):
+            super().__init__()
+
+        def get_value(self,**kwargs:dict[str,"CType|AstValue"])->"AstValue":
+            fatal("must be overridden")
+        def get_ctype(self,**kwargs:dict[str,"CType|AstValue"])->CType:
+            fatal("must be overridden") 
 
     class Symbol:
         def __init__(self,ctype:CType,name:Token|None=None):
@@ -2035,13 +2044,13 @@ def main(filename:str|None=None):
         DOT="."
         ARROW="->"
 
-        ADDROF="&"
-        DEREFERENCE="*"
+        ADDROF="&x"
+        DEREFERENCE="*x"
 
-        POSTFIX_INCREMENT=".++"
-        POSTFIX_DECREMENT=".--"
-        PREFIX_INCREMENT="++."
-        PREFIX_DECREMENT="--."
+        POSTFIX_INCREMENT="x++"
+        POSTFIX_DECREMENT="x--"
+        PREFIX_INCREMENT="++x"
+        PREFIX_DECREMENT="--x"
 
         SUBSCRIPT="["
         NESTED="("
@@ -2122,10 +2131,6 @@ def main(filename:str|None=None):
                     print_op(2)
                 case AstOperationKind.LESS_THAN:
                     print_op(2)
-                case AstOperationKind.PREFIX_INCREMENT:
-                    print_op(1)
-                case AstOperationKind.POSTFIX_INCREMENT:
-                    print_op(1)
                 case AstOperationKind.ARROW:
                     print_op(2)
 
@@ -2161,7 +2166,7 @@ def main(filename:str|None=None):
                 case AstOperationKind.PREFIX_INCREMENT:
                     return self.val0.get_ctype()
 
-                case other:
+                case _:
                     # TODO actually calculate this approriately, e.g. taking implicit conversion into account, and overloaded operations like pointer arithmetic
                     return self.val0.get_ctype()
 
@@ -2545,7 +2550,7 @@ def main(filename:str|None=None):
 
                                 t,rhv=self.parse_value(t)
                                 if rhv is None: break
-                                ret=AstOperation(op_str,rhv)
+                                ret=AstOperation(AstOperationKind.ADDROF,rhv)
 
                             case ".":
                                 op_str=t[0].s
@@ -2656,6 +2661,8 @@ def main(filename:str|None=None):
                                 if ret is None:
                                     ts,symbol_def=self.parse_symbol_definition(t)
                                     if symbol_def is not None:
+                                        # case 2
+
                                         t=ts
 
                                         assert symbol_def.symbol.name is None, f"cast to symbol declaration is invalid at {t[0]}"
@@ -2669,10 +2676,23 @@ def main(filename:str|None=None):
                                         ret=AstOperationCast(cast_to_type=symbol_def.symbol.ctype,value=cast_value)
                                         continue
 
+                                    # case 3
+                                    fatal("todo")
+
+                                # case 1
+
                                 # TODO check that ret is callable
+                                func_type=ret.get_ctype()
+                                assert isinstance(func_type,CTypeFunction), func_type
 
                                 argument_values:list[AstValue]=[]
+                                arg_index=-1
                                 while 1:
+                                    arg_index+=1
+
+                                    if func_type.arguments[arg_index]:
+                                        pass
+
                                     t,arg_value=self.parse_value(t)
                                     if arg_value is None:
                                         break
@@ -2687,6 +2707,9 @@ def main(filename:str|None=None):
 
                                 assert t[0].s==")", f"got instead {t[0]}"
                                 t+=1
+
+                                if isinstance(ret.get_ctype(),CTypeConstFn):
+                                    fatal("TODO implement calling const fn")
 
                                 ret=AstFunctionCall(ret,argument_values)
 
@@ -3013,16 +3036,31 @@ def main(filename:str|None=None):
             for statement in self.statements:
                 statement.print(indent+1)
 
+    class ConstFnSizeof(CTypeConstFn):
+        "sizeof compile time function"
+        def __init__(self):
+            super().__init__()
+
+        @tp.override
+        def get_value(self,ctype:CType)->"AstValue":
+            # TODO actually calculate this based on the type
+            return 4
+
     class Ast:
         "represents one "
         def __init__(self,tokens:list[Token]):
             self.t=Iter(tokens)
 
-            self.block:Block=Block(types={
-                n:CTypePrimitive(n)
-                for n
-                in ["void","char","int","float","double","bool","__builtin_va_list"]
-            })
+            self.block:Block=Block(
+                types={
+                    n:CTypePrimitive(n)
+                    for n
+                    in ["void","char","int","float","double","bool","__builtin_va_list"]
+                },
+                symbols={
+                    "sizeof":Symbol(ConstFnSizeof(),None)
+                },
+            )
 
             self.t=self.block.parse(self.t)
 
