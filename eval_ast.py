@@ -41,6 +41,8 @@ def fatal(message:str="",exit_code:int=-1)->tp.NoReturn:
 
     if len(message)>0:
         _=sys.stdout.write(f" >>> {RED}{message}{RESET}\n")
+    else:
+        _=sys.stdout.write(f" >>> \n")
 
     _=sys.stdout.flush()
 
@@ -89,7 +91,7 @@ class Iter(tp.Generic[T]):
         "return True if the index of the current element exceeds the container size"
         return self.index>=len(self)
 
-    def __getitem__(self,i:int)->T:
+    def __getitem__(self,i:int)->"T":
         "get item at self.index+i"
         return (self+i).item
 
@@ -637,6 +639,7 @@ class Tokenizer:
 
         return self.tokens
 
+VARARG_ARGNAME:str="..."
 
 def main(filename:str|None=None):
     if filename is None:
@@ -1529,7 +1532,7 @@ def main(filename:str|None=None):
                                     tok_index=4 # skip over opening paranthesis
                                     while line[tok_index].s!=")":
                                         argument_name=line[tok_index]
-                                        if argument_name.s=="...":
+                                        if argument_name.s==VARARG_ARGNAME:
                                             define.has_vararg=True
                                             tok_index+=1
                                             break # vararg must be last argument
@@ -1633,7 +1636,10 @@ def main(filename:str|None=None):
 
     class CType:
         "basic c type class"
-        def __init__(self):
+        def __init__(self,_is_basic:bool=True):
+            self._is_basic=_is_basic
+            "indicates if the type is a basic type, i.e. e.g. not pointer or array"
+
             self.is_static:bool=False
             self.is_extern:bool=False
 
@@ -1645,6 +1651,71 @@ def main(filename:str|None=None):
             self.is_signed:bool|None=None
 
             self.base_type:CType|None=None
+
+        def flatten(self)->"CType":
+            "resolve basic nesting"
+
+            if not self._is_basic:
+                return self
+
+            if self.base_type is None:
+                return self
+
+            return self.base_type.flatten()
+
+        def nest(self):
+            """
+            turn self into new ctype with base set to previous self.
+
+            can be used to turn self into another type, by creating a new type, nesting this, then setting base_type to new
+            type based on previous self
+
+            e.g. turn self into function with self as return type:
+            ```
+            ctype=CType()
+            ctype... <modify>
+
+            ctype.nest()
+
+            func_type=CTypeFunction(return_type=ctype.base_type)
+            ctype.base_type=func_type()
+            ```
+            """
+
+            # copy self into inner_ctype
+            inner_ctype=CType()
+            for key,val in self.__dict__.items():
+                setattr(inner_ctype,key,val)
+
+            # clear self to defaults
+            default_type=CType()
+            for key,val in default_type.__dict__.items():
+                setattr(self,key,val)
+
+            self.base_type=inner_ctype
+
+        def validate(self)->str|None:
+            "return error message if type is invalid"
+            if self.length_mod is not None:
+                if self.length_mod < -2:
+                    return "type cannot be shorter than short short"
+                if self.length_mod > 2:
+                    return "type cannot be longer than long long"
+
+            if self.is_empty_default():
+                return "type is basic and invalid"
+
+            if self.base_type is not None:
+                return self.base_type.validate()
+
+            return None
+
+        def can_be_assigned_to(self,other:"CType")->bool:
+            if isinstance(self,CTypePrimitive) and isinstance(other,CTypePrimitive) \
+                and self.name==other.name:
+                return True
+
+            return False
 
         def is_empty_default(self)->bool:
             "returns True if the type has every field set to its default"
@@ -1709,7 +1780,7 @@ def main(filename:str|None=None):
     class CTypeField(CType):
         "information on a field of a compound type"
         def __init__(self,name:Token|None,ctype:CType,parent_ctype:CType):
-            super().__init__()
+            super().__init__(_is_basic=False)
             self.name=name
             "optional name of the field"
             self.ctype=ctype
@@ -1730,7 +1801,7 @@ def main(filename:str|None=None):
     class CTypeStruct(CType):
         "name may be none, and if fields are none, the type is considered incomplete"
         def __init__(self,name:Token|None,fields:list[CTypeField]|None):
-            super().__init__()
+            super().__init__(_is_basic=False)
             self.name=name
             "optional name of this struct type"
             self.fields=fields
@@ -1775,7 +1846,7 @@ def main(filename:str|None=None):
     class CTypeUnion(CType):
         "name may be none, and if fields are none, the type is considered incomplete"
         def __init__(self,name:Token|None,fields:list[CTypeField]|None):
-            super().__init__()
+            super().__init__(_is_basic=False)
             self.name=name
             self.fields=fields
 
@@ -1818,7 +1889,7 @@ def main(filename:str|None=None):
     class CTypeEnum(CType):
         "name may be none, and if fields are none, the type is considered incomplete"
         def __init__(self,name:Token|None,fields:list[tuple[str,"AstValue|None"]]|None):
-            super().__init__()
+            super().__init__(_is_basic=False)
             self.name=name
             self.fields=fields
 
@@ -1848,8 +1919,9 @@ def main(filename:str|None=None):
 
     class CTypePrimitive(CType):
         def __init__(self,name:str):
-            super().__init__()
+            super().__init__(_is_basic=False)
             self.name=name
+            assert len(self.name)>0
 
         @tp.override
         def is_empty_default(self)->bool:
@@ -1862,7 +1934,7 @@ def main(filename:str|None=None):
     class CTypePointer(CType):
         "pointer to some other type (uses CType.base_type as base)"
         def __init__(self,base_type:CType):
-            super().__init__()
+            super().__init__(_is_basic=False)
             self.base_type=base_type
 
         @tp.override
@@ -1875,9 +1947,16 @@ def main(filename:str|None=None):
             print(ind(indent)+"ptr to:")
             self.base_type.print(indent+1)
 
+        @tp.override
+        def validate(self)->str|None:
+            if self.base_type is None:
+                return "pointer to nothing is invalid"
+
+            return self.base_type.validate()
+
     class CTypeArray(CType):
         def __init__(self,base_type:CType,length:"AstValue|None"):
-            super().__init__()
+            super().__init__(_is_basic=False)
             self.base_type=base_type
             self.length=length
 
@@ -1900,7 +1979,7 @@ def main(filename:str|None=None):
     class CTypeFunction(CType):
         "function type"
         def __init__(self,return_type:CType,arguments:list["Symbol"],has_vararg:bool=False):
-            super().__init__()
+            super().__init__(_is_basic=False)
             self.return_type=return_type
             self.arguments=arguments
             self.has_vararg=has_vararg
@@ -1924,20 +2003,37 @@ def main(filename:str|None=None):
             print(ind(indent+1)+"ret:")
             self.return_type.print(indent+2)
 
-    class CTypeConstFn(CTypeFunction):
-        "compile time function, allows operating on the AST level"
-        def __init__(self):
-            super().__init__()
+        @tp.override
+        def validate(self)->str|None:
+            "return error message if type is invalid"
+            ret_val_str=self.return_type.validate()
+            if ret_val_str is not None:
+                return ret_val_str
 
-        def get_value(self,**kwargs:dict[str,"CType|AstValue"])->"AstValue":
+            for arg in self.arguments:
+                arg_val_str=arg.ctype.validate()
+                if arg_val_str is not None:
+                    return arg_val_str
+
+            return None
+
+    class CTypeConstFn(CTypeFunction):
+        "compile time function, allows operating on the AST level. self.eval contains the actual function code"
+        def __init__(self,return_kind:"type[CType]|type[AstValue]",arguments:list[tuple[str,"CType"]]):
+            super().__init__(return_type=CTypePrimitive("mock"),arguments=[Symbol(t) for _,t in arguments])
+
+        def eval(self,block:"Block",arguments:list["AstValue"])->"AstValue":
             fatal("must be overridden")
-        def get_ctype(self,**kwargs:dict[str,"CType|AstValue"])->CType:
-            fatal("must be overridden") 
 
     class Symbol:
         def __init__(self,ctype:CType,name:Token|None=None):
             self.name=name
-            self.ctype=ctype
+            self.ctype:CType=ctype
+
+        def wrap_ctype(self,wrapped_by:tp.Callable[[CType],CType]):
+            "wrap the current symbol type by a new type, e.g. by an array.\nself.ctype will then be set to the new type"
+            wrapping_ctype=wrapped_by(self.ctype)
+            self.ctype=wrapping_ctype
 
         @tp.override
         def __str__(self)->str:
@@ -1956,6 +2052,20 @@ def main(filename:str|None=None):
         def get_ctype(self)->"CType":
             raise RuntimeError("raw AstValue cannot have a type")
 
+    class AstValueType(AstValue):
+        def __init__(self,ctype:CType):
+            super().__init__()
+            self.ctype=ctype
+
+        @tp.override
+        def print(self,indent:int):
+            print(ind(indent)+"type as value:")
+            self.ctype.print(indent+1)
+
+        @tp.override
+        def get_ctype(self)->"CType":
+            return CTypePrimitive("__type")
+
     class AstValueField(AstValue):
         "operator value to access a field of a value, i.e. this is ensured to exist and the type is resolved"
         def __init__(self,field:CTypeField):
@@ -1965,6 +2075,26 @@ def main(filename:str|None=None):
         @tp.override
         def get_ctype(self)->"CType":
             return self.field.ctype
+
+    class AstCompoundLiteral(AstValue):
+        "compound value initializer, e.g. struct Mystruct m={.field=2,3,'hello world'};"
+        def __init__(self,field_initializers:list[tuple[AstValueField|None,AstValue]]):
+            super().__init__()
+            self.field_initializers=field_initializers
+
+        @tp.override
+        def print(self,indent:int):
+            print(ind(indent)+"compound literal:")
+            for field_name,field_value in self.field_initializers:
+                print(ind(indent+1)+"field:")
+
+                if field_name is not None:
+                    print(ind(indent+2)+"target:")
+                    field_name.print(indent+3)
+
+                print(ind(indent+2)+"value:")
+                field_value.print(indent+3)
+
 
     class AstValueNumericLiteral(AstValue):
         def __init__(self,value:str|int|float,ctype:CType):
@@ -2451,15 +2581,20 @@ def main(filename:str|None=None):
                     if symbol_def is not None:
                         self.addSymbol(symbol_def.symbol)
 
-                        if isinstance(symbol_def.symbol.ctype,CTypeFunction):
-                            if t[0].s!=";":
-                                t,func_def=self.parse_function_definition(func_type=symbol_def.symbol.ctype,t=t)
+                        sym_type=symbol_def.symbol.ctype.flatten()
+                        if isinstance(sym_type,CTypeFunction):
+                            if t[0].s=="{":
+                                t,func_def=self.parse_function_definition(func_type=sym_type,t=t)
                                 if func_def is None:
-                                    print("failed to parse function definition for decl:")
+                                    print(f"{RED}-- begin error {RESET}")
                                     symbol_def.symbol.ctype.print(0)
-                                    fatal(f"at {symbol_def.symbol.name.s if symbol_def.symbol.name is not None else '<anon>'}")
+                                    fatal(f"failed to parse function definition for decl at {symbol_def.symbol.name.s if symbol_def.symbol.name is not None else '<anon>'}")
 
                                 return t,func_def
+
+                        if symbol_def.symbol.name is not None:
+                            print("name:",symbol_def.symbol.name.s)
+                        symbol_def.symbol.ctype.print(0)
 
                         assert t[0].s==";", f"got instead {t[0]}"
                         t+=1
@@ -2482,7 +2617,9 @@ def main(filename:str|None=None):
 
             return t,None
 
-        def parse_value(self,t:Iter[Token])->tuple[Iter[Token],AstValue|None]:
+        def parse_value(self,t:Iter[Token],target_type:CType|None=None)->tuple[Iter[Token],AstValue|None]:
+            "parse a value. target_type is primarily intended for compound literal initializers to allow named field access."
+
             ret=None
             while 1:
                 match t[0].token_type:
@@ -2515,6 +2652,17 @@ def main(filename:str|None=None):
 
                     case TokenType.SYMBOL:
                         if ret is not None: break
+
+                        match t[0].s:
+                            case "false":
+                                t+=1
+                                ret=AstValueNumericLiteral(0,CTypePrimitive("bool"))
+                            case "true":
+                                t+=1
+                                ret=AstValueNumericLiteral(1,CTypePrimitive("bool"))
+
+                            case _:
+                                pass
 
                         symbol=self.getSymbolByName(t[0].s)
                         if symbol is None:
@@ -2579,7 +2727,7 @@ def main(filename:str|None=None):
 
                                 assert t[0].token_type==TokenType.SYMBOL
 
-                                val_field=ret.get_ctype().base_type.get_field_by_name(t[0].s) #type:ignore
+                                val_field=ret.get_ctype().get_field_by_name(t[0].s) #type:ignore
                                 assert val_field is not None
 
                                 t+=1
@@ -2650,6 +2798,30 @@ def main(filename:str|None=None):
 
                                 ret=AstOperation(AstOperationKind.PREFIX_DECREMENT,ret)
 
+                            case "{":
+                                if target_type is None:
+                                    break
+
+                                t+=1
+
+                                fields:list[tuple[AstValueField|None,AstValue]]=[]
+
+                                while t[0].s!="}":
+                                    field_target=None
+                                    if t[0].s==".":
+                                        fatal("todo")
+
+                                    t,value=self.parse_value(t)
+                                    if value is None:
+                                        fatal(f"expected value, got instead {t[0]}")
+
+                                    fields.append((field_target,value))
+
+                                assert t[0].s=="}"
+                                t+=1
+
+                                ret=AstCompoundLiteral(fields)
+
                             case "(":
                                 t+=1
 
@@ -2670,7 +2842,7 @@ def main(filename:str|None=None):
                                         assert t[0].s==")", f"got instead {t[0]}"
                                         t+=1
 
-                                        t,cast_value=self.parse_value(t)
+                                        t,cast_value=self.parse_value(t,target_type=symbol_def.symbol.ctype)
                                         assert cast_value is not None
 
                                         ret=AstOperationCast(cast_to_type=symbol_def.symbol.ctype,value=cast_value)
@@ -2682,20 +2854,35 @@ def main(filename:str|None=None):
                                 # case 1
 
                                 # TODO check that ret is callable
-                                func_type=ret.get_ctype()
+                                func_type=ret.get_ctype().flatten()
                                 assert isinstance(func_type,CTypeFunction), func_type
 
                                 argument_values:list[AstValue]=[]
                                 arg_index=-1
-                                while 1:
+                                while t[0].s!=")":
                                     arg_index+=1
 
-                                    if func_type.arguments[arg_index]:
-                                        pass
+                                    if not (arg_index < len(func_type.arguments) or func_type.has_vararg):
+                                        func_type.print(0)
+                                        fatal("too many arguments to func")
 
-                                    t,arg_value=self.parse_value(t)
-                                    if arg_value is None:
-                                        break
+                                    type_as_arg=None
+                                    if arg_index<len(func_type.arguments):
+                                        func_arg=func_type.arguments[arg_index]
+                                        if CTypePrimitive("__type").can_be_assigned_to(func_arg.ctype):
+                                            ts,symdef=self.parse_symbol_definition(t)
+                                            if symdef is None:
+                                                fatal(f"expected symbol but found none at {t[0]}")
+
+                                            type_as_arg=AstValueType(symdef.symbol.ctype)
+                                            t=ts
+                                    
+                                    if type_as_arg is not None:
+                                        arg_value=type_as_arg
+                                    else:
+                                        t,arg_value=self.parse_value(t)
+                                        if arg_value is None:
+                                            break
 
                                     argument_values.append(arg_value)
 
@@ -2708,8 +2895,12 @@ def main(filename:str|None=None):
                                 assert t[0].s==")", f"got instead {t[0]}"
                                 t+=1
 
-                                if isinstance(ret.get_ctype(),CTypeConstFn):
-                                    fatal("TODO implement calling const fn")
+                                if isinstance(func_type,CTypeConstFn):
+                                    if isinstance(func_type, ConstFnSizeof):
+                                        ret=func_type.eval(self,argument_values)
+                                        continue
+                                    else:
+                                        fatal(f"TODO implement calling const fn {type(func_type)} at {t[0]}")
 
                                 ret=AstFunctionCall(ret,argument_values)
 
@@ -2741,13 +2932,23 @@ def main(filename:str|None=None):
         def parse_symbol_definition(self,t:Iter[Token])->tuple[Iter[Token],SymbolDef|None]:
             "try parsing a symbol definition from self.t, internally advances self.t when return value is not None"
 
+            t_in=t.copy()
+
             ctype:CType=CType()
             symbol:Symbol|None=None
+
+            # keep track of open paranthesis
+            nesting_depth=0
 
             while not t.empty:
                 match t[0].s:
                     case "extern":
                         ctype.is_extern=True
+                        t+=1
+                        continue
+
+                    case "_Noreturn":
+                        # ctype.is_noreturn=True
                         t+=1
                         continue
 
@@ -2772,7 +2973,23 @@ def main(filename:str|None=None):
                         continue
 
                     case "*":
-                        ctype=CTypePointer(ctype)
+                        if nesting_depth>0:
+                            if symbol is None:
+                                symbol=Symbol(ctype)
+
+                            symbol.wrap_ctype(lambda c:CTypePointer(c))
+                            t+=1
+                            continue
+
+                        # cannot point to invalid type
+                        if ctype.is_empty_default():
+                            break
+
+                        if symbol is None:
+                            symbol=Symbol(ctype)
+
+                        symbol.wrap_ctype(lambda c:CTypePointer(c))
+
                         t+=1
                         continue
 
@@ -2781,9 +2998,9 @@ def main(filename:str|None=None):
 
                         t,array_len=self.parse_value(t)
 
-                        ctype=CTypeArray(ctype,array_len)
-                        if symbol is not None:
-                            symbol.ctype=ctype
+                        assert symbol is not None
+
+                        symbol.wrap_ctype(lambda c:CTypeArray(c,array_len))
 
                         assert t[0].s=="]"
                         t+=1
@@ -2819,6 +3036,7 @@ def main(filename:str|None=None):
 
                             assert t[0].s=="}", f"got instead {t[0]}"
                             t+=1
+
                         else:
                             # type not defined inline, then must be named
                             assert struct_name is not None
@@ -2903,39 +3121,65 @@ def main(filename:str|None=None):
                         t+=1
                         continue
 
-                    case other:
-                        if other =="(":
-                            if symbol is not None:
-                                arguments:list[Symbol]=[]
-                                has_vararg=False
+                    case "(":
+                        t+=1
+                        # function decl must have a symbol, but a function type may be anonymous
 
+                        found_func_decl=True
+                        t_before_func_decl=t.copy()
+
+                        arguments:list[Symbol]=[]
+                        has_vararg=False
+
+                        while t[0].s!=")":
+                            if t[0].s==VARARG_ARGNAME:
+                                has_vararg=True
                                 t+=1
-                                while t[0].s!=")":
-                                    if t[0].s=="...":
-                                        has_vararg=True
-                                        t+=1
-                                        break
+                                break
 
-                                    t,symbol_def=self.parse_symbol_definition(t)
-                                    if symbol_def is None:
-                                        break
+                            t_sym_def,symbol_def=self.parse_symbol_definition(t)
+                            if symbol_def is None:
+                                break
 
-                                    arguments.append(symbol_def.symbol)
-                                    if t[0].s==",":
-                                        t+=1
-                                        continue
+                            t=t_sym_def
 
-                                    break
-
-                                assert t[0].s==")", f"got instead {t[0]}"
-
-                                ctype=CTypeFunction(ctype,arguments,has_vararg=has_vararg)
-                                symbol.ctype=ctype
-
+                            arguments.append(symbol_def.symbol)
+                            if t[0].s==",":
                                 t+=1
                                 continue
 
-                            fatal(f"unimplemented - {other}")
+                            break
+
+                        if t[0].s!=")":
+                            t=t_before_func_decl
+                            found_func_decl=False
+
+                        if found_func_decl:
+                            assert t[0].s==")", f"got instead {t[0]}"
+                            t+=1
+
+                            ctype.nest()
+                            assert ctype.base_type is not None
+
+                            ctype.base_type=CTypeFunction(ctype.base_type,arguments,has_vararg=has_vararg)
+
+                            if symbol is None:
+                                symbol=Symbol(ctype)
+
+                            continue
+
+                        # nested type declaration, allows for some precedence overrides, e.g. applying modifiers to the symbol, rather than the base type
+                        nesting_depth+=1
+                        if symbol is None:
+                            symbol=Symbol(ctype)
+
+                        continue
+
+                    case other:
+                        if other==")" and nesting_depth>0:
+                            t+=1
+                            nesting_depth-=1
+                            continue
 
                         other_as_type=self.getTypeByName(other)
                         if other_as_type is not None:
@@ -2964,10 +3208,17 @@ def main(filename:str|None=None):
                 break
 
             if ctype.is_empty_default():
-                return t,None
+                return t_in,None
 
             if symbol is None:
                 symbol=Symbol(ctype,name=None)
+
+            # catch invalid cases
+            sym_val_str=symbol.ctype.validate()
+            if sym_val_str is not None:
+                return t_in,None
+
+            symbol.ctype=symbol.ctype.flatten()
 
             return t,SymbolDef(symbol)
 
@@ -3039,12 +3290,14 @@ def main(filename:str|None=None):
     class ConstFnSizeof(CTypeConstFn):
         "sizeof compile time function"
         def __init__(self):
-            super().__init__()
+            super().__init__(return_kind=AstValue,arguments=[("t",CTypePrimitive("__type"))])
 
         @tp.override
-        def get_value(self,ctype:CType)->"AstValue":
+        def eval(self,block:Block,arguments:list["AstValue"])->"AstValue":
+            assert len(arguments)==len(self.arguments)
+
             # TODO actually calculate this based on the type
-            return 4
+            return AstValueNumericLiteral(4,block.getTypeByName("int") or fatal(""))
 
     class Ast:
         "represents one "
@@ -3055,10 +3308,16 @@ def main(filename:str|None=None):
                 types={
                     n:CTypePrimitive(n)
                     for n
-                    in ["void","char","int","float","double","bool","__builtin_va_list"]
+                    in [
+                        "void",
+                        "char", "int",
+                        "float", "double",
+                        "bool",
+                        "__builtin_va_list",
+                    ]
                 },
                 symbols={
-                    "sizeof":Symbol(ConstFnSizeof(),None)
+                    "sizeof":Symbol(ConstFnSizeof(),None),
                 },
             )
 
