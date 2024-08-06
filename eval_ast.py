@@ -2217,6 +2217,13 @@ def main(filename:str|None=None):
         LOGICAL_NOT="!"
         BITWISE_NOT="~"
 
+        LOGICAL_AND="&&"
+        BITWISE_AND="&"
+        LOGICAL_OR="||"
+        BITWISE_OR="|"
+
+        BITWISE_XOR="^"
+
         ADD="+"
         SUBTRACT="-"
 
@@ -2317,9 +2324,25 @@ def main(filename:str|None=None):
             match self.operation:
                 case AstOperationKind.GREATER_THAN:
                     print_op(2)
+                case AstOperationKind.GREATER_THAN_OR_EQUAL:
+                    print_op(2)
                 case AstOperationKind.LESS_THAN:
                     print_op(2)
+                case AstOperationKind.LESS_THAN_OR_EQUAL:
+                    print_op(2)
+
+                case AstOperationKind.LOGICAL_AND:
+                    print_op(2)
+                case AstOperationKind.LOGICAL_OR:
+                    print_op(2)
+                case AstOperationKind.BITWISE_AND:
+                    print_op(2)
+                case AstOperationKind.BITWISE_OR:
+                    print_op(2)
+
                 case AstOperationKind.ARROW:
+                    print_op(2)
+                case AstOperationKind.DOT:
                     print_op(2)
 
                 case AstOperationKind.POSTFIX_DECREMENT:
@@ -2335,6 +2358,10 @@ def main(filename:str|None=None):
                     print_op(2)
                 case AstOperationKind.SUBTRACT:
                     print_op(2)
+                case AstOperationKind.MULTIPLY:
+                    print_op(2)
+                case AstOperationKind.DIVIDE:
+                    print_op(2)
 
                 case AstOperationKind.UNARY_MINUS:
                     print_op(1)
@@ -2343,6 +2370,9 @@ def main(filename:str|None=None):
 
                 case AstOperationKind.ADDROF:
                     print_op(1)
+                case AstOperationKind.DEREFERENCE:
+                    print_op(1)
+                    
                 case AstOperationKind.SUBSCRIPT:
                     print_op(2)
 
@@ -2614,7 +2644,36 @@ def main(filename:str|None=None):
                     fatal("switch unimplemented")
 
                 case "if":
-                    fatal("if unimplemented")
+                    t+=1
+
+                    assert t[0].s=="(", f"got instead {t[0]}"
+                    t+=1
+
+                    t_after_cond,if_cond=self.parse_value(t)
+                    if if_cond is None:
+                        fatal(f"invalid if condition at {t[0]}")
+
+                    t=t_after_cond
+
+                    assert t[0].s==")", f"got instead {t[0]}"
+                    t+=1
+
+                    t_after_statement,if_statement=self.parse_statement(t)
+                    if if_statement is None:
+                        fatal(f"invalid if statement after if at {t[0]}")
+
+                    t=t_after_statement
+
+                    else_statement:Statement|None=None
+                    if t[0].s=="else":
+                        t+=1
+                        t_after_else,else_statement=self.parse_statement(t)
+                        if else_statement is None:
+                            fatal(f"invalid else statment at {t[0]}")
+
+                        t=t_after_else
+
+                    return t,AstIf(if_cond,if_statement,else_statement)
 
                 case "while":
                     fatal("while unimplemented")
@@ -2790,12 +2849,37 @@ def main(filename:str|None=None):
                                 if rhv is None: break
                                 ret=AstOperation(AstOperationKind.SUBTRACT,ret,rhv)
 
+                            case "*":
+                                if ret is None:
+                                    t,ret=self.parse_value(t)
+                                    if ret is None: break
+                                    ret=AstOperation(AstOperationKind.DEREFERENCE,ret)
+                                    continue
+
+                                t+=1
+
+                                t,rhv=self.parse_value(t)
+                                if rhv is None: break
+                                ret=AstOperation(AstOperationKind.MULTIPLY,ret,rhv)
+
+                            case "/":
+                                if ret is None: break
+
+                                t+=1
+
+                                t,rhv=self.parse_value(t)
+                                if rhv is None: break
+                                ret=AstOperation(AstOperationKind.DIVIDE,ret,rhv)
+
                             case "&":
                                 op_str=t[0].s
 
                                 t+=1
 
                                 if ret is not None:
+                                    t,rhv=self.parse_value(t)
+                                    if rhv is None: break
+                                    ret=AstOperation(AstOperationKind.BITWISE_AND,ret,rhv)
                                     break
 
                                 t,rhv=self.parse_value(t)
@@ -2854,6 +2938,78 @@ def main(filename:str|None=None):
                                 t,rhv=self.parse_value(t)
                                 if rhv is None: break
                                 ret=AstOperation(AstOperationKind.LESS_THAN,ret,rhv)
+
+                            case "<=":
+                                if ret is None: break
+
+                                t+=1
+
+                                t,rhv=self.parse_value(t)
+                                if rhv is None: break
+                                ret=AstOperation(AstOperationKind.LESS_THAN_OR_EQUAL,ret,rhv)
+
+                            case ">":
+                                if ret is None: break
+
+                                t+=1
+
+                                t,rhv=self.parse_value(t)
+                                if rhv is None: break
+                                ret=AstOperation(AstOperationKind.GREATER_THAN,ret,rhv)
+
+                            case ">=":
+                                if ret is None: break
+
+                                t+=1
+
+                                t,rhv=self.parse_value(t)
+                                if rhv is None: break
+                                ret=AstOperation(AstOperationKind.GREATER_THAN_OR_EQUAL,ret,rhv)
+
+                            case "&&":
+                                if ret is None: break
+
+                                t+=1
+
+                                t,rhv=self.parse_value(t)
+                                if rhv is None: break
+                                ret=AstOperation(AstOperationKind.LOGICAL_AND,ret,rhv)
+
+                            case "&":
+                                if ret is None: break
+
+                                t+=1
+
+                                t,rhv=self.parse_value(t)
+                                if rhv is None: break
+                                ret=AstOperation(AstOperationKind.BITWISE_AND,ret,rhv)
+
+                            case "||":
+                                if ret is None: break
+
+                                t+=1
+
+                                t,rhv=self.parse_value(t)
+                                if rhv is None: break
+                                ret=AstOperation(AstOperationKind.LOGICAL_OR,ret,rhv)
+
+                            case "|":
+                                if ret is None: break
+
+                                t+=1
+
+                                t,rhv=self.parse_value(t)
+                                if rhv is None: break
+                                ret=AstOperation(AstOperationKind.BITWISE_OR,ret,rhv)
+
+                            case "^":
+                                if ret is None: break
+
+                                t+=1
+
+                                t,rhv=self.parse_value(t)
+                                if rhv is None: break
+                                ret=AstOperation(AstOperationKind.BITWISE_XOR,ret,rhv)
 
                             case "++":
                                 t+=1
@@ -2950,7 +3106,18 @@ def main(filename:str|None=None):
                                         continue
 
                                     # case 3
-                                    fatal("todo")
+                                    t_after_value,nested_value=self.parse_value(t)
+                                    if nested_value is None:
+                                        fatal(f"invalid nested value at {t[0]}")
+
+                                    t=t_after_value
+
+                                    assert t[0].s==")", f"got instead {t[0]}"
+                                    t+=1
+
+                                    ret=nested_value
+
+                                    continue
 
                                 # case 1
 
@@ -3429,7 +3596,23 @@ def main(filename:str|None=None):
         pass
 
     class AstIf(Block,Statement):
-        pass
+        def __init__(self,if_condition:AstValue,if_statement:Statement,else_statement:Statement|None):
+            super().__init__()
+
+            self.if_condition=if_condition
+            self.if_statement=if_statement
+            self.else_statement=else_statement
+
+        @tp.override
+        def print(self,indent:int):
+            print(ind(indent)+"if:")
+            print(ind(indent+1)+"condition:")
+            self.if_condition.print(indent+2)
+            print(ind(indent+1)+"then:")
+            self.if_statement.print(indent+2)
+            if self.else_statement is not None:
+                print(ind(indent+1)+"else:")
+                self.else_statement.print(indent+2)
 
     class AstBlock(Block,Statement):
         def __init__(self,
