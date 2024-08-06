@@ -255,7 +255,7 @@ def is_whitespace(c:str,newline_allowed:bool=True):
     else:
         return c in WHITESPACE_NONEWLINE_CHARS
 
-SPECIAL_CHARS_SET=set([special_char for special_char in "(){}[]<>,.+-/*&|%^;:=?!\"'@#"])
+SPECIAL_CHARS_SET=set([special_char for special_char in "(){}[]<>,.+-/*&|%^;:=?!\"'@#~"])
 def is_special(c:str):
     assert len(c)==1, f"{len(c) = } ; {c = }"
     return c in SPECIAL_CHARS_SET
@@ -2232,10 +2232,12 @@ def main(filename:str|None=None):
 
         MULTIPLY="*"
         DIVIDE="/"
+        MODULO="%"
 
         EQUAL="=="
         UNEQUAL="!="
 
+        ASSIGN="="
         DOT="."
         ARROW="->"
 
@@ -2331,6 +2333,11 @@ def main(filename:str|None=None):
                 case AstOperationKind.LESS_THAN_OR_EQUAL:
                     print_op(2)
 
+                case AstOperationKind.EQUAL:
+                    print_op(2)
+                case AstOperationKind.UNEQUAL:
+                    print_op(2)
+
                 case AstOperationKind.LOGICAL_AND:
                     print_op(2)
                 case AstOperationKind.LOGICAL_OR:
@@ -2343,6 +2350,9 @@ def main(filename:str|None=None):
                 case AstOperationKind.ARROW:
                     print_op(2)
                 case AstOperationKind.DOT:
+                    print_op(2)
+
+                case AstOperationKind.ASSIGN:
                     print_op(2)
 
                 case AstOperationKind.POSTFIX_DECREMENT:
@@ -2362,6 +2372,8 @@ def main(filename:str|None=None):
                     print_op(2)
                 case AstOperationKind.DIVIDE:
                     print_op(2)
+                case AstOperationKind.MODULO:
+                    print_op(2)
 
                 case AstOperationKind.UNARY_MINUS:
                     print_op(1)
@@ -2372,7 +2384,12 @@ def main(filename:str|None=None):
                     print_op(1)
                 case AstOperationKind.DEREFERENCE:
                     print_op(1)
-                    
+
+                case AstOperationKind.LOGICAL_NOT:
+                    print_op(1)
+                case AstOperationKind.BITWISE_NOT:
+                    print_op(1)
+
                 case AstOperationKind.SUBSCRIPT:
                     print_op(2)
 
@@ -2612,6 +2629,10 @@ def main(filename:str|None=None):
             """
 
             match t[0].s:
+                case ";":
+                    t+=1
+                    return t,AstEmptyStatement()
+
                 case "{":
                     t+=1
                     
@@ -2641,7 +2662,62 @@ def main(filename:str|None=None):
                     return t,StatementTypedef(*[s for s,_ in typedef.symbols])
 
                 case "switch":
-                    fatal("switch unimplemented")
+                    t+=1
+
+                    assert t[0].s=="(", f"got instead {t[0]}"
+                    t+=1
+
+                    t_after_cond,cond=self.parse_value(t)
+                    if cond is None:
+                        fatal(f"invalid switch value at {t[0]}")
+
+                    t=t_after_cond
+
+                    assert t[0].s==")", f"got instead {t[0]}"
+                    t+=1
+
+                    t_after_statement,body_stmt=self.parse_statement(t)
+                    if body_stmt is None:
+                        fatal(f"invalid switch body at {t[0]}")
+
+                    t=t_after_statement
+
+                    return t,AstSwitch(cond,body_stmt)
+
+                case "case":
+                    t+=1
+
+                    t_after_val,val=self.parse_value(t)
+                    if val is None:
+                        fatal(f"invalid case value at {t[0]}")
+
+                    t=t_after_val
+
+                    assert t[0].s==":"
+                    t+=1
+
+                    return t,AstSwitchCase(val)
+
+                case "break":
+                    t+=1
+                    assert t[0].s==";"
+                    t+=1
+
+                    return t,AstLoopBreak()
+
+                case "continue":
+                    t+=1
+                    assert t[0].s==";"
+                    t+=1
+
+                    return t,AstLoopContinue()
+
+                case "default":
+                    t+=1
+                    assert t[0].s==":"
+                    t+=1
+
+                    return t,AstSwitchDefault()
 
                 case "if":
                     t+=1
@@ -2660,7 +2736,7 @@ def main(filename:str|None=None):
 
                     t_after_statement,if_statement=self.parse_statement(t)
                     if if_statement is None:
-                        fatal(f"invalid if statement after if at {t[0]}")
+                        fatal(f"invalid if body at {t[0]}")
 
                     t=t_after_statement
 
@@ -2675,8 +2751,54 @@ def main(filename:str|None=None):
 
                     return t,AstIf(if_cond,if_statement,else_statement)
 
+                case "do":
+                    t+=1
+
+                    t_after_statement,while_statement=self.parse_statement(t)
+                    if while_statement is None:
+                        fatal(f"invalid do while body at {t[0]}")
+
+                    t=t_after_statement
+
+                    assert t[0].s=="while"
+                    t+=1
+
+                    assert t[0].s=="(", f"got instead {t[0]}"
+                    t+=1
+
+                    t_after_cond,cond=self.parse_value(t)
+                    if cond is None:
+                        fatal(f"invalid do while condition at {t[0]}")
+
+                    t=t_after_cond
+
+                    assert t[0].s==")", f"got instead {t[0]}"
+                    t+=1
+
+                    return t,AstWhileLoop(cond,while_statement,do_while=True)
+
                 case "while":
-                    fatal("while unimplemented")
+                    t+=1
+
+                    assert t[0].s=="(", f"got instead {t[0]}"
+                    t+=1
+
+                    t_after_cond,cond=self.parse_value(t)
+                    if cond is None:
+                        fatal(f"invalid while condition at {t[0]}")
+
+                    t=t_after_cond
+
+                    assert t[0].s==")", f"got instead {t[0]}"
+                    t+=1
+
+                    t_after_statement,while_statement=self.parse_statement(t)
+                    if while_statement is None:
+                        fatal(f"invalid while body at {t[0]}")
+
+                    t=t_after_statement
+
+                    return t,AstWhileLoop(cond,while_statement)
 
                 case "for":
                     t+=1
@@ -2850,13 +2972,13 @@ def main(filename:str|None=None):
                                 ret=AstOperation(AstOperationKind.SUBTRACT,ret,rhv)
 
                             case "*":
+                                t+=1
+
                                 if ret is None:
                                     t,ret=self.parse_value(t)
                                     if ret is None: break
                                     ret=AstOperation(AstOperationKind.DEREFERENCE,ret)
                                     continue
-
-                                t+=1
 
                                 t,rhv=self.parse_value(t)
                                 if rhv is None: break
@@ -2871,9 +2993,34 @@ def main(filename:str|None=None):
                                 if rhv is None: break
                                 ret=AstOperation(AstOperationKind.DIVIDE,ret,rhv)
 
-                            case "&":
-                                op_str=t[0].s
+                            case "%":
+                                if ret is None: break
 
+                                t+=1
+
+                                t,rhv=self.parse_value(t)
+                                if rhv is None: break
+                                ret=AstOperation(AstOperationKind.MODULO,ret,rhv)
+
+                            case "!":
+                                if ret is not None: break
+
+                                t+=1
+
+                                t,rhv=self.parse_value(t)
+                                if rhv is None: break
+                                ret=AstOperation(AstOperationKind.LOGICAL_NOT,rhv)
+
+                            case "~":
+                                if ret is not None: break
+
+                                t+=1
+
+                                t,rhv=self.parse_value(t)
+                                if rhv is None: break
+                                ret=AstOperation(AstOperationKind.BITWISE_NOT,rhv)
+
+                            case "&":
                                 t+=1
 
                                 if ret is not None:
@@ -2966,6 +3113,24 @@ def main(filename:str|None=None):
                                 if rhv is None: break
                                 ret=AstOperation(AstOperationKind.GREATER_THAN_OR_EQUAL,ret,rhv)
 
+                            case "==":
+                                if ret is None: break
+
+                                t+=1
+
+                                t,rhv=self.parse_value(t)
+                                if rhv is None: break
+                                ret=AstOperation(AstOperationKind.EQUAL,ret,rhv)
+
+                            case "!=":
+                                if ret is None: break
+
+                                t+=1
+
+                                t,rhv=self.parse_value(t)
+                                if rhv is None: break
+                                ret=AstOperation(AstOperationKind.UNEQUAL,ret,rhv)
+
                             case "&&":
                                 if ret is None: break
 
@@ -3036,6 +3201,19 @@ def main(filename:str|None=None):
                                 if ret is None: break
 
                                 ret=AstOperation(AstOperationKind.PREFIX_DECREMENT,ret)
+
+                            case "=":
+                                if ret is None: break
+
+                                t+=1
+
+                                t_afterval,rhv=self.parse_value(t)
+                                if rhv is None:
+                                    fatal(f"invalid value on rhs of assignment at {t[0]}")
+
+                                t=t_afterval
+
+                                ret=AstOperation(AstOperationKind.ASSIGN,ret,rhv)
 
                             case "{":
                                 if target_type is None:
@@ -3550,7 +3728,6 @@ def main(filename:str|None=None):
 
             return t,SymbolDef(ret)
 
-
     class AstForLoop(Block,Statement):
         """
         for loop
@@ -3590,10 +3767,71 @@ def main(filename:str|None=None):
             self.statements[1].print(indent+2)
 
     class AstWhileLoop(Block,Statement):
-        pass
+        def __init__(self,cond:AstValue,statement:Statement,do_while:bool=False):
+            super().__init__()
+            self.cond=cond
+            self.statement=statement
+            self.do_while=do_while
+
+        @tp.override
+        def print(self,indent:int):
+            print(ind(indent)+"while:")
+            print(ind(indent+1)+"cond:")
+            self.cond.print(indent+2)
+            print(ind(indent+1)+"body:")
+            self.statement.print(indent+2)
+
+    class AstLoopBreak(Statement):
+        def __init__(self):
+            super().__init__()
+        @tp.override
+        def print(self,indent:int):
+            print(ind(indent)+"break")
+
+    class AstLoopContinue(Statement):
+        def __init__(self):
+            super().__init__()
+        @tp.override
+        def print(self,indent:int):
+            print(ind(indent)+"continue")
+
+    class AstEmptyStatement(Statement):
+        def __init__(self):
+            super().__init__()
+        @tp.override
+        def print(self,indent:int):
+            print(ind(indent)+"stmt: ;")
 
     class AstSwitch(Block,Statement):
-        pass
+        def __init__(self,val:AstValue,body:Statement):
+            super().__init__()
+            self.val=val
+            self.body=body
+
+        @tp.override
+        def print(self,indent:int):
+            print(ind(indent)+"switch:")
+            print(ind(indent+1)+"value:")
+            self.val.print(indent+2)
+            print(ind(indent+1)+"body:")
+            self.body.print(indent+2)
+
+    class AstSwitchDefault(Statement):
+        def __init__(self):
+            super().__init__()
+        @tp.override
+        def print(self,indent:int):
+            print(ind(indent)+"switchcase default")
+
+    class AstSwitchCase(Statement):
+        def __init__(self,val:AstValue):
+            super().__init__()
+            self.val=val
+
+        @tp.override
+        def print(self,indent:int):
+            print(ind(indent)+"case:")
+            self.val.print(indent+1)
 
     class AstIf(Block,Statement):
         def __init__(self,if_condition:AstValue,if_statement:Statement,else_statement:Statement|None):
@@ -3694,7 +3932,7 @@ if __name__=="__main__":
     test_files=Path("test").glob("test*.c")
     test_files=sorted(test_files)
 
-    for f_path in test_files[:20]:
+    for f_path in test_files[:30]:
         f=str(f_path)
 
         print(f"{ORANGE}{f}{RESET}")
