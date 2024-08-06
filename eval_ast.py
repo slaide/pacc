@@ -721,7 +721,7 @@ def main(filename:str|None=None):
             "flag set to True only on #else directives to detect double-else or conditionals after else"
 
             @staticmethod
-            def eval(p:"Preprocessor",tokens:list[Token],first_if:bool=False)->"Preprocessor.If":
+            def eval(p:"Preprocessor",tokens:list[Token],first_if:bool=False,_debug_print:bool=False)->"Preprocessor.If":
                 do_eval=True
                 if len(p.if_stack)>0:
                     last_if_item=p.if_stack[-1][-1]
@@ -775,7 +775,8 @@ def main(filename:str|None=None):
                         return ' '.join(tok.s for tok in tokens)
 
                     defcheck_removed=remove_defchecks(tokens)
-                    print(f"eval define \n    {tokens_into_str(tokens)} \nto \n    {tokens_into_str(defcheck_removed)}")
+                    if _debug_print:
+                        print(f"eval define \n    {tokens_into_str(tokens)} \nto \n    {tokens_into_str(defcheck_removed)}")
 
                     expanded_expression=p.expand(defcheck_removed)
 
@@ -796,7 +797,8 @@ def main(filename:str|None=None):
 
                     evalable_expression=expression_make_evalable(p,expanded_expression)
 
-                    print(f"evaluating expression {tokens_into_str(tokens)}, i.e. {tokens_into_str(evalable_expression)}")
+                    if _debug_print:
+                        print(f"evaluating expression {tokens_into_str(tokens)}, i.e. {tokens_into_str(evalable_expression)}")
 
                     class Expression:
                         def __init__(self):
@@ -970,6 +972,40 @@ def main(filename:str|None=None):
                             print(f"{' '*indent}!=")
                             self.right.print(indent=indent+1)
 
+                    @dataclass
+                    class ExpressionAddition(Expression):
+                        left:Expression
+                        right:Expression
+
+                        @property
+                        @tp.override
+                        def val(self)->int:
+                            return int(self.left.val + self.right.val)
+                            
+                        @tp.override
+                        def print(self,indent:int=0):
+                            print(f"{' '*indent}addition: {self.val}")
+                            self.left.print(indent=indent+1)
+                            print(f"{' '*indent}+")
+                            self.right.print(indent=indent+1)
+
+                    @dataclass
+                    class ExpressionSubtraction(Expression):
+                        left:Expression
+                        right:Expression
+
+                        @property
+                        @tp.override
+                        def val(self)->int:
+                            return int(self.left.val - self.right.val)
+                            
+                        @tp.override
+                        def print(self,indent:int=0):
+                            print(f"{' '*indent}subtraction: {self.val}")
+                            self.left.print(indent=indent+1)
+                            print(f"{' '*indent}-")
+                            self.right.print(indent=indent+1)
+
                     class OperatorPrecedence(int,Enum):
                         GREATER=0
                         LESS=0
@@ -985,6 +1021,9 @@ def main(filename:str|None=None):
 
                         LESS_OR_EQUAL=0,
                         GREATER_OR_EQUAL=0,
+
+                        ADDITION=0,
+                        SUBTRACTION=0,
 
                         EQUAL=0,
                         UNEQUAL=0,
@@ -1096,6 +1135,15 @@ def main(filename:str|None=None):
                                 ret=ExpressionLogicalOr(ret,right)
                                 continue
 
+                            elif tok.s=="+":
+                                if current_operator_precedence<OperatorPrecedence.ADDITION:
+                                    break
+                                tokens=tokens[1:]
+                                right,tokens=parse_expression(tokens,OperatorPrecedence.ADDITION)
+                                
+                                ret=ExpressionAddition(ret,right)
+                                continue
+
                             elif tok.s=="(":
                                 tokens=tokens[1:]
                                 ret,tokens=parse_expression(tokens,OperatorPrecedence.NONE)
@@ -1108,9 +1156,12 @@ def main(filename:str|None=None):
                         return ret,tokens
 
                     expr,leftover_tokens=parse_expression(evalable_expression,OperatorPrecedence.NONE)
+
                     assert len(leftover_tokens)==0, f"leftover tokens after evaluating preprocessor if statement: {tokens_into_str(leftover_tokens)}"
-                    expr.print()
-                    print(f"evaluted to\n{expr.val}")
+                    
+                    if _debug_print:
+                        expr.print()
+                        print(f"evaluted to\n{expr.val}")
 
                     if_value=expr.val==1
                 else:
@@ -2562,18 +2613,21 @@ def main(filename:str|None=None):
                 case "switch":
                     fatal("switch unimplemented")
 
+                case "if":
+                    fatal("if unimplemented")
+
                 case "while":
                     fatal("while unimplemented")
 
                 case "for":
                     t+=1
 
-                    assert t[0].s=="("
+                    assert t[0].s=="(", f"got instead {t[0]}"
                     t+=1
 
                     # parse for init
                     t,init_statement=self.parse_statement(t)
-                    assert init_statement is not None
+                    assert init_statement is not None, f"got instead {t[0]}"
 
                     for_block=AstForLoop(init_statement,parent=self)
 
@@ -2592,7 +2646,7 @@ def main(filename:str|None=None):
                     t+=1
 
                     t,for_body_statement=for_block.parse_statement(t)
-                    assert for_body_statement is not None
+                    assert for_body_statement is not None, f"got instead {t[0]}"
 
                     for_block.addStatement(for_body_statement)
 
@@ -2640,14 +2694,14 @@ def main(filename:str|None=None):
 
                     t,value=self.parse_value(t)
                     if value is not None:
-                        assert t[0].s==";"
+                        assert t[0].s==";", f"got instead {t[0]}"
                         t+=1
 
                         return t,StatementValue(value)
 
                     t,symdef=self.parse_symbol_definition(t)
                     if symdef is not None:
-                        assert t[0].s==";"
+                        assert t[0].s==";", f"got instead {t[0]}"
                         t+=1
 
                         return t,symdef
@@ -2754,10 +2808,10 @@ def main(filename:str|None=None):
                                 if ret is None:
                                     break
 
-                                assert t[0].token_type==TokenType.SYMBOL
+                                assert t[0].token_type==TokenType.SYMBOL, f"got instead {t[0]}"
 
                                 val_field=ret.get_ctype().get_field_by_name(t[0].s)
-                                assert val_field is not None
+                                assert val_field is not None, f"got instead {t[0]}"
 
                                 t+=1
 
@@ -2772,7 +2826,7 @@ def main(filename:str|None=None):
                                 assert t[0].token_type==TokenType.SYMBOL
 
                                 val_field=ret.get_ctype().get_field_by_name(t[0].s) #type:ignore
-                                assert val_field is not None
+                                assert val_field is not None, f"got instead {t[0]}"
 
                                 t+=1
 
@@ -2787,7 +2841,7 @@ def main(filename:str|None=None):
                                 if index_value is None:
                                     fatal(f"invalid index at {t[0]}")
 
-                                assert t[0].s=="]"
+                                assert t[0].s=="]", f"got instead {t[0]}"
                                 t+=1
 
                                 ret=AstOperation(AstOperationKind.SUBSCRIPT,ret,index_value)
@@ -2838,15 +2892,30 @@ def main(filename:str|None=None):
                                 while t[0].s!="}":
                                     field_target=None
                                     if t[0].s==".":
-                                        fatal("todo")
+                                        t+=1
+                                        field_target=target_type.get_field_by_name(t[0].s)
+                                        assert field_target is not None, f"field {t[0]} not in type {target_type.name}"
+                                        t+=1
+                                        assert t[0].s=="=", f"got instead {t[0]}"
+                                        t+=1
 
-                                    t,value=self.parse_value(t)
+                                    print(f"next token is {t[0]}")
+
+                                    t_pastvalue,value=self.parse_value(t)
                                     if value is None:
                                         fatal(f"expected value, got instead {t[0]}")
 
+                                    t=t_pastvalue
+
                                     fields.append((field_target,value))
 
-                                assert t[0].s=="}"
+                                    if t[0].s==",":
+                                        t+=1
+                                        continue
+
+                                    break
+
+                                assert t[0].s=="}", f"got instead {t[0]}"
                                 t+=1
 
                                 ret=AstCompoundLiteral(fields)
@@ -3064,7 +3133,9 @@ def main(filename:str|None=None):
 
                             t,array_len=self.parse_value(t)
 
-                            assert symbol is not None
+                            # anonymous arrays are allowed in certain contexts
+                            if symbol is None:
+                                symbol=Symbol(ctype)
 
                             if base_ctype is None:
                                 base_ctype=ctype.copy()
@@ -3254,8 +3325,8 @@ def main(filename:str|None=None):
 
                             elif other=="=" and allow_init:
                                 t+=1
-                                t,sym_init_val=self.parse_value(t)
-                                assert sym_init_val is not None, "no value for symbol init"
+                                t,sym_init_val=self.parse_value(t,target_type=symbol.ctype)
+                                assert sym_init_val is not None, f"no value for symbol init at {t[0]}"
                                 continue
 
                             else:
@@ -3301,14 +3372,14 @@ def main(filename:str|None=None):
                     t+=1
 
                     assert base_ctype is not None
-                    fatal("TODO")
-                    #continue
+                    #fatal("TODO")
+                    continue
 
                 # stop parsing otherwise
                 break
 
             if len(ret)==0:
-                return t,None
+                return t_in,None
 
             return t,SymbolDef(ret)
 
@@ -3350,6 +3421,15 @@ def main(filename:str|None=None):
             print(ind(indent+1)+"body:")
             assert len(self.statements)==2, f"{len(self.statements)}"
             self.statements[1].print(indent+2)
+
+    class AstWhileLoop(Block,Statement):
+        pass
+
+    class AstSwitch(Block,Statement):
+        pass
+
+    class AstIf(Block,Statement):
+        pass
 
     class AstBlock(Block,Statement):
         def __init__(self,
