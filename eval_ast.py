@@ -1652,6 +1652,13 @@ def main(filename:str|None=None):
 
             self.base_type:CType|None=None
 
+        def copy(self)->"CType":
+            ret=CType()
+            for key,val in self.__dict__.items():
+                setattr(ret,key,val)
+
+            return ret
+
         def flatten(self)->"CType":
             "resolve basic nesting"
 
@@ -2162,8 +2169,8 @@ def main(filename:str|None=None):
         ADD="+"
         SUBTRACT="-"
 
-        UNARY_PLUS="+"
-        UNARY_MINUS="-"
+        UNARY_PLUS="+x"
+        UNARY_MINUS="-x"
 
         MULTIPLY="*"
         DIVIDE="/"
@@ -2246,12 +2253,12 @@ def main(filename:str|None=None):
                         assert self.val2 is None
                     case 2:
                         assert self.val1 is not None
-                        assert self.val2 is None
                         self.val1.print(indent+1)
+                        assert self.val2 is None
                     case 3:
                         assert self.val1 is not None
-                        assert self.val2 is not None
                         self.val1.print(indent+1)
+                        assert self.val2 is not None
                         self.val2.print(indent+1)
                     case _:
                         fatal("unreachable")
@@ -2272,6 +2279,21 @@ def main(filename:str|None=None):
                     print_op(1)
                 case AstOperationKind.PREFIX_INCREMENT:
                     print_op(1)
+
+                case AstOperationKind.ADD:
+                    print_op(2)
+                case AstOperationKind.SUBTRACT:
+                    print_op(2)
+
+                case AstOperationKind.UNARY_MINUS:
+                    print_op(1)
+                case AstOperationKind.UNARY_PLUS:
+                    print_op(1)
+
+                case AstOperationKind.ADDROF:
+                    print_op(1)
+                case AstOperationKind.SUBSCRIPT:
+                    print_op(2)
 
                 case other:
                     fatal(f"unimplemented {other}")
@@ -2349,33 +2371,45 @@ def main(filename:str|None=None):
             self.value.print(indent+1)
 
     class StatementTypedef(Statement):
-        def __init__(self,symbol:Symbol):
+        def __init__(self,*symbols:Symbol):
             super().__init__()
-            self.symbol=symbol
+            self.symbols=list(symbols)
 
         @tp.override
         def print(self,indent:int):
-            if self.symbol.name is None:
-                print(ind(indent)+f"typedef alias <anon>")
-            else:
-                print(ind(indent)+f"typedef alias {self.symbol.name.s}")
-            self.symbol.ctype.print(indent+1)
+            print(ind(indent)+"typedef:")
+            for sym in self.symbols:
+                if sym.name is None:
+                    print(ind(indent+1)+f"alias <anon>")
+                else:
+                    print(ind(indent+1)+f"alias {sym.name.s}")
+                sym.ctype.print(indent+2)
 
 
     class SymbolDef(Statement):
         "statement symbol definition"
-        def __init__(self,symbol:Symbol):
+        def __init__(self,symbols:list[tuple[Symbol,"AstValue|None"]]):
             super().__init__()
-            self.symbol=symbol
+            self.symbols=symbols
+
+        @property
+        def num_sym(self)->int:
+            return len(self.symbols)
 
         @tp.override
         def print(self,indent:int):
-            if self.symbol.name is None:
-                print(ind(indent)+f"def <anon>:")
-            else:
-                print(ind(indent)+f"def {self.symbol.name.s}:")
+            print(ind(indent)+"def:")
+            for sym,val in self.symbols:
+                if sym.name is None:
+                    print(ind(indent+1)+f"<anon>:")
+                else:
+                    print(ind(indent+1)+f"{sym.name.s}:")
 
-            self.symbol.ctype.print(indent+1)
+                sym.ctype.print(indent+2)
+
+                if val is not None:
+                    print(ind(indent+2)+"value:")
+                    val.print(indent+3)
 
     class Block:
         "block/scope containing a list of statements (which may include other Blocks) and derived information, like new types"
@@ -2451,21 +2485,23 @@ def main(filename:str|None=None):
         def addStatement(self,statement:Statement,ingest_symbols:bool=True):
             if ingest_symbols:
                 if isinstance(statement,SymbolDef):
-                    self.addSymbol(statement.symbol)
+                    for sym,_ in statement.symbols:
+                        self.addSymbol(sym)
 
                 elif isinstance(statement,StatementTypedef):
-                    self.addType(statement.symbol.ctype)
+                    for sym in statement.symbols:
+                        self.addType(sym.ctype)
 
-                    if isinstance(statement.symbol.ctype,CTypeStruct):
-                        if statement.symbol.ctype.name is not None:
-                            self.struct_types[statement.symbol.ctype.name.s]=statement.symbol.ctype
+                        if isinstance(sym.ctype,CTypeStruct):
+                            if sym.ctype.name is not None:
+                                self.struct_types[sym.ctype.name.s]=sym.ctype
 
-                    elif isinstance(statement.symbol.ctype,CTypeUnion):
-                        if statement.symbol.ctype.name is not None:
-                            self.union_types[statement.symbol.ctype.name.s]=statement.symbol.ctype
+                        elif isinstance(sym.ctype,CTypeUnion):
+                            if sym.ctype.name is not None:
+                                self.union_types[sym.ctype.name.s]=sym.ctype
 
-                    if statement.symbol.name is not None:
-                        self.types[statement.symbol.name.s]=statement.symbol.ctype
+                        if sym.name is not None:
+                            self.types[sym.name.s]=sym.ctype
 
             self.statements.append(statement)
 
@@ -2517,7 +2553,11 @@ def main(filename:str|None=None):
                     if typedef is None:
                         return t,None
 
-                    return t,StatementTypedef(typedef.symbol)
+                    for _,val in typedef.symbols:
+                        if val is not None:
+                            fatal("assigning value in typedef statement is not allowed")
+
+                    return t,StatementTypedef(*[s for s,_ in typedef.symbols])
 
                 case "switch":
                     fatal("switch unimplemented")
@@ -2579,22 +2619,19 @@ def main(filename:str|None=None):
                 case _:
                     t,symbol_def=self.parse_symbol_definition(t)
                     if symbol_def is not None:
-                        self.addSymbol(symbol_def.symbol)
+                        for sym,_ in symbol_def.symbols:
+                            self.addSymbol(sym)
 
-                        sym_type=symbol_def.symbol.ctype.flatten()
-                        if isinstance(sym_type,CTypeFunction):
-                            if t[0].s=="{":
-                                t,func_def=self.parse_function_definition(func_type=sym_type,t=t)
-                                if func_def is None:
-                                    print(f"{RED}-- begin error {RESET}")
-                                    symbol_def.symbol.ctype.print(0)
-                                    fatal(f"failed to parse function definition for decl at {symbol_def.symbol.name.s if symbol_def.symbol.name is not None else '<anon>'}")
+                            sym_type=sym.ctype.flatten()
+                            if isinstance(sym_type,CTypeFunction):
+                                if t[0].s=="{":
+                                    t,func_def=self.parse_function_definition(func_type=sym_type,t=t)
+                                    if func_def is None:
+                                        print(f"{RED}-- begin error {RESET}")
+                                        sym.ctype.print(0)
+                                        fatal(f"failed to parse function definition for decl at {sym.name.s if sym.name is not None else '<anon>'}")
 
-                                return t,func_def
-
-                        if symbol_def.symbol.name is not None:
-                            print("name:",symbol_def.symbol.name.s)
-                        symbol_def.symbol.ctype.print(0)
+                                    return t,func_def
 
                         assert t[0].s==";", f"got instead {t[0]}"
                         t+=1
@@ -2674,19 +2711,30 @@ def main(filename:str|None=None):
                     case TokenType.OPERATOR_PUNCTUATION:
                         match t[0].s:
                             case "+":
-                                op_str=t[0].s
-
                                 t+=1
 
                                 if ret is None:
                                     t,ret=self.parse_value(t)
                                     if ret is None: break
-                                    ret=AstOperation(op_str,ret)
+                                    ret=AstOperation(AstOperationKind.UNARY_PLUS,ret)
                                     continue
 
                                 t,rhv=self.parse_value(t)
                                 if rhv is None: break
-                                ret=AstOperation(op_str,ret,rhv)
+                                ret=AstOperation(AstOperationKind.ADD,ret,rhv)
+
+                            case "-":
+                                t+=1
+
+                                if ret is None:
+                                    t,ret=self.parse_value(t)
+                                    if ret is None: break
+                                    ret=AstOperation(AstOperationKind.UNARY_MINUS,ret)
+                                    continue
+
+                                t,rhv=self.parse_value(t)
+                                if rhv is None: break
+                                ret=AstOperation(AstOperationKind.SUBTRACT,ret,rhv)
 
                             case "&":
                                 op_str=t[0].s
@@ -2701,8 +2749,6 @@ def main(filename:str|None=None):
                                 ret=AstOperation(AstOperationKind.ADDROF,rhv)
 
                             case ".":
-                                op_str=t[0].s
-
                                 t+=1
 
                                 if ret is None:
@@ -2715,11 +2761,9 @@ def main(filename:str|None=None):
 
                                 t+=1
 
-                                ret=AstOperation(op_str,ret,val_field) #type:ignore
+                                ret=AstOperation(AstOperationKind.DOT,ret,val_field) #type:ignore
 
                             case "->":
-                                op_str=t[0].s
-
                                 t+=1
 
                                 if ret is None:
@@ -2732,22 +2776,7 @@ def main(filename:str|None=None):
 
                                 t+=1
 
-                                ret=AstOperation(op_str,ret,val_field) #type:ignore
-
-                            case "-":
-                                op_str=t[0].s
-
-                                t+=1
-
-                                if ret is None:
-                                    t,ret=self.parse_value(t)
-                                    if ret is None: break
-                                    ret=AstOperation(op_str,ret)
-                                    continue
-
-                                t,rhv=self.parse_value(t)
-                                if rhv is None: break
-                                ret=AstOperation(op_str,ret,rhv)
+                                ret=AstOperation(AstOperationKind.ARROW,ret,val_field) #type:ignore
 
                             case "[":
                                 if ret is None:break
@@ -2770,7 +2799,7 @@ def main(filename:str|None=None):
 
                                 t,rhv=self.parse_value(t)
                                 if rhv is None: break
-                                ret=AstOperation("<",ret,rhv)
+                                ret=AstOperation(AstOperationKind.LESS_THAN,ret,rhv)
 
                             case "++":
                                 t+=1
@@ -2831,21 +2860,24 @@ def main(filename:str|None=None):
                                 # 3) else: this is a nesting operator to override operator precedence
 
                                 if ret is None:
-                                    ts,symbol_def=self.parse_symbol_definition(t)
+                                    ts,symbol_def=self.parse_symbol_definition(t,allow_multiple=False,allow_init=False)
                                     if symbol_def is not None:
                                         # case 2
 
                                         t=ts
 
-                                        assert symbol_def.symbol.name is None, f"cast to symbol declaration is invalid at {t[0]}"
+                                        assert symbol_def.num_sym==1
+                                        sym,_=symbol_def.symbols[0]
+
+                                        assert sym.name is None, f"cast to symbol declaration is invalid at {t[0]}"
                                         
                                         assert t[0].s==")", f"got instead {t[0]}"
                                         t+=1
 
-                                        t,cast_value=self.parse_value(t,target_type=symbol_def.symbol.ctype)
+                                        t,cast_value=self.parse_value(t,target_type=sym.ctype)
                                         assert cast_value is not None
 
-                                        ret=AstOperationCast(cast_to_type=symbol_def.symbol.ctype,value=cast_value)
+                                        ret=AstOperationCast(cast_to_type=sym.ctype,value=cast_value)
                                         continue
 
                                     # case 3
@@ -2869,12 +2901,16 @@ def main(filename:str|None=None):
                                     type_as_arg=None
                                     if arg_index<len(func_type.arguments):
                                         func_arg=func_type.arguments[arg_index]
+
+                                        # if argument type is __type primitive, parse a type
                                         if CTypePrimitive("__type").can_be_assigned_to(func_arg.ctype):
-                                            ts,symdef=self.parse_symbol_definition(t)
+                                            ts,symdef=self.parse_symbol_definition(t,allow_multiple=False,allow_init=False)
                                             if symdef is None:
                                                 fatal(f"expected symbol but found none at {t[0]}")
 
-                                            type_as_arg=AstValueType(symdef.symbol.ctype)
+                                            sym,_=symdef.symbols[0]
+
+                                            type_as_arg=AstValueType(sym.ctype)
                                             t=ts
                                     
                                     if type_as_arg is not None:
@@ -2929,298 +2965,352 @@ def main(filename:str|None=None):
 
             return t,func_block
 
-        def parse_symbol_definition(self,t:Iter[Token])->tuple[Iter[Token],SymbolDef|None]:
-            "try parsing a symbol definition from self.t, internally advances self.t when return value is not None"
+        def parse_symbol_definition(self,t:Iter[Token],allow_multiple:bool=True,allow_init:bool=True)->tuple[Iter[Token],SymbolDef|None]:
+            "try parsing a symbol definition from t, returns iterator past the content if the return value[1] is not None"
 
             t_in=t.copy()
 
-            ctype:CType=CType()
-            symbol:Symbol|None=None
+            base_ctype:CType|None=None
 
-            # keep track of open paranthesis
-            nesting_depth=0
+            ret:list[tuple[Symbol,AstValue|None]]=[]
 
-            while not t.empty:
-                match t[0].s:
-                    case "extern":
-                        ctype.is_extern=True
-                        t+=1
-                        continue
+            while 1:
+                # parse new symbol
+                symbol:Symbol|None=None
+                sym_init_val:AstValue=None
+                ctype:CType=CType()
 
-                    case "_Noreturn":
-                        # ctype.is_noreturn=True
-                        t+=1
-                        continue
+                if base_ctype is not None:
+                    ctype.base_type=base_ctype
 
-                    case "const":
-                        ctype.is_const=True
-                        t+=1
-                        continue
+                # keep track of open paranthesis
+                nesting_depth=0
 
-                    case "static":
-                        ctype.is_static=True
-                        t+=1
-                        continue
+                while not t.empty:
+                    match t[0].s:
+                        case "extern":
+                            ctype.is_extern=True
+                            t+=1
+                            continue
 
-                    case "signed":
-                        ctype.is_signed=True
-                        t+=1
-                        continue
+                        case "_Noreturn":
+                            # ctype.is_noreturn=True
+                            t+=1
+                            continue
 
-                    case "unsigned":
-                        ctype.is_signed=False
-                        t+=1
-                        continue
+                        case "const":
+                            ctype.is_const=True
+                            t+=1
+                            continue
 
-                    case "*":
-                        if nesting_depth>0:
+                        case "static":
+                            ctype.is_static=True
+                            t+=1
+                            continue
+
+                        case "signed":
+                            ctype.is_signed=True
+                            t+=1
+                            continue
+
+                        case "unsigned":
+                            ctype.is_signed=False
+                            t+=1
+                            continue
+
+                        case "long":
+                            if ctype.length_mod is None:
+                                ctype.length_mod=1
+                            else:
+                                ctype.length_mod+=1
+                            t+=1
+                            continue
+
+                        case "short":
+                            if ctype.length_mod is None:
+                                ctype.length_mod=-1
+                            else:
+                                ctype.length_mod-=1
+                            t+=1
+                            continue
+
+                        case "*":
+                            if nesting_depth>0:
+                                if symbol is None:
+                                    symbol=Symbol(ctype)
+
+                                symbol.wrap_ctype(lambda c:CTypePointer(c))
+                                t+=1
+                                continue
+
+                            # cannot point to invalid type
+                            if ctype.is_empty_default():
+                                break
+
+                            if base_ctype is None:
+                                base_ctype=ctype.copy()
+
                             if symbol is None:
                                 symbol=Symbol(ctype)
 
                             symbol.wrap_ctype(lambda c:CTypePointer(c))
+
                             t+=1
+
                             continue
 
-                        # cannot point to invalid type
-                        if ctype.is_empty_default():
-                            break
-
-                        if symbol is None:
-                            symbol=Symbol(ctype)
-
-                        symbol.wrap_ctype(lambda c:CTypePointer(c))
-
-                        t+=1
-                        continue
-
-                    case "[":
-                        t+=1
-
-                        t,array_len=self.parse_value(t)
-
-                        assert symbol is not None
-
-                        symbol.wrap_ctype(lambda c:CTypeArray(c,array_len))
-
-                        assert t[0].s=="]"
-                        t+=1
-
-                        continue
-
-                    case "struct":
-                        t+=1
-
-                        struct_name:Token|None=None
-                        if t[0].token_type==TokenType.SYMBOL:
-                            struct_name=t[0]
+                        case "[":
                             t+=1
 
-                        struct_base=CTypeStruct(struct_name,None)
+                            t,array_len=self.parse_value(t)
 
-                        ctype.base_type=struct_base
+                            assert symbol is not None
 
-                        if t[0].s=="{":
+                            if base_ctype is None:
+                                base_ctype=ctype.copy()
+
+                            symbol.wrap_ctype(lambda c:CTypeArray(c,array_len))
+
+                            assert t[0].s=="]"
                             t+=1
 
-                            struct_base.fields=[]
+                            continue
 
-                            while 1:
-                                t,field_symdef=self.parse_symbol_definition(t)
-                                if field_symdef is None:
+                        case "struct":
+                            t+=1
+
+                            struct_name:Token|None=None
+                            if t[0].token_type==TokenType.SYMBOL:
+                                struct_name=t[0]
+                                t+=1
+
+                            struct_base=CTypeStruct(struct_name,None)
+
+                            ctype.base_type=struct_base
+
+                            if t[0].s=="{":
+                                t+=1
+
+                                struct_fields:list[CTypeField]=[]
+
+                                while 1:
+                                    t,field_symdef=self.parse_symbol_definition(t,allow_init=False)
+                                    if field_symdef is None:
+                                        break
+
+                                    assert t[0].s==";", f"got instead {t[0]}"
+                                    t+=1
+
+                                    for sym,_ in field_symdef.symbols:
+                                        struct_fields.append(CTypeField(sym.name,sym.ctype,parent_ctype=struct_base))
+
+                                struct_base.fields=struct_fields
+
+                                assert t[0].s=="}", f"got instead {t[0]}"
+                                t+=1
+
+                            else:
+                                # type not defined inline, then must be named
+                                assert struct_name is not None
+
+                                # check if inline incomplete type references complete type
+                                complete_type=self.getTypeByName(struct_name.s,e_struct=True)
+                                if complete_type is not None:
+                                    ctype.base_type=complete_type
+
+                            continue
+
+                        case "union":
+                            t+=1
+
+                            union_name:Token|None=None
+                            if t[0].token_type==TokenType.SYMBOL:
+                                union_name=t[0]
+                                t+=1
+
+                            union_base=CTypeUnion(union_name,None)
+
+                            ctype.base_type=union_base
+
+                            if t[0].s=="{":
+                                t+=1
+                                
+                                union_fields:list[CTypeField]=[]
+
+                                while 1:
+                                    t,field_symdef=self.parse_symbol_definition(t)
+                                    if field_symdef is None:
+                                        break
+
+                                    assert t[0].s==";", f"got instead {t[0]}"
+                                    t+=1
+
+                                    for sym,_ in field_symdef.symbols:
+                                        union_fields.append(CTypeField(sym.name,sym.ctype,parent_ctype=union_base))
+
+                                union_base.fields=union_fields
+
+                                assert t[0].s=="}", f"got instead {t[0]}"
+                                t+=1
+                            else:
+                                # type not defined inline, then must be named
+                                assert union_name is not None
+
+                                # check if inline incomplete type references complete type
+                                complete_type=self.getTypeByName(union_name.s,e_union=True)
+                                if complete_type is not None:
+                                    ctype.base_type=complete_type
+
+                            continue
+
+                        case "enum":
+                            t+=1
+
+                            enum_name:Token|None=None
+                            enum_fields:list[Symbol]|None=None
+                            if t[0].token_type==TokenType.SYMBOL:
+                                enum_name=t[0]
+                                t+=1
+
+                            if t[0].s=="{":
+                                fatal("TODO parse enum fields")
+
+                            enum_base=CTypeEnum(enum_name,enum_fields)
+                            ctype.base_type=enum_base
+
+                            continue
+
+                        case "(":
+                            t+=1
+                            # function decl must have a symbol, but a function type may be anonymous
+
+                            found_func_decl=True
+                            t_before_func_decl=t.copy()
+
+                            arguments:list[Symbol]=[]
+                            has_vararg=False
+
+                            while t[0].s!=")":
+                                if t[0].s==VARARG_ARGNAME:
+                                    has_vararg=True
+                                    t+=1
                                     break
 
-                                assert t[0].s==";", f"got instead {t[0]}"
-                                t+=1
-
-                                struct_base.fields.append(CTypeField(field_symdef.symbol.name,field_symdef.symbol.ctype,parent_ctype=struct_base))
-
-                            assert t[0].s=="}", f"got instead {t[0]}"
-                            t+=1
-
-                        else:
-                            # type not defined inline, then must be named
-                            assert struct_name is not None
-
-                            # check if inline incomplete type references complete type
-                            complete_type=self.getTypeByName(struct_name.s,e_struct=True)
-                            if complete_type is not None:
-                                ctype.base_type=complete_type
-
-                        continue
-
-                    case "union":
-                        t+=1
-
-                        union_name:Token|None=None
-                        if t[0].token_type==TokenType.SYMBOL:
-                            union_name=t[0]
-                            t+=1
-
-                        union_base=CTypeUnion(union_name,None)
-
-                        ctype.base_type=union_base
-
-                        if t[0].s=="{":
-                            t+=1
-                            
-                            union_base.fields=[]
-
-                            while 1:
-                                t,field_symdef=self.parse_symbol_definition(t)
-                                if field_symdef is None:
+                                t_sym_def,symbol_def=self.parse_symbol_definition(t,allow_multiple=False,allow_init=False)
+                                if symbol_def is None:
                                     break
 
-                                assert t[0].s==";", f"got instead {t[0]}"
-                                t+=1
+                                if symbol_def.num_sym==0:
+                                    break
 
-                                union_base.fields.append(CTypeField(field_symdef.symbol.name,field_symdef.symbol.ctype,parent_ctype=union_base))
+                                t=t_sym_def
 
-                            assert t[0].s=="}", f"got instead {t[0]}"
-                            t+=1
-                        else:
-                            # type not defined inline, then must be named
-                            assert union_name is not None
+                                sym,_=symbol_def.symbols[0]
 
-                            # check if inline incomplete type references complete type
-                            complete_type=self.getTypeByName(union_name.s,e_union=True)
-                            if complete_type is not None:
-                                ctype.base_type=complete_type
+                                arguments.append(sym)
+                                if t[0].s==",":
+                                    t+=1
+                                    continue
 
-                        continue
-
-                    case "enum":
-                        t+=1
-
-                        enum_name:Token|None=None
-                        enum_fields:list[Symbol]|None=None
-                        if t[0].token_type==TokenType.SYMBOL:
-                            enum_name=t[0]
-                            t+=1
-
-                        if t[0].s=="{":
-                            fatal("TODO parse enum fields")
-
-                        enum_base=CTypeEnum(enum_name,enum_fields)
-                        ctype.base_type=enum_base
-
-                        continue
-
-                    case "long":
-                        if ctype.length_mod is None:
-                            ctype.length_mod=1
-                        else:
-                            ctype.length_mod+=1
-                        t+=1
-                        continue
-
-                    case "short":
-                        if ctype.length_mod is None:
-                            ctype.length_mod=-1
-                        else:
-                            ctype.length_mod-=1
-                        t+=1
-                        continue
-
-                    case "(":
-                        t+=1
-                        # function decl must have a symbol, but a function type may be anonymous
-
-                        found_func_decl=True
-                        t_before_func_decl=t.copy()
-
-                        arguments:list[Symbol]=[]
-                        has_vararg=False
-
-                        while t[0].s!=")":
-                            if t[0].s==VARARG_ARGNAME:
-                                has_vararg=True
-                                t+=1
                                 break
 
-                            t_sym_def,symbol_def=self.parse_symbol_definition(t)
-                            if symbol_def is None:
-                                break
+                            if t[0].s!=")":
+                                t=t_before_func_decl
+                                found_func_decl=False
 
-                            t=t_sym_def
-
-                            arguments.append(symbol_def.symbol)
-                            if t[0].s==",":
+                            if found_func_decl:
+                                assert t[0].s==")", f"got instead {t[0]}"
                                 t+=1
+
+                                ctype.nest()
+                                assert ctype.base_type is not None
+
+                                ctype.base_type=CTypeFunction(ctype.base_type,arguments,has_vararg=has_vararg)
+
+                                if symbol is None:
+                                    symbol=Symbol(ctype)
+
                                 continue
 
-                            break
-
-                        if t[0].s!=")":
-                            t=t_before_func_decl
-                            found_func_decl=False
-
-                        if found_func_decl:
-                            assert t[0].s==")", f"got instead {t[0]}"
-                            t+=1
-
-                            ctype.nest()
-                            assert ctype.base_type is not None
-
-                            ctype.base_type=CTypeFunction(ctype.base_type,arguments,has_vararg=has_vararg)
-
+                            # nested type declaration, allows for some precedence overrides, e.g. applying modifiers to the symbol, rather than the base type
+                            nesting_depth+=1
                             if symbol is None:
                                 symbol=Symbol(ctype)
 
                             continue
 
-                        # nested type declaration, allows for some precedence overrides, e.g. applying modifiers to the symbol, rather than the base type
-                        nesting_depth+=1
-                        if symbol is None:
-                            symbol=Symbol(ctype)
+                        case other:
+                            if other==")" and nesting_depth>0:
+                                t+=1
+                                nesting_depth-=1
+                                continue
 
-                        continue
+                            # check for existing type by name
+                            other_as_type=self.getTypeByName(other)
+                            if other_as_type is not None:
+                                ctype.base_type=other_as_type
+                                t+=1
+                                continue
 
-                    case other:
-                        if other==")" and nesting_depth>0:
-                            t+=1
-                            nesting_depth-=1
-                            continue
+                            elif other=="=" and allow_init:
+                                t+=1
+                                t,sym_init_val=self.parse_value(t)
+                                assert sym_init_val is not None, "no value for symbol init"
+                                continue
 
-                        other_as_type=self.getTypeByName(other)
-                        if other_as_type is not None:
-                            ctype.base_type=other_as_type
-                            t+=1
-                            continue
+                            else:
+                                if not t[0].is_valid_symbol():
+                                    break
 
-                        elif other=="=":
-                            t+=1
-                            t,value=self.parse_value(t)
-                            assert value is not None, "no value for symbol init"
-                            continue
+                                if ctype.is_empty_default():
+                                    break
 
-                        else:
-                            if not t[0].is_valid_symbol():
-                                break
+                                if base_ctype is None:
+                                    base_ctype=ctype.copy()
 
-                            if ctype.is_empty_default():
-                                break
+                                symbol=Symbol(ctype=ctype,name=t[0])
 
-                            symbol=Symbol(ctype=ctype,name=t[0])
+                                t+=1
+                                continue 
 
-                            t+=1
-                            continue 
+                    break
 
+                if ctype.is_empty_default():
+                    break
+
+                if nesting_depth>0:
+                    fatal("unclosed paranthesis")
+
+                # create anonymous symbol from ctype is type exists but name does not
+                if symbol is None:
+                    symbol=Symbol(ctype,name=None)
+
+                # catch invalid type definitions, e.g. pointer to nothing
+                sym_val_str=symbol.ctype.validate()
+                if sym_val_str is not None:
+                    break
+
+                # flatten type of symbol
+                symbol.ctype=symbol.ctype.flatten()
+
+                # append symbol to list of defined symbols for later return
+                ret.append((symbol,sym_init_val))
+
+                # check for multiple definitions, e.g. "int a,b;"
+                if t[0].s=="," and allow_multiple:
+                    t+=1
+
+                    assert base_ctype is not None
+                    fatal("TODO")
+                    #continue
+
+                # stop parsing otherwise
                 break
 
-            if ctype.is_empty_default():
-                return t_in,None
+            if len(ret)==0:
+                return t,None
 
-            if symbol is None:
-                symbol=Symbol(ctype,name=None)
-
-            # catch invalid cases
-            sym_val_str=symbol.ctype.validate()
-            if sym_val_str is not None:
-                return t_in,None
-
-            symbol.ctype=symbol.ctype.flatten()
-
-            return t,SymbolDef(symbol)
+            return t,SymbolDef(ret)
 
 
     class AstForLoop(Block,Statement):
