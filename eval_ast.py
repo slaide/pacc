@@ -396,6 +396,8 @@ class Tokenizer:
                                     fatal(f"unimplemented {other}")
                         elif t.c=="\"":
                             current_token.s+="\""
+                        elif t.c=="\\":
+                            current_token.s+="\\"
                         elif t.c=="'":
                             current_token.s+="'"
                         else:
@@ -1771,9 +1773,13 @@ def main(filename:str|None=None):
             return None
 
         def can_be_assigned_to(self,other:"CType")->bool:
-            if isinstance(self,CTypePrimitive) and isinstance(other,CTypePrimitive) \
-                and self.name==other.name:
-                return True
+            "checks if self can be assigned to other"
+            if isinstance(self,CTypePrimitive) and isinstance(other,CTypePrimitive):
+                if self.name==other.name:
+                    return True
+
+                if self.name==CTypePrimitive.Type().name and other.name==CTypePrimitive.Ty_Any().name:
+                    return True
 
             return False
 
@@ -1995,6 +2001,37 @@ def main(filename:str|None=None):
         def print(self,indent:int):
             print(ind(indent)+self.name)
 
+        # fundamental types:
+
+        @staticmethod
+        def Void():
+            return CTypePrimitive("void")
+        @staticmethod
+        def Int():
+            return CTypePrimitive("int")
+        @staticmethod
+        def Char():
+            return CTypePrimitive("char")
+        @staticmethod
+        def Float():
+            return CTypePrimitive("float")
+        @staticmethod
+        def Double():
+            return CTypePrimitive("double")
+        @staticmethod
+        def Bool():
+            return CTypePrimitive("bool")
+
+        @staticmethod
+        def Type():
+            return CTypePrimitive("__type")
+        @staticmethod
+        def Ty_Any():
+            return CTypePrimitive("__ty_any")
+        @staticmethod
+        def Any():
+            return CTypePrimitive("__any")
+
     class CTypePointer(CType):
         "pointer to some other type (uses CType.base_type as base)"
         def __init__(self,base_type:CType):
@@ -2019,10 +2056,12 @@ def main(filename:str|None=None):
             return self.base_type.validate()
 
     class CTypeArray(CType):
-        def __init__(self,base_type:CType,length:"AstValue|None"):
+        def __init__(self,base_type:CType,length:"AstValue|None",length_is_static:bool=False):
             super().__init__(_is_basic=False)
             self.base_type=base_type
             self.length=length
+
+            self.length_is_static=length_is_static
 
         @tp.override
         def is_empty_default(self)->bool:
@@ -2243,12 +2282,23 @@ def main(filename:str|None=None):
         EQUAL="=="
         UNEQUAL="!="
 
+        ADD_ASSIGN="+="
+        SUB_ASSIGN="-="
+        DIV_ASSIGN="/="
+        MULT_ASSIGN="*="
+        MOD_ASSIGN="%="
+        XOR_ASSIGN="^="
+        BITWISE_OR_ASSIGN="|="
+        BITWISE_AND_ASSIGN="&="
+
         ASSIGN="="
         DOT="."
         ARROW="->"
 
         ADDROF="&x"
         DEREFERENCE="*x"
+
+        QMARK="?:"
 
         POSTFIX_INCREMENT="x++"
         POSTFIX_DECREMENT="x--"
@@ -2360,6 +2410,10 @@ def main(filename:str|None=None):
 
                 case AstOperationKind.ASSIGN:
                     print_op(2)
+                case AstOperationKind.ADD_ASSIGN:
+                    print_op(2)
+                case AstOperationKind.SUB_ASSIGN:
+                    print_op(2)
 
                 case AstOperationKind.POSTFIX_DECREMENT:
                     print_op(1)
@@ -2398,6 +2452,9 @@ def main(filename:str|None=None):
 
                 case AstOperationKind.SUBSCRIPT:
                     print_op(2)
+
+                case AstOperationKind.QMARK:
+                    print_op(3)
 
                 case other:
                     fatal(f"unimplemented {other}")
@@ -2659,13 +2716,16 @@ def main(filename:str|None=None):
                 case "typedef":
                     t+=1
 
-                    t,typedef=self.parse_symbol_definition(t)
+                    t_aftertdef,typedef=self.parse_symbol_definition(t)
                     
+                    if typedef is not None:
+                        t=t_aftertdef
+
                     assert t[0].s==";", f"got instead {t[0]}"
                     t+=1
 
                     if typedef is None:
-                        return t,None
+                        return t,StatementTypedef()
 
                     for _,val in typedef.symbols:
                         if val is not None:
@@ -3101,6 +3161,22 @@ def main(filename:str|None=None):
 
                                 ret=AstOperation(AstOperationKind.SUBSCRIPT,ret,index_value)
 
+                            case "?":
+                                if ret is None: break
+
+                                t+=1
+
+                                t,rhv0=self.parse_value(t)
+                                if rhv0 is None: break
+
+                                assert t[0].s==":", f"got instead {t[0]}"
+                                t+=1
+
+                                t,rhv1=self.parse_value(t)
+                                if rhv1 is None: break
+
+                                ret=AstOperation(AstOperationKind.QMARK,ret,rhv0,rhv1)
+
                             case "<":
                                 if ret is None: break
 
@@ -3239,6 +3315,87 @@ def main(filename:str|None=None):
 
                                 ret=AstOperation(AstOperationKind.ASSIGN,ret,rhv)
 
+                            case "+=":
+                                if ret is None: break
+
+                                t+=1
+
+                                t_afterval,rhv=self.parse_value(t)
+                                if rhv is None:
+                                    fatal(f"invalid value on rhs of assignment at {t[0]}")
+
+                                t=t_afterval
+
+                                ret=AstOperation(AstOperationKind.ADD_ASSIGN,ret,rhv)
+
+                            case "-=":
+                                if ret is None: break
+
+                                t+=1
+
+                                t_afterval,rhv=self.parse_value(t)
+                                if rhv is None:
+                                    fatal(f"invalid value on rhs of assignment at {t[0]}")
+
+                                t=t_afterval
+
+                                ret=AstOperation(AstOperationKind.SUB_ASSIGN,ret,rhv)
+
+                            case "/=":
+                                if ret is None: break
+
+                                t+=1
+
+                                t_afterval,rhv=self.parse_value(t)
+                                if rhv is None:
+                                    fatal(f"invalid value on rhs of assignment at {t[0]}")
+
+                                t=t_afterval
+
+                                ret=AstOperation(AstOperationKind.DIV_ASSIGN,ret,rhv)
+
+                            case "*=":
+                                if ret is None: break
+
+                                t+=1
+
+                                t_afterval,rhv=self.parse_value(t)
+                                if rhv is None:
+                                    fatal(f"invalid value on rhs of assignment at {t[0]}")
+
+                                t=t_afterval
+
+                                ret=AstOperation(AstOperationKind.MULT_ASSIGN,ret,rhv)
+
+                            #MOD_ASSIGN="%="
+                            #XOR_ASSIGN="^="
+
+                            case "|=":
+                                if ret is None: break
+
+                                t+=1
+
+                                t_afterval,rhv=self.parse_value(t)
+                                if rhv is None:
+                                    fatal(f"invalid value on rhs of assignment at {t[0]}")
+
+                                t=t_afterval
+
+                                ret=AstOperation(AstOperationKind.BITWISE_OR_ASSIGN,ret,rhv)
+
+                            case "&=":
+                                if ret is None: break
+
+                                t+=1
+
+                                t_afterval,rhv=self.parse_value(t)
+                                if rhv is None:
+                                    fatal(f"invalid value on rhs of assignment at {t[0]}")
+
+                                t=t_afterval
+
+                                ret=AstOperation(AstOperationKind.BITWISE_AND_ASSIGN,ret,rhv)
+
                             case "{":
                                 if target_type is None:
                                     break
@@ -3344,12 +3501,14 @@ def main(filename:str|None=None):
                                         if CTypePrimitive("__type").can_be_assigned_to(func_arg.ctype):
                                             ts,symdef=self.parse_symbol_definition(t,allow_multiple=False,allow_init=False)
                                             if symdef is None:
-                                                fatal(f"expected symbol but found none at {t[0]}")
+                                                # only when argument type is type (i.e. NOT ty_any), is this an error
+                                                if func_arg.ctype.can_be_assigned_to(CTypePrimitive.Type()):
+                                                    fatal(f"expected symbol but found none at {t[0]}")
+                                            else:
+                                                sym,_=symdef.symbols[0]
 
-                                            sym,_=symdef.symbols[0]
-
-                                            type_as_arg=AstValueType(sym.ctype)
-                                            t=ts
+                                                type_as_arg=AstValueType(sym.ctype)
+                                                t=ts
                                     
                                     if type_as_arg is not None:
                                         arg_value=type_as_arg
@@ -3505,6 +3664,10 @@ def main(filename:str|None=None):
                         case "[":
                             t+=1
 
+                            length_is_static=t[0].s=="static"
+                            if length_is_static:
+                                t+=1
+
                             t,array_len=self.parse_value(t)
 
                             # anonymous arrays are allowed in certain contexts
@@ -3514,7 +3677,7 @@ def main(filename:str|None=None):
                             if base_ctype is None:
                                 base_ctype=ctype.copy()
 
-                            symbol.wrap_ctype(lambda c:CTypeArray(c,array_len))
+                            symbol.wrap_ctype(lambda c:CTypeArray(c,array_len,length_is_static=length_is_static))
 
                             assert t[0].s=="]"
                             t+=1
@@ -3967,7 +4130,7 @@ def main(filename:str|None=None):
     class ConstFnSizeof(CTypeConstFn):
         "sizeof compile time function"
         def __init__(self):
-            super().__init__(return_kind=AstValue,arguments=[("t",CTypePrimitive("__type"))])
+            super().__init__(return_kind=AstValue,arguments=[("t",CTypePrimitive("__ty_any"))])
 
         @tp.override
         def eval(self,block:Block,arguments:list["AstValue"])->"AstValue":
@@ -3983,18 +4146,59 @@ def main(filename:str|None=None):
 
             self.block:Block=Block(
                 types={
-                    n:CTypePrimitive(n)
-                    for n
-                    in [
-                        "void",
-                        "char", "int",
-                        "float", "double",
-                        "bool",
-                        "__builtin_va_list",
-                    ]
+                    "void":CTypePrimitive.Void(),
+                    "int":CTypePrimitive.Int(),
+                    "char":CTypePrimitive.Char(),
+
+                    "float":CTypePrimitive.Float(),
+                    "double":CTypePrimitive.Double(),
+                    "bool":CTypePrimitive.Bool(),
+
+                    "__builtin_va_list":CTypePrimitive("__builtin_va_list"),
                 },
                 symbols={
-                    "sizeof":Symbol(ConstFnSizeof(),None),
+                    "sizeof":Symbol(ConstFnSizeof()),
+
+                    "nullptr":Symbol(
+                        CTypePointer(
+                            CTypePrimitive.Void()
+                        ),
+                        Token(
+                            "nullptr",src_loc=SourceLocation.placeholder(),token_type=TokenType.SYMBOL
+                        )
+                    ),
+
+                    "__builtin_va_start": Symbol(CTypeFunction(
+                        CTypePrimitive("void"),[
+                            Symbol(CTypePrimitive("__builtin_va_list")),
+                            Symbol(CTypePrimitive.Any())
+                        ]),
+                        Token(
+                            "__builtin_va_start",src_loc=SourceLocation.placeholder(),token_type=TokenType.SYMBOL
+                        )), #__builtin_va_start(v,l)
+                    "__builtin_va_end": Symbol(CTypeFunction(
+                        CTypePrimitive("void"),[
+                            Symbol(CTypePrimitive("__builtin_va_list")),
+                        ]),
+                        Token(
+                            "__builtin_va_end",src_loc=SourceLocation.placeholder(),token_type=TokenType.SYMBOL
+                        )), #__builtin_va_end(v)
+                    "__builtin_va_arg": Symbol(CTypeFunction(
+                        CTypePrimitive("void"),[
+                            Symbol(CTypePrimitive("__builtin_va_list")),
+                            Symbol(CTypePrimitive("__type"))
+                        ]),
+                        Token(
+                            "__builtin_va_arg",src_loc=SourceLocation.placeholder(),token_type=TokenType.SYMBOL
+                        )), #__builtin_va_arg(v,l)
+                    "__builtin_va_copy": Symbol(CTypeFunction(
+                        CTypePrimitive("void"),[
+                            Symbol(CTypePrimitive("__builtin_va_list")),
+                            Symbol(CTypePrimitive("__builtin_va_list")),
+                        ]),
+                        Token(
+                            "__builtin_va_copy",src_loc=SourceLocation.placeholder(),token_type=TokenType.SYMBOL
+                        )), #__builtin_va_copy(d,s)
                 },
             )
 
@@ -4018,7 +4222,7 @@ if __name__=="__main__":
     test_files=Path("test").glob("test*.c")
     test_files=sorted(test_files)
 
-    for f_path in test_files[:30]:
+    for f_path in test_files[:40]:
         f=str(f_path)
 
         print(f"{ORANGE}{f}{RESET}")
