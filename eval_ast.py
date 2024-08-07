@@ -1693,6 +1693,8 @@ def main(filename:str|None=None):
 
             self.is_static:bool=False
             self.is_extern:bool=False
+            self.is_threadlocal:bool=False
+            self.is_noreturn:bool=False
 
             self.is_atomic:bool=False
 
@@ -1946,8 +1948,10 @@ def main(filename:str|None=None):
 
     class CTypeEnum(CType):
         "name may be none, and if fields are none, the type is considered incomplete"
-        def __init__(self,name:Token|None,fields:list[tuple[str,"AstValue|None"]]|None):
+        def __init__(self,base_type:CType,name:Token|None,fields:list[tuple["Symbol","AstValue"]]|None):
             super().__init__(_is_basic=False)
+
+            self.base_type=base_type
             self.name=name
             self.fields=fields
 
@@ -1969,10 +1973,12 @@ def main(filename:str|None=None):
                 print(ind(indent+1)+f"fields: <type is incomplete>")
             else:
                 print(ind(indent+1)+f"fields:")
-                for fieldname,field_value in self.fields:
+                for field,value in self.fields:
                     print(ind(indent+2)+"field:")
-                    print(ind(indent+3)+f"name: {fieldname}")
-                    print(ind(indent+3)+f"value: {field_value}")
+                    assert field.name is not None
+                    print(ind(indent+3)+f"name: {field.name.s}")
+                    print(ind(indent+3)+"value:")
+                    value.print(indent+4)
 
 
     class CTypePrimitive(CType):
@@ -2573,31 +2579,37 @@ def main(filename:str|None=None):
             if isinstance(ctype,CTypeStruct):
                 if ctype.name is not None:
                     self.struct_types[ctype.name.s]=ctype
+
             elif isinstance(ctype,CTypeUnion):
                 if ctype.name is not None:
                     self.union_types[ctype.name.s]=ctype
+
+            elif isinstance(ctype,CTypeEnum):
+                if ctype.name is not None:
+                    self.enum_types[ctype.name.s]=ctype
+
+                # also ingest every 'field' of the enum into the symbol table
+                if ctype.fields is not None:
+                    for field,_ in ctype.fields:
+                        self.addSymbol(field)
 
             if ctype.base_type is not None:
                 self.addType(ctype.base_type)
 
         def addStatement(self,statement:Statement,ingest_symbols:bool=True):
             if ingest_symbols:
+                # if statement is a symboldef, ingest every symbol defined there
                 if isinstance(statement,SymbolDef):
                     for sym,_ in statement.symbols:
                         self.addSymbol(sym)
 
+                # if statement is a typedef, ingest all symbols and types defined there
                 elif isinstance(statement,StatementTypedef):
                     for sym in statement.symbols:
+                        # ingest the referenced type first
                         self.addType(sym.ctype)
 
-                        if isinstance(sym.ctype,CTypeStruct):
-                            if sym.ctype.name is not None:
-                                self.struct_types[sym.ctype.name.s]=sym.ctype
-
-                        elif isinstance(sym.ctype,CTypeUnion):
-                            if sym.ctype.name is not None:
-                                self.union_types[sym.ctype.name.s]=sym.ctype
-
+                        # then add the alias to the list of types
                         if sym.name is not None:
                             self.types[sym.name.s]=sym.ctype
 
@@ -2832,11 +2844,6 @@ def main(filename:str|None=None):
                     for_block.addStatement(for_body_statement)
 
                     return t,for_block
-                    
-                case "break":
-                    fatal("break unimplemented")
-                case "continue":
-                    fatal("continue unimplemented")
 
                 case "return":
                     t+=1
@@ -2849,7 +2856,16 @@ def main(filename:str|None=None):
                     return t,StatementReturn(value)
 
                 case "goto":
-                    fatal("goto unimplemented")
+                    t+=1
+
+                    assert t[0].token_type==TokenType.SYMBOL
+                    label_name=t[0]
+                    t+=1
+
+                    assert t[0].s==";"
+                    t+=1
+
+                    return t,AstGoto(label_name)
 
                 case _:
                     t,symbol_def=self.parse_symbol_definition(t)
@@ -2872,6 +2888,14 @@ def main(filename:str|None=None):
                         t+=1
 
                         return t,symbol_def
+
+                    # check for label definition
+                    if t[0].token_type==TokenType.SYMBOL and t[1].s==":" and self.getSymbolByName(t[0].s) is None:
+                        label=t[0]
+
+                        t+=2
+
+                        return t,AstLabel(label)
 
                     t,value=self.parse_value(t)
                     if value is not None:
@@ -3374,7 +3398,7 @@ def main(filename:str|None=None):
             func_block=AstFunction(func_type,parent=self)
             t=func_block.parse(t)
 
-            assert t[0].s=="}", f"got instead {t[0].s}"
+            assert t[0].s=="}", f"got instead {t[0]}"
             t+=1
 
             return t,func_block
@@ -3391,7 +3415,7 @@ def main(filename:str|None=None):
             while 1:
                 # parse new symbol
                 symbol:Symbol|None=None
-                sym_init_val:AstValue=None
+                sym_init_val:AstValue|None=None
                 ctype:CType=CType()
 
                 if base_ctype is not None:
@@ -3408,7 +3432,12 @@ def main(filename:str|None=None):
                             continue
 
                         case "_Noreturn":
-                            # ctype.is_noreturn=True
+                            ctype.is_noreturn=True
+                            t+=1
+                            continue
+
+                        case "thread_local":
+                            ctype.is_threadlocal=True
                             t+=1
                             continue
 
@@ -3583,15 +3612,54 @@ def main(filename:str|None=None):
                             t+=1
 
                             enum_name:Token|None=None
-                            enum_fields:list[Symbol]|None=None
+                            fields:list[tuple[Symbol,AstValue]]|None=None
+
+                            ctype_int=self.getTypeByName("int")
+                            assert ctype_int is not None
+
                             if t[0].token_type==TokenType.SYMBOL:
                                 enum_name=t[0]
                                 t+=1
 
                             if t[0].s=="{":
-                                fatal("TODO parse enum fields")
+                                t+=1
 
-                            enum_base=CTypeEnum(enum_name,enum_fields)
+                                fields=[]
+
+                                last_field_value=AstValueNumericLiteral(0,ctype_int)
+                                while not t.empty and t[0].s!="}":
+                                    assert t[0].token_type==TokenType.SYMBOL, f"expected symbol, got instead {t[0]}"
+                                    field_name=t[0]
+
+                                    t+=1
+
+                                    field_value=None
+                                    if t[0].s=="=":
+                                        t+=1
+
+                                        t_after_val,field_value=self.parse_value(t)
+                                        if field_value is None:
+                                            fatal(f"got instead {t[0]}")
+
+                                        t=t_after_val
+
+                                    if field_value is None:
+                                        field_value=AstOperation(AstOperationKind.ADD,last_field_value,AstValueNumericLiteral(1,ctype_int))
+
+                                    last_field_value=field_value
+
+                                    fields.append((Symbol(ctype_int,field_name),field_value))
+
+                                    if t[0].s==",":
+                                        t+=1
+                                        continue
+
+                                    break
+
+                                assert t[0].s=="}"
+                                t+=1
+
+                            enum_base=CTypeEnum(ctype_int,enum_name,fields)
                             ctype.base_type=enum_base
 
                             continue
@@ -3668,7 +3736,7 @@ def main(filename:str|None=None):
                                 t+=1
                                 continue
 
-                            elif other=="=" and allow_init:
+                            elif other=="=" and allow_init and symbol is not None:
                                 t+=1
                                 t,sym_init_val=self.parse_value(t,target_type=symbol.ctype)
                                 assert sym_init_val is not None, f"no value for symbol init at {t[0]}"
@@ -3801,6 +3869,24 @@ def main(filename:str|None=None):
         @tp.override
         def print(self,indent:int):
             print(ind(indent)+"stmt: ;")
+
+    class AstGoto(Statement):
+        def __init__(self,label:Token):
+            super().__init__()
+            self.label=label
+
+        @tp.override
+        def print(self,indent:int):
+            print(ind(indent)+f"goto: {self.label.s}")
+
+    class AstLabel(Statement):
+        def __init__(self,label:Token):
+            super().__init__()
+            self.label=label
+
+        @tp.override
+        def print(self,indent:int):
+            print(ind(indent)+f"label: {self.label.s}")
 
     class AstSwitch(Block,Statement):
         def __init__(self,val:AstValue,body:Statement):
