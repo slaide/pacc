@@ -1509,7 +1509,13 @@ def main(filename:str|None=None):
                         
                             match line[2].s:
                                 case "once":
-                                    self.files_included[line[2].src_loc.filename].has_include_guard=True
+                                    current_line_filename=line[2].src_loc.filename
+
+                                    if current_line_filename not in self.files_included:
+                                        self.files_included[current_line_filename]=Preprocessor.IncludeFileReference(current_line_filename,has_include_guard=True)
+                                    else:
+                                        self.files_included[current_line_filename].has_include_guard=True
+
                                 case other:
                                     fatal(f"unimplemented pragma {other}")
 
@@ -3125,8 +3131,15 @@ def main(filename:str|None=None):
 
                                 assert t[0].token_type==TokenType.SYMBOL, f"got instead {t[0]}"
 
-                                val_field=ret.get_ctype().get_field_by_name(t[0].s)
-                                assert val_field is not None, f"got instead {t[0]}"
+                                ret_ctype=ret.get_ctype()
+                                if not (isinstance(ret_ctype,CTypeUnion) or isinstance(ret_ctype,CTypeStruct)):
+                                    print(f"{RED}error in type:{RESET}")
+                                    ret_ctype.print(0)
+                                    fatal(f"cannot use dot operator on non-[struct|union] type")
+
+                                val_field=ret_ctype.get_field_by_name(t[0].s)
+                                if val_field is None:
+                                    fatal(f"no field {t[0].s} in type {ret_ctype.name.s}")
 
                                 t+=1
 
@@ -4222,7 +4235,7 @@ if __name__=="__main__":
     test_files=Path("test").glob("test*.c")
     test_files=sorted(test_files)
 
-    for f_path in test_files[:40]:
+    for f_path in test_files[:70]:
         f=str(f_path)
 
         print(f"{ORANGE}{f}{RESET}")
