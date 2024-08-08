@@ -14,11 +14,11 @@ from py_tokenizer import *
 from py_preprocessor import *
 from py_ast import *
 
-def parse_file(filename:str|None=None,print_results:bool=False):
+def parse_file(filename:str|None=None,print_results:bool=False)->list[float]:
     if filename is None:
         if len(sys.argv)<2:
             print("no input file")
-            return
+            return []
 
         filename=sys.argv[1]
 
@@ -93,7 +93,7 @@ def parse_file(filename:str|None=None,print_results:bool=False):
     # phase 8 - linking
     # TODO
 
-    return time0,time1,time2,time3,time4,time5,time6,time7
+    return [time0,time1,time2,time3,time4,time5,time6,time7]
 
 def main():
     start_time=time.perf_counter()
@@ -101,15 +101,20 @@ def main():
     test_files=Path("test").glob("test*.c")
     test_files=sorted(test_files)
 
-    times=[0]*8
+    times=None
 
     for f_path in test_files[:64]:
         f=str(f_path)
 
         print(f"{ORANGE}{f}{RESET}")
         ret=parse_file(f,print_results=False)
-        for i,v in enumerate(list(ret)):
-            times[i]+=v
+
+        if times is None:
+            times=ret
+
+        else:
+            for i,v in enumerate(ret):
+                times[i]+=v
 
         print(times,flush=True)
 

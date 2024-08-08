@@ -224,8 +224,15 @@ class Tokenizer:
 
         file=io.open(filename)
         self.file_contents:str=file.read()
+        self.file_contents_len=len(self.file_contents)
         file.close()
+
         self.file_index:int=0
+        "index of current char in self.file_contents"
+        self.nc_rem=self.file_contents_len-1
+        "number of chars remaining self.file_contents beyond self.c"
+        self.c=self.file_contents[0]
+        "char at self.file_index"
 
         self.logical_line_index:int=0
         self.logical_col_index:int=0
@@ -233,11 +240,6 @@ class Tokenizer:
         self.col_index:int=0
 
         self.tokens:list[Token]=[]
-
-    @property
-    def c(self)->str:
-        " return character at current pointer location in line "
-        return self.c_fut(0)
 
     def adv(self,logical_line_adjust:bool=True):
         " advance current line pointer to next character in line "
@@ -251,11 +253,15 @@ class Tokenizer:
             self.logical_col_index+=1
             self.col_index+=1
 
+        # adjust file index, then also adjust all fields depending on it
         self.file_index+=1
+        self.nc_rem-=1 # virtually: self.nc_rem=self.file_contents_len-self.file_index-1
+        if self.file_index<self.file_contents_len:
+            self.c=self.file_contents[self.file_index]
 
         # check for line continuation
         # requires: forward clash followed by whitespace
-        if self.nc_rem>=1 and self.c=="\\" and is_whitespace(self.c_fut(1),True):
+        if self.c=="\\" and self.nc_rem>=1 and is_whitespace(self.c_fut(1),True):
             # line continuation character does not exist in the logical source code
             self.logical_col_index-=1
 
@@ -265,11 +271,6 @@ class Tokenizer:
 
             assert self.c=="\n", self.c
             self.adv(logical_line_adjust=False)
-
-    @property
-    def nc_rem(self)->int:
-        " return number of characters left in file "
-        return len(self.file_contents)-self.file_index-1
 
     def c_fut(self,n:int)->str:
         " return character in current line n positions in advance of current pointer "
@@ -501,7 +502,7 @@ class Tokenizer:
                         while self.remaining:
                             if self.c=="\n":
                                 break
-                                
+
                             current_token.s+=self.c
                             self.adv()
 
