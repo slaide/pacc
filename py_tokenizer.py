@@ -46,11 +46,17 @@ class TokenType(int,Enum):
 @dataclass
 class Token:
     s:str
+
     src_loc:SourceLocation
     token_type:TokenType=TokenType.SYMBOL
     log_loc:SourceLocation=field(default_factory=lambda:SourceLocation.invalid())
 
     expanded_from_macros:list[str]|None=None
+
+    len:int=0
+
+    def __post_init__(self):
+        self.len=len(self.s)
 
     def copy(self)->"Token":
         return Token(
@@ -60,6 +66,15 @@ class Token:
             log_loc=self.log_loc,
             expanded_from_macros=[i for i in self.expanded_from_macros] if self.expanded_from_macros is not None else None
         )
+
+    def extend(self,c:str):
+        "extend token by c"
+        self.s+=c
+        self.len+=1
+
+    def set(self,c:str):
+        self.s=c
+        self.len=len(c)
 
     def expand_from(self,macro_name:str):
         if self.expanded_from_macros is None:
@@ -90,7 +105,7 @@ class Token:
 
     @property
     def is_empty(self):
-        return len(self.s)==0
+        return self.len==0
 
     def is_valid_symbol(self)->bool:
         if not re.match("[A-Za-z_][A-Za-z_0-9]*",self.s):
@@ -183,7 +198,7 @@ def is_numeric(c:str):
     return c in NUMERIC_CHARS_SET
 
 
-SPECIAL_COMPOUND_SYMBOLS=[
+SPECIAL_COMPOUND_SYMBOLS=[(v,len(v)) for v in [
     "->",
 
     "++",
@@ -211,9 +226,9 @@ SPECIAL_COMPOUND_SYMBOLS=[
     ">>=",
 
     "...",
-]
+]]
 "special compound symbols, e.g. arrow operator ->"
-SPECIAL_COMPOUND_SYMBOLS_CHAR_AT_ZERO=set((s[0] for s in SPECIAL_COMPOUND_SYMBOLS))
+SPECIAL_COMPOUND_SYMBOLS_CHAR_AT_ZERO=set((s[0] for s,_ in SPECIAL_COMPOUND_SYMBOLS))
 "set to allow quick checking if any compound symbol may be matched"
 
 class Tokenizer:
@@ -233,15 +248,15 @@ class Tokenizer:
         "number of chars remaining self.file_contents beyond self.c"
         self.c=self.file_contents[0]
         "char at self.file_index"
+        self.remaining=self.nc_rem>=0
+        " return True if any characters are remaining in the file (effectively = self.nc_rem>=0)"
 
         self.logical_line_index:int=0
         self.logical_col_index:int=0
         self.line_index:int=0
         self.col_index:int=0
 
-        self.tokens:list[Token]=[]
-
-    def adv(self,logical_line_adjust:bool=True):
+    def adv(self,logical_line_adjust:bool=True,check_line_continuation:bool=True):
         " advance current line pointer to next character in line "
         if self.remaining and self.c=="\n":
             self.line_index+=1
@@ -256,21 +271,22 @@ class Tokenizer:
         # adjust file index, then also adjust all fields depending on it
         self.file_index+=1
         self.nc_rem-=1 # virtually: self.nc_rem=self.file_contents_len-self.file_index-1
+        self.remaining=self.nc_rem>=0
         if self.file_index<self.file_contents_len:
             self.c=self.file_contents[self.file_index]
 
-        # check for line continuation
-        # requires: forward clash followed by whitespace
-        if self.c=="\\" and self.nc_rem>=1 and is_whitespace(self.c_fut(1),True):
-            # line continuation character does not exist in the logical source code
-            self.logical_col_index-=1
+        if check_line_continuation:
+            # requires: forward clash followed by whitespace
+            if self.c=="\\" and self.nc_rem>=1 and is_whitespace(self.c_fut(1),True):
+                # line continuation character does not exist in the logical source code
+                self.logical_col_index-=1
 
-            self.adv(logical_line_adjust=False)
-            while self.remaining and is_whitespace(self.c,False):
-                self.adv()
+                self.adv(logical_line_adjust=False)
+                while self.remaining and is_whitespace(self.c,newline_allowed=False):
+                    self.adv(check_line_continuation=False)
 
-            assert self.c=="\n", self.c
-            self.adv(logical_line_adjust=False)
+                assert self.c=="\n", self.c
+                self.adv(logical_line_adjust=False)
 
     def c_fut(self,n:int)->str:
         " return character in current line n positions in advance of current pointer "
@@ -284,28 +300,18 @@ class Tokenizer:
     def current_log_loc(self)->"SourceLocation":
         return SourceLocation(self.filename,self.logical_line_index,self.logical_col_index)
 
-    @property
-    def remaining(self):
-        " return True if any characters are remaining in the file "
-
-        return self.nc_rem>=0
-
-    def add_tok(self,token:Token):
-        " add token to latest token line "
-        self.tokens.append(token)
-
-    def compound_symbol_present(self,c_sym:str,current_token:"Token")->bool:
-        if self.c==c_sym[0] and self.nc_rem>=(len(c_sym)-1):
-            for i in range(1,len(c_sym)):
+    def compound_symbol_present(self,c_sym:str,csym_len:int,current_token:"Token")->bool:
+        if self.c==c_sym[0] and self.nc_rem>=(csym_len-1):
+            for i in range(1,csym_len):
                 c=self.c_fut(i)
                 if c!=c_sym[i]:
                     return False
 
             # only advance if symbol has been found
-            for i in range(1,len(c_sym)):
+            for i in range(1,csym_len):
                 self.adv()
 
-            current_token.s=c_sym
+            current_token.set(c_sym)
             current_token.token_type=TokenType.OPERATOR_PUNCTUATION
 
             return True
@@ -313,17 +319,16 @@ class Tokenizer:
         return False
 
     def parse_terminated_literal(self,start_char:str,end_char:str,current_token:Token,token_type:TokenType)->bool:
-        if len(current_token.s)>0:
-            return False
+        "parse a terminated literal. requires current_token to be empty"
 
         if self.c==start_char:
-            if len(current_token.s)>0:
+            if current_token.len>0:
                 current_token.token_type=token_type
                 return True
 
             current_token.token_type=TokenType.LITERAL_CHAR
 
-            current_token.s+=self.c
+            current_token.extend(self.c)
             self.adv()
 
             while self.remaining:
@@ -334,18 +339,18 @@ class Tokenizer:
 
                     match self.c:
                         case "n":
-                            current_token.s+="\n"
+                            current_token.extend("\n")
                         case "\"":
-                            current_token.s+="\""
+                            current_token.extend("\"")
                         case "\\":
-                            current_token.s+="\\"
+                            current_token.extend("\\")
                         case "'":
-                            current_token.s+="'"
+                            current_token.extend("'")
                         case _:
                             if is_numeric(self.c):
                                 match self.c:
                                     case "0":
-                                        current_token.s+="\0"
+                                        current_token.extend("\0")
                                     case other:
                                         fatal(f"unimplemented {other}")
                             else:
@@ -358,7 +363,7 @@ class Tokenizer:
                 elif self.c=="\n":
                     fatal(f"missing terminating {end_char} at {self.current_loc()}")
 
-                current_token.s+=self.c
+                current_token.extend(self.c)
 
                 if self.c==end_char:
                     self.adv()
@@ -372,7 +377,7 @@ class Tokenizer:
         return False
 
     def parse_tokens(self):
-        self.tokens=[]
+        ret_tokens=[]
 
         # tokenize the file (phase 3, combined with phase 2)
         current_token:Token|None=None
@@ -388,7 +393,7 @@ class Tokenizer:
                         current_token.token_type=TokenType.WHITESPACE
 
                     if current_token.is_whitespace:
-                        current_token.s+=self.c
+                        current_token.extend(self.c)
                         self.adv()
                         continue
 
@@ -398,100 +403,101 @@ class Tokenizer:
                     skip_col_increment=True
                     break
 
-                # parse a numeric literal
-                char_is_leading_numeric=len(current_token.s)==0 and is_numeric(self.c)
-                char_is_dot_followed_by_numeric=self.c=="." and self.nc_rem>0 and is_numeric(self.c_fut(1))
-                if char_is_leading_numeric or char_is_dot_followed_by_numeric:
-                    # leading numeric is legal trailing symbol char, thus we ignore those here
-                    if char_is_dot_followed_by_numeric and len(current_token.s)>0:
-                        skip_col_increment = self.c=="."
-                        break
-
-                    current_token.token_type=TokenType.LITERAL_NUMBER
-
-                    parsed_dot=False
-                    parsed_exponent=False
-                    num_exponent_digits=0
-                    parsed_exponent_sign=False
-
-                    while self.remaining:
-                        if is_numeric(self.c):
-                            current_token.s+=self.c
-                            self.adv()
-
-                            if parsed_exponent:
-                                num_exponent_digits+=1
-
-                        elif (self.c=="-" or self.c=="+") and parsed_exponent:
-                            if parsed_exponent_sign:
-                                fatal(f"already parsed exponent sign at {self.current_loc()}")
-
-                            parsed_exponent_sign=True
-
-                            current_token.s+=self.c
-                            self.adv()
-
-                            num_exponent_digits+=1
-
-                        elif self.c==".":
-                            if parsed_dot:
-                                fatal(f"dot already parsed in float literal at {self.current_loc()}")
-
-                            parsed_dot=True
-
-                            current_token.s+=self.c
-                            self.adv()
-
-                            if parsed_exponent:
-                                num_exponent_digits+=1
-
-                        elif self.c=="e" or self.c=="E":
-                            if parsed_exponent:
-                                fatal(f"exponent already parsed in float literal at {self.current_loc()}")
-
-                            parsed_exponent=True
-
-                            current_token.s+=self.c
-                            self.adv()
-
-                        elif self.c=="'":
-                            if not (self.nc_rem>0 and is_numeric(self.c_fut(1))):
-                                fatal(f"digit separator cannot appear at end of digit sequence at {self.current_loc()}")
-
-                            if parsed_exponent and num_exponent_digits==0:
-                                fatal(f"digit separator cannot appear at start of digit sequence at {self.current_loc()}")
-
-                            current_token.s+=self.c
-                            self.adv()
-
-                        else:
-                            # append suffix until special char or whitespace
-                            while self.remaining and not (is_special(self.c) or is_whitespace(self.c)):
-                                current_token.s+=self.c
-                                self.adv()
-
-                            skip_col_increment=True
+                if current_token.len==0:
+                    # parse a numeric literal
+                    char_is_leading_numeric=is_numeric(self.c)
+                    char_is_dot_followed_by_numeric=self.c=="." and self.nc_rem>0 and is_numeric(self.c_fut(1))
+                    if char_is_leading_numeric or char_is_dot_followed_by_numeric:
+                        # leading numeric is legal trailing symbol char, thus we ignore those here
+                        if char_is_dot_followed_by_numeric and current_token.len>0:
+                            skip_col_increment = self.c=="."
                             break
 
-                    if parsed_exponent:
-                        if num_exponent_digits==0:
-                            fatal(f"exponent has no digits at {self.current_loc()}")
+                        current_token.token_type=TokenType.LITERAL_NUMBER
 
-                    break
+                        parsed_dot=False
+                        parsed_exponent=False
+                        num_exponent_digits=0
+                        parsed_exponent_sign=False
 
-                # parse a character literal
-                if self.parse_terminated_literal("'","'",current_token,token_type=TokenType.LITERAL_CHAR):
-                    skip_col_increment=True
-                    break
+                        while self.remaining:
+                            if is_numeric(self.c):
+                                current_token.extend(self.c)
+                                self.adv()
 
-                # parse a string literal
-                if self.parse_terminated_literal('"','"',current_token,token_type=TokenType.LITERAL_STRING):
-                    skip_col_increment=True
-                    break
+                                if parsed_exponent:
+                                    num_exponent_digits+=1
+
+                            elif (self.c=="-" or self.c=="+") and parsed_exponent:
+                                if parsed_exponent_sign:
+                                    fatal(f"already parsed exponent sign at {self.current_loc()}")
+
+                                parsed_exponent_sign=True
+
+                                current_token.extend(self.c)
+                                self.adv()
+
+                                num_exponent_digits+=1
+
+                            elif self.c==".":
+                                if parsed_dot:
+                                    fatal(f"dot already parsed in float literal at {self.current_loc()}")
+
+                                parsed_dot=True
+
+                                current_token.extend(self.c)
+                                self.adv()
+
+                                if parsed_exponent:
+                                    num_exponent_digits+=1
+
+                            elif self.c=="e" or self.c=="E":
+                                if parsed_exponent:
+                                    fatal(f"exponent already parsed in float literal at {self.current_loc()}")
+
+                                parsed_exponent=True
+
+                                current_token.extend(self.c)
+                                self.adv()
+
+                            elif self.c=="'":
+                                if not (self.nc_rem>0 and is_numeric(self.c_fut(1))):
+                                    fatal(f"digit separator cannot appear at end of digit sequence at {self.current_loc()}")
+
+                                if parsed_exponent and num_exponent_digits==0:
+                                    fatal(f"digit separator cannot appear at start of digit sequence at {self.current_loc()}")
+
+                                current_token.extend(self.c)
+                                self.adv()
+
+                            else:
+                                # append suffix until special char or whitespace
+                                while self.remaining and not (is_special(self.c) or is_whitespace(self.c)):
+                                    current_token.extend(self.c)
+                                    self.adv()
+
+                                skip_col_increment=True
+                                break
+
+                        if parsed_exponent:
+                            if num_exponent_digits==0:
+                                fatal(f"exponent has no digits at {self.current_loc()}")
+
+                        break
+
+                    # parse a character literal
+                    if self.parse_terminated_literal("'","'",current_token,token_type=TokenType.LITERAL_CHAR):
+                        skip_col_increment=True
+                        break
+
+                    # parse a string literal
+                    if self.parse_terminated_literal('"','"',current_token,token_type=TokenType.LITERAL_STRING):
+                        skip_col_increment=True
+                        break
 
                 # parse a special symbol (includes comments)
                 if is_special(self.c):
-                    if len(current_token.s)>0:
+                    if current_token.len>0:
                         skip_col_increment=True
                         break
 
@@ -503,7 +509,7 @@ class Tokenizer:
                             if self.c=="\n":
                                 break
 
-                            current_token.s+=self.c
+                            current_token.extend(self.c)
                             self.adv()
 
                         break
@@ -512,13 +518,13 @@ class Tokenizer:
                     if self.c=="/" and self.nc_rem>0 and self.c_fut(1)=="*":
                         current_token.token_type=TokenType.COMMENT
 
-                        current_token.s+=self.c
+                        current_token.extend(self.c)
                         self.adv()
 
                         while self.remaining:
-                            current_token.s+=self.c
+                            current_token.extend(self.c)
 
-                            if len(current_token.s)>=4:
+                            if current_token.len>=4:
                                 if current_token.s[-2:]=="*/":
                                     break
 
@@ -530,8 +536,8 @@ class Tokenizer:
 
                     if self.c in SPECIAL_COMPOUND_SYMBOLS_CHAR_AT_ZERO:
                         matched_compound_symbol=False
-                        for compound_symbol in SPECIAL_COMPOUND_SYMBOLS:
-                            if self.compound_symbol_present(compound_symbol,current_token):
+                        for compound_symbol,compound_symbol_len in SPECIAL_COMPOUND_SYMBOLS:
+                            if self.compound_symbol_present(compound_symbol,compound_symbol_len,current_token):
                                 matched_compound_symbol=True
                                 break
 
@@ -540,20 +546,21 @@ class Tokenizer:
 
                     # if not compound but still special:
                     current_token.token_type=TokenType.OPERATOR_PUNCTUATION
-                    current_token.s=self.c
+                    current_token.extend(self.c)
                     break
 
-                current_token.s+=self.c
+                current_token.extend(self.c)
                 self.adv()
 
-            if current_token is not None and len(current_token.s)>0:
-                self.add_tok(current_token)
+            if current_token is not None and current_token.len>0:
+                ret_tokens.append(current_token)
                 current_token=None
 
             if not skip_col_increment:
                 self.adv()
 
-        if current_token is not None and len(current_token.s)!=0:
-            self.add_tok(current_token)
+        # append last token
+        if current_token is not None and current_token.len!=0:
+            ret_tokens.append(current_token)
 
-        return self.tokens
+        return ret_tokens

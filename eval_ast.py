@@ -24,7 +24,7 @@ def parse_file(filename:str|None=None,print_results:bool=False)->list[float]:
 
     start_time=time.perf_counter()
     t=Tokenizer(filename)
-    tokens=t.parse_tokens()
+    init_tokens=t.parse_tokens()
     time0=time.perf_counter()-start_time
 
     # visually inspect results
@@ -32,7 +32,7 @@ def parse_file(filename:str|None=None,print_results:bool=False)->list[float]:
 
     start_time=time.perf_counter()
 
-    token_lines=sort_tokens_into_lines(tokens)
+    token_lines=sort_tokens_into_lines(init_tokens)
 
     time1=time.perf_counter()-start_time
     start_time=time.perf_counter()
