@@ -14,7 +14,7 @@ from py_tokenizer import *
 from py_preprocessor import *
 from py_ast import *
 
-def parse_file(filename:str|None=None,print_results:bool=False)->list[float]:
+def parse_file(filename:str|None=None,print_results:bool=False):
     if filename is None:
         if len(sys.argv)<2:
             print("no input file")
@@ -22,33 +22,19 @@ def parse_file(filename:str|None=None,print_results:bool=False)->list[float]:
 
         filename=sys.argv[1]
 
-    start_time=time.perf_counter()
     t=Tokenizer(filename)
     init_tokens=t.parse_tokens()
-    time0=time.perf_counter()-start_time
 
     # visually inspect results
     #print_tokens(tokens,mode="logical",ignore_comments=False,ignore_whitespace=True,pad_string=False)
 
-    start_time=time.perf_counter()
-
     token_lines=sort_tokens_into_lines(init_tokens)
-
-    time1=time.perf_counter()-start_time
-    start_time=time.perf_counter()
 
     # execute preprocessor (phase 4)
 
     p=Preprocessor()
-    time6=time.perf_counter()-start_time
-    start_time=time.perf_counter()
     p.add_lines(token_lines)
-    time7=time.perf_counter()-start_time
-    start_time=time.perf_counter()
     preprocessed_lines=p.run()
-
-    time2=time.perf_counter()-start_time
-    start_time=time.perf_counter()
 
     # skip over phase 5 for now (handle character sets)
 
@@ -67,9 +53,6 @@ def parse_file(filename:str|None=None,print_results:bool=False)->list[float]:
 
         tokens.append(tok)
 
-    time3=time.perf_counter()-start_time
-    start_time=time.perf_counter()
-
     # phase 7 - syntactic and semantic analysis, code generation
 
     if print_results:
@@ -80,53 +63,45 @@ def parse_file(filename:str|None=None,print_results:bool=False)->list[float]:
 
     ast=Ast(tokens)
 
-    time4=time.perf_counter()-start_time
-    start_time=time.perf_counter()
-
     if print_results:
         print(f"{GREEN}ast:{RESET}")
         ast.block.print(0)
 
-    time5=time.perf_counter()-start_time
-    start_time=time.perf_counter()
 
     # phase 8 - linking
     # TODO
 
-    return [time0,time1,time2,time3,time4,time5,time6,time7]
+    return
 
 def main():
-    start_time=time.perf_counter()
+    total_start_time=time.perf_counter()
 
     test_files=Path("test").glob("test*.c")
     test_files=sorted(test_files)
 
-    times=None
-
     for f_path in test_files[:64]:
         f=str(f_path)
 
-        print(f"{ORANGE}{f}{RESET}")
-        ret=parse_file(f,print_results=False)
+        file_start_time=time.perf_counter()
+        print(f"{ORANGE}{f}{RESET}",flush=True,end="")
+        parse_file(f,print_results=False)
+        file_end_time=time.perf_counter()
+        print(f" in {((file_end_time-file_start_time)*1e3):8.3f}ms",flush=True)
 
-        if times is None:
-            times=ret
+    total_end_time=time.perf_counter()
 
-        else:
-            for i,v in enumerate(ret):
-                times[i]+=v
-
-        print(times,flush=True)
-
-    end_time=time.perf_counter()
-
-    print(f"ran in {(end_time-start_time):.4f}s")
+    print(f"ran in {(total_end_time-total_start_time):.4f}s")
 
 if __name__=="__main__":
 
-    import cProfile
-        
-    with cProfile.Profile() as pr:
-        main()
+    do_profile=False
 
-        pr.print_stats(sort="tottime")
+    if not do_profile:
+        main()
+    else:
+        import cProfile
+            
+        with cProfile.Profile() as pr:
+            main()
+
+            pr.print_stats(sort="tottime")
